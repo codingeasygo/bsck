@@ -52,6 +52,8 @@ func cmdString(cmd byte) string {
 		return "Data"
 	case CmdClosed:
 		return "Closed"
+	case CmdHeartbeat:
+		return "Heartbeat"
 	default:
 		return fmt.Sprintf("unknow(%v)", cmd)
 	}
@@ -161,11 +163,11 @@ func (r *RawConn) String() string {
 
 //Channel is an implementation of the Conn interface for channel network connections.
 type Channel struct {
-	//the raw connection
-	io.ReadWriteCloser
-	cid   uint64
-	name  string
-	index int
+	io.ReadWriteCloser                //the raw connection
+	Option             *ChannelOption //the option
+	cid                uint64
+	name               string
+	index              int
 }
 
 //ID is an implementation of Conn
@@ -195,8 +197,33 @@ func (c *Channel) String() string {
 //DialRawF is a function type to dial raw connection.
 type DialRawF func(sid uint64, uri string) (raw Conn, err error)
 
-//DialTCP is an implementation of DialRawF for tcp raw connection.
-func DialTCP(sid uint64, uri string) (raw Conn, err error) {
+//OnConnClose will be called when connection is closed
+func (d DialRawF) OnConnClose(conn Conn) error {
+	return nil
+}
+
+//DialRaw will dial raw connection
+func (d DialRawF) DialRaw(sid uint64, uri string) (raw Conn, err error) {
+	raw, err = d(sid, uri)
+	return
+}
+
+//TCPDailer is an implementation of RouterHandler for tcp raw connection.
+type TCPDailer struct {
+}
+
+//NewTCPDailer will return new TCPDailer.
+func NewTCPDailer() *TCPDailer {
+	return &TCPDailer{}
+}
+
+//OnConnClose will be called when connection is closed
+func (t *TCPDailer) OnConnClose(conn Conn) error {
+	return nil
+}
+
+//DialRaw will dial raw connection
+func (t *TCPDailer) DialRaw(sid uint64, uri string) (raw Conn, err error) {
 	targetURI, err := url.Parse(uri)
 	if err != nil {
 		return
@@ -226,6 +253,8 @@ type ChannelOption struct {
 	Local string `json:"local"`
 	//the remote address to login
 	Remote string `json:"remote"`
+	//the channel index
+	Index int `json:"index"`
 }
 
 type bondChannel struct {
@@ -257,13 +286,21 @@ func (t TableRouter) Next(conn Conn) (target Conn, rsid uint64) {
 	return
 }
 
+//RouterHandler is the interface that wraps the handler of Router.
+type RouterHandler interface {
+	//dial raw connection
+	DialRaw(sid uint64, uri string) (raw Conn, err error)
+	//on connection close
+	OnConnClose(conn Conn) error
+}
+
 //Router is an implementation of the router control
 type Router struct {
 	Name            string            //current router name
 	BufferSize      uint32            //buffer size of connection runner
-	DialRaw         DialRawF          //the function to dial raw connection
 	ACL             map[string]string //the access control
 	Heartbeat       time.Duration     //the delay of heartbeat
+	Handler         RouterHandler     //the router handler
 	aclLck          sync.RWMutex
 	connectSequence uint64
 	channel         map[string]*bondChannel
@@ -284,6 +321,7 @@ func NewRouter(name string) (router *Router) {
 		aclLck:     sync.RWMutex{},
 		BufferSize: 1024 * 1024,
 		Heartbeat:  5 * time.Second,
+		Handler:    NewTCPDailer(),
 	}
 	return
 }
@@ -306,13 +344,7 @@ func (r *Router) Accept(raw io.ReadWriteCloser) {
 }
 
 //Register one logined raw connecton to channel,
-func (r *Router) Register(name string, index int, raw io.ReadWriteCloser) {
-	channel := &Channel{
-		ReadWriteCloser: raw,
-		cid:             atomic.AddUint64(&r.connectSequence, 1),
-		name:            name,
-		index:           index,
-	}
+func (r *Router) Register(channel Conn) {
 	r.addChannel(channel)
 	go r.loopReadRaw(channel, r.BufferSize)
 }
@@ -459,6 +491,7 @@ func (r *Router) loopReadRaw(channel Conn, bufferSize uint32) {
 		}
 	}
 	r.tableLck.Unlock()
+	r.Handler.OnConnClose(channel)
 }
 
 func (r *Router) loopHeartbeat() {
@@ -530,7 +563,7 @@ func (r *Router) procDial(channel Conn, buf []byte, length uint32) (err error) {
 	parts := strings.SplitN(path[1], "->", 2)
 	if len(parts) < 2 {
 		dstSid := atomic.AddUint64(&r.connectSequence, 1)
-		raw, cerr := r.DialRaw(dstSid, parts[0])
+		raw, cerr := r.Handler.DialRaw(dstSid, parts[0])
 		if cerr != nil {
 			err = writeCmd(channel, buf, CmdDialBack, sid, []byte(fmt.Sprintf("dial to uri(%v) fail with %v", parts[0], cerr)))
 			return
@@ -658,8 +691,8 @@ func (r *Router) Dial(uri string, raw io.ReadWriteCloser) (sid uint64, err error
 
 //LoginChannel will login all channel by options.
 func (r *Router) LoginChannel(channels ...*ChannelOption) (err error) {
-	for index, channel := range channels {
-		err = r.Login(channel.Local, channel.Remote, channel.Token, index)
+	for _, channel := range channels {
+		err = r.Login(channel)
 		if err != nil {
 			return
 		}
@@ -668,30 +701,30 @@ func (r *Router) LoginChannel(channels ...*ChannelOption) (err error) {
 }
 
 //Login will add channel by local address, master address, auth token, channel index.
-func (r *Router) Login(local, address, token string, index int) (err error) {
-	infoLog("Router(%v) start dial to %v", r.Name, address)
+func (r *Router) Login(option *ChannelOption) (err error) {
+	infoLog("Router(%v) start dial to %v", r.Name, option.Remote)
 	var dialer net.Dialer
-	if len(local) > 0 {
-		dialer.LocalAddr, err = net.ResolveTCPAddr("tcp", local)
+	if len(option.Local) > 0 {
+		dialer.LocalAddr, err = net.ResolveTCPAddr("tcp", option.Local)
 		if err != nil {
 			return
 		}
 	}
-	conn, err := dialer.Dial("tcp", address)
+	conn, err := dialer.Dial("tcp", option.Remote)
 	if err != nil {
-		warnLog("Router dial to %v fail with %v", address, err)
+		warnLog("Router dial to %v fail with %v", option.Remote, err)
 		return
 	}
-	err = r.JoinConn(conn, token, index)
+	err = r.JoinConn(conn, option)
 	return
 }
 
 //JoinConn will add channel by the connected connection, auth token, channel index
-func (r *Router) JoinConn(conn io.ReadWriteCloser, token string, index int) (err error) {
+func (r *Router) JoinConn(conn io.ReadWriteCloser, option *ChannelOption) (err error) {
 	data, _ := json.Marshal(&AuthOption{
 		Name:  r.Name,
-		Token: token,
-		Index: index,
+		Token: option.Token,
+		Index: option.Index,
 	})
 	buf := make([]byte, 1024)
 	err = writeCmd(conn, buf, CmdLogin, 0, data)
@@ -710,8 +743,29 @@ func (r *Router) JoinConn(conn io.ReadWriteCloser, token string, index int) (err
 		warnLog("Router(%v) login to %v fail with %v", r.Name, conn, err)
 		return
 	}
-	remote := strings.TrimPrefix(msg, "OK:")
-	r.Register(remote, index, NewBufferConn(conn, 4096))
-	infoLog("Router(%v) login to %v success, bind to %v,%v", r.Name, conn, remote, index)
+	remoteName := strings.TrimPrefix(msg, "OK:")
+	channel := &Channel{
+		ReadWriteCloser: NewBufferConn(conn, 4096),
+		cid:             atomic.AddUint64(&r.connectSequence, 1),
+		name:            remoteName,
+		index:           option.Index,
+		Option:          option,
+	}
+	r.Register(channel)
+	infoLog("Router(%v) login to %v success, bind to %v,%v", r.Name, conn, remoteName, option.Index)
+	return
+}
+
+//Close all channel
+func (r *Router) Close() (err error) {
+	r.channelLck.Lock()
+	for _, bond := range r.channel {
+		bond.channelLck.Lock()
+		for _, channel := range bond.channels {
+			channel.Close()
+		}
+		bond.channelLck.Unlock()
+	}
+	r.channelLck.Unlock()
 	return
 }
