@@ -4,3 +4,6 @@
 //
 //the channel of slaver to master can be multi physical tcp connect by different router
 package bsck
+
+//ShowLog will show more log.
+var ShowLog = 0

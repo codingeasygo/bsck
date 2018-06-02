@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 const (
@@ -26,6 +27,8 @@ const (
 	CmdData = 110
 	//CmdClosed is the command of tcp closed.
 	CmdClosed = 120
+	//CmdHeartbeat is the command of heartbeat on slaver/master
+	CmdHeartbeat = 130
 )
 
 const (
@@ -260,6 +263,7 @@ type Router struct {
 	BufferSize      uint32            //buffer size of connection runner
 	DialRaw         DialRawF          //the function to dial raw connection
 	ACL             map[string]string //the access control
+	Heartbeat       time.Duration     //the delay of heartbeat
 	aclLck          sync.RWMutex
 	connectSequence uint64
 	channel         map[string]*bondChannel
@@ -279,8 +283,16 @@ func NewRouter(name string) (router *Router) {
 		ACL:        map[string]string{},
 		aclLck:     sync.RWMutex{},
 		BufferSize: 1024 * 1024,
+		Heartbeat:  5 * time.Second,
 	}
 	return
+}
+
+//StartHeartbeat will start the hearbeat on slaver/master
+func (r *Router) StartHeartbeat() {
+	if r.Heartbeat > 0 {
+		go r.loopHeartbeat()
+	}
 }
 
 //Accept one raw connecton as channel,
@@ -392,7 +404,9 @@ func (r *Router) loopReadRaw(channel Conn, bufferSize uint32) {
 			errorLog("Router(%v) receive invalid frame(length:%v) from %v", length, channel)
 			break
 		}
-		debugLog("Router(%v) read one command(%v,%v) from %v", r.Name, cmdString(buf[4]), length, channel)
+		if ShowLog > 1 {
+			debugLog("Router(%v) read one command(%v,%v) from %v", r.Name, cmdString(buf[4]), length, channel)
+		}
 		switch buf[4] {
 		case CmdLogin:
 			err = r.procLogin(channel, buf, length)
@@ -404,6 +418,8 @@ func (r *Router) loopReadRaw(channel Conn, bufferSize uint32) {
 			err = r.procChannelData(channel, buf, length)
 		case CmdClosed:
 			err = r.procClosed(channel, buf, length)
+		case CmdHeartbeat:
+			err = r.procHeartbeat(channel, buf, length)
 		default:
 			err = fmt.Errorf("not supported cmd(%v)", buf[4])
 		}
@@ -443,6 +459,28 @@ func (r *Router) loopReadRaw(channel Conn, bufferSize uint32) {
 		}
 	}
 	r.tableLck.Unlock()
+}
+
+func (r *Router) loopHeartbeat() {
+	data := []byte("ping...")
+	length := uint32(len(data) + 13)
+	buf := make([]byte, length)
+	binary.BigEndian.PutUint32(buf, length-4)
+	buf[4] = CmdHeartbeat
+	binary.BigEndian.PutUint32(buf[5:], 0)
+	copy(buf[13:], data)
+	for {
+		r.channelLck.RLock()
+		for _, bond := range r.channel {
+			bond.channelLck.RLock()
+			for _, channel := range bond.channels {
+				channel.Write(buf)
+			}
+			bond.channelLck.RUnlock()
+		}
+		r.channelLck.RUnlock()
+		time.Sleep(r.Heartbeat)
+	}
 }
 
 func (r *Router) procLogin(conn Conn, buf []byte, length uint32) (err error) {
@@ -586,6 +624,10 @@ func (r *Router) procClosed(channel Conn, buf []byte, length uint32) (err error)
 	} else {
 		writeCmd(target, buf, CmdClosed, rsid, []byte(message))
 	}
+	return
+}
+
+func (r *Router) procHeartbeat(channel Conn, buf []byte, length uint32) (err error) {
 	return
 }
 

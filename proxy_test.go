@@ -10,6 +10,7 @@ import (
 
 func init() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
+	ShowLog = 2
 }
 
 type Echo struct {
@@ -69,13 +70,15 @@ func TestProxy(t *testing.T) {
 	master.Router.ACL["slaver"] = "abc"
 	master.Router.ACL["slaver2"] = "abc"
 	master.Router.ACL["slaver3"] = "abc"
+	master.Heartbeat = 10 * time.Millisecond
+	master.StartHeartbeat()
 	var masterEcho *Echo
 	master.Router.DialRaw = func(sid uint64, uri string) (conn Conn, err error) {
 		fmt.Println("master test dail to ", uri)
 		if uri == "error" {
 			err = fmt.Errorf("error")
 		} else {
-			conn = NewRawConn(masterEcho, sid, uri, 4096)
+			conn = NewRawConn(masterEcho, sid, uri)
 		}
 		// err = fmt.Errorf("error")
 		return
@@ -91,10 +94,12 @@ func TestProxy(t *testing.T) {
 	}()
 	//
 	slaver := NewRouter("slaver")
+	slaver.Heartbeat = 10 * time.Millisecond
+	slaver.StartHeartbeat()
 	var slaverEcho *Echo
 	slaver.DialRaw = func(sid uint64, uri string) (conn Conn, err error) {
 		fmt.Println("slaver test dail to ", uri)
-		conn = NewRawConn(slaverEcho, sid, uri, 4096)
+		conn = NewRawConn(slaverEcho, sid, uri)
 		// err = fmt.Errorf("error")
 		return
 	}
@@ -155,7 +160,7 @@ func TestProxy(t *testing.T) {
 		ms0 := NewRouter("ms")
 		ms0.DialRaw = func(sid uint64, uri string) (conn Conn, err error) {
 			fmt.Println("ms test dail to ", uri)
-			conn = NewRawConn(msEcho, sid, uri, 4096)
+			conn = NewRawConn(msEcho, sid, uri)
 			return
 		}
 		err = ms0.LoginChannel(&ChannelOption{
@@ -200,7 +205,7 @@ func TestProxy(t *testing.T) {
 		slaver3 := NewRouter("slaver3")
 		slaver3.DialRaw = func(sid uint64, uri string) (conn Conn, err error) {
 			fmt.Println("slaver3 test dail to ", uri)
-			conn = NewRawConn(slaver3Echo, sid, uri, 4096)
+			conn = NewRawConn(slaver3Echo, sid, uri)
 			return
 		}
 		slaver3.Login("", "localhost:9232", "abc", 0)
@@ -249,7 +254,7 @@ func TestError(t *testing.T) {
 		if uri == "error" {
 			err = fmt.Errorf("error")
 		} else {
-			conn = NewRawConn(masterEcho, sid, uri, 4096)
+			conn = NewRawConn(masterEcho, sid, uri)
 		}
 		// err = fmt.Errorf("error")
 		return
@@ -301,7 +306,7 @@ func TestError(t *testing.T) {
 		master.Router.addChannel(testc)
 		//
 		//test proc login fail
-		err = master.Router.procLogin(NewRawConn(NewEcho("data"), 0, "ur", 10), make([]byte, 1024), 1024)
+		err = master.Router.procLogin(NewRawConn(NewEcho("data"), 0, "ur"), make([]byte, 1024), 1024)
 		if err == nil {
 			t.Error("error")
 			return
@@ -450,7 +455,7 @@ func TestError(t *testing.T) {
 		master.Router.loopReadRaw(src, 10240)
 	}
 	{ //test for cover
-		rawConn := NewRawConn(NewEcho("data"), 0, "", 4096)
+		rawConn := NewRawConn(NewEcho("data"), 0, "")
 		rawConn.Index()
 		func() {
 			defer func() {
