@@ -9,10 +9,10 @@ import (
 type BufferConn struct {
 	*bufio.Reader
 	io.Writer
-	Raw net.Conn
+	Raw io.ReadWriteCloser
 }
 
-func NewBufferConn(raw net.Conn, bufferSize int) (buf *BufferConn) {
+func NewBufferConn(raw io.ReadWriteCloser, bufferSize int) (buf *BufferConn) {
 	buf = &BufferConn{
 		Reader: bufio.NewReaderSize(raw, bufferSize),
 		Writer: raw,
