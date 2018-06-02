@@ -70,7 +70,7 @@ func TestProxy(t *testing.T) {
 	master.Router.ACL["slaver2"] = "abc"
 	master.Router.ACL["slaver3"] = "abc"
 	var masterEcho *Echo
-	master.Router.DailRaw = func(sid uint64, uri string) (conn Conn, err error) {
+	master.Router.DialRaw = func(sid uint64, uri string) (conn Conn, err error) {
 		fmt.Println("master test dail to ", uri)
 		if uri == "error" {
 			err = fmt.Errorf("error")
@@ -92,7 +92,7 @@ func TestProxy(t *testing.T) {
 	//
 	slaver := NewRouter("slaver")
 	var slaverEcho *Echo
-	slaver.DailRaw = func(sid uint64, uri string) (conn Conn, err error) {
+	slaver.DialRaw = func(sid uint64, uri string) (conn Conn, err error) {
 		fmt.Println("slaver test dail to ", uri)
 		conn = NewRawConn(slaverEcho, sid, uri, 4096)
 		// err = fmt.Errorf("error")
@@ -107,7 +107,7 @@ func TestProxy(t *testing.T) {
 		fmt.Printf("\n\n\ntest slaver2->master->server\n")
 		masterEcho = NewEcho("master")
 		slaver2Echo := NewEcho("client")
-		_, err = slaver2.Dail("master->xx", slaver2Echo)
+		_, err = slaver2.Dial("master->xx", slaver2Echo)
 		if err != nil {
 			t.Error(err)
 			return
@@ -130,7 +130,7 @@ func TestProxy(t *testing.T) {
 		fmt.Printf("\n\n\ntest slaver2->master->slaver->server\n")
 		slaverEcho = NewEcho("slaver")
 		slaver2Echo := NewEcho("client")
-		_, err = slaver2.Dail("master->slaver->xx", slaver2Echo)
+		_, err = slaver2.Dial("master->slaver->xx", slaver2Echo)
 		if err != nil {
 			t.Error(err)
 			return
@@ -153,7 +153,7 @@ func TestProxy(t *testing.T) {
 		fmt.Printf("\n\n\ntest multi channel\n")
 		var msEcho *Echo
 		ms0 := NewRouter("ms")
-		ms0.DailRaw = func(sid uint64, uri string) (conn Conn, err error) {
+		ms0.DialRaw = func(sid uint64, uri string) (conn Conn, err error) {
 			fmt.Println("ms test dail to ", uri)
 			conn = NewRawConn(msEcho, sid, uri, 4096)
 			return
@@ -174,7 +174,7 @@ func TestProxy(t *testing.T) {
 		for i := 0; i < 10; i++ {
 			msEcho = NewEcho("ms")
 			slaver2Echo := NewEcho("client")
-			_, err = slaver2.Dail("master->ms->xx", slaver2Echo)
+			_, err = slaver2.Dial("master->ms->xx", slaver2Echo)
 			if err != nil {
 				t.Error(err)
 				return
@@ -198,14 +198,14 @@ func TestProxy(t *testing.T) {
 		fmt.Printf("\n\n\ntest channel close\n")
 		slaver3Echo := NewEcho("slaver3")
 		slaver3 := NewRouter("slaver3")
-		slaver3.DailRaw = func(sid uint64, uri string) (conn Conn, err error) {
+		slaver3.DialRaw = func(sid uint64, uri string) (conn Conn, err error) {
 			fmt.Println("slaver3 test dail to ", uri)
 			conn = NewRawConn(slaver3Echo, sid, uri, 4096)
 			return
 		}
 		slaver3.Login("", "localhost:9232", "abc", 0)
 		slaver2Echo := NewEcho("client")
-		_, err = slaver2.Dail("master->slaver3->xx", slaver2Echo)
+		_, err = slaver2.Dial("master->slaver3->xx", slaver2Echo)
 		if err != nil {
 			t.Error(err)
 			return
@@ -227,7 +227,7 @@ func TestProxy(t *testing.T) {
 	}
 	{ //dial remote fail
 		slaver2Echo := NewEcho("client")
-		_, err = slaver2.Dail("master->error", slaver2Echo)
+		_, err = slaver2.Dial("master->error", slaver2Echo)
 		if err != nil {
 			t.Error(err)
 			return
@@ -244,7 +244,7 @@ func TestError(t *testing.T) {
 	master := NewProxy("master")
 	master.Router.ACL["ms"] = "abc"
 	var masterEcho *Echo
-	master.Router.DailRaw = func(sid uint64, uri string) (conn Conn, err error) {
+	master.Router.DialRaw = func(sid uint64, uri string) (conn Conn, err error) {
 		fmt.Println("master test dail to ", uri)
 		if uri == "error" {
 			err = fmt.Errorf("error")
@@ -266,7 +266,7 @@ func TestError(t *testing.T) {
 	//
 	// slaver := NewRouter("slaver")
 	// var slaverEcho *Echo
-	// slaver.DailRaw = func(sid uint64, uri string) (conn Conn, err error) {
+	// slaver.DialRaw = func(sid uint64, uri string) (conn Conn, err error) {
 	// 	fmt.Println("slaver test dail to ", uri)
 	// 	conn = NewRawConn(slaverEcho, sid, uri, 4096)
 	// 	// err = fmt.Errorf("error")
@@ -321,7 +321,7 @@ func TestError(t *testing.T) {
 		data = []byte("url")
 		copy(buf[13:], data)
 		echo = NewEcho("data")
-		err = master.Router.procDail(&Channel{ReadWriteCloser: echo}, buf, 16)
+		err = master.Router.procDial(&Channel{ReadWriteCloser: echo}, buf, 16)
 		if err != nil || echo.Recv != 1 {
 			t.Error(err)
 			return
@@ -330,7 +330,7 @@ func TestError(t *testing.T) {
 		data = []byte("x@error")
 		copy(buf[13:], data)
 		echo = NewEcho("data")
-		err = master.Router.procDail(&Channel{ReadWriteCloser: echo}, buf, uint32(len(data)+13))
+		err = master.Router.procDial(&Channel{ReadWriteCloser: echo}, buf, uint32(len(data)+13))
 		if err != nil || echo.Recv != 1 {
 			t.Error(err)
 			return
@@ -339,7 +339,7 @@ func TestError(t *testing.T) {
 		data = []byte("x@not->error")
 		copy(buf[13:], data)
 		echo = NewEcho("data")
-		err = master.Router.procDail(&Channel{ReadWriteCloser: echo}, buf, uint32(len(data)+13))
+		err = master.Router.procDial(&Channel{ReadWriteCloser: echo}, buf, uint32(len(data)+13))
 		if err != nil || echo.Recv != 1 {
 			t.Error(err)
 			return
@@ -348,24 +348,24 @@ func TestError(t *testing.T) {
 		data = []byte("x@xx->error")
 		copy(buf[13:], data)
 		echo = NewEcho("data")
-		err = master.Router.procDail(&Channel{ReadWriteCloser: echo}, buf, uint32(len(data)+13))
+		err = master.Router.procDial(&Channel{ReadWriteCloser: echo}, buf, uint32(len(data)+13))
 		if err != nil || echo.Recv != 1 {
 			t.Error(err)
 			return
 		}
 		//
 		//test dial error
-		_, err = master.Router.Dail("uri", NewEcho("testing"))
+		_, err = master.Router.Dial("uri", NewEcho("testing"))
 		if err == nil {
 			t.Error(err)
 			return
 		}
-		_, err = master.Router.Dail("not->abc", NewEcho("testing"))
+		_, err = master.Router.Dial("not->abc", NewEcho("testing"))
 		if err == nil {
 			t.Error(err)
 			return
 		}
-		_, err = master.Router.Dail("xx->abc", NewEcho("testing"))
+		_, err = master.Router.Dial("xx->abc", NewEcho("testing"))
 		if err == nil {
 			t.Error(err)
 			return
@@ -418,14 +418,14 @@ func TestError(t *testing.T) {
 		copy(buf[13:], []byte("error"))
 		//
 		binary.BigEndian.PutUint64(buf[5:], 1000)
-		err = master.Router.procDailBack(src, buf, 18)
+		err = master.Router.procDialBack(src, buf, 18)
 		if err != srcRaw.Err {
 			t.Error(err)
 			return
 		}
 		//
 		binary.BigEndian.PutUint64(buf[5:], 2000)
-		err = master.Router.procDailBack(src, buf, 18)
+		err = master.Router.procDialBack(src, buf, 18)
 		if err != srcRaw.Err {
 			t.Error(err)
 			return
@@ -501,4 +501,22 @@ func (e *ErrReadWriteCloser) Close() (err error) {
 		err = e.Err
 	}
 	return
+}
+
+func TestDialTCP(t *testing.T) {
+	_, err := DialTCP(10, "tcp://localhost:80")
+	if err != nil {
+		t.Error("error")
+		return
+	}
+	_, err = DialTCP(10, "tcp:localhost:80")
+	if err == nil {
+		t.Error("error")
+		return
+	}
+	_, err = DialTCP(10, "tcp://localhost:80%EX%B8%AD%E6%96%87")
+	if err == nil {
+		t.Error("error")
+		return
+	}
 }

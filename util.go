@@ -56,6 +56,7 @@ func writeCmd(r io.Writer, b []byte, cmd byte, sid uint64, msg []byte) (err erro
 	return
 }
 
+//Log is the bsck package default log
 var Log = log.New(os.Stdout, "", log.LstdFlags|log.Lshortfile)
 
 func debugLog(format string, args ...interface{}) {

@@ -7,22 +7,31 @@ import (
 	"io"
 	"math"
 	"net"
+	"net/url"
 	"strings"
 	"sync"
 	"sync/atomic"
 )
 
 const (
-	CmdLogin     = 10
+	//CmdLogin is the command of login to master
+	CmdLogin = 10
+	//CmdLoginBack is the command of login return from master
 	CmdLoginBack = 11
-	CmdDial      = 100
-	CmdDialBack  = 101
-	CmdData      = 110
-	CmdClosed    = 120
+	//CmdDial is the command of tcp dial by router
+	CmdDial = 100
+	//CmdDialBack is the command of tcp dial back from master/slaver
+	CmdDialBack = 101
+	//CmdData is the command of transfter tcp data
+	CmdData = 110
+	//CmdClosed is the command of tcp closed.
+	CmdClosed = 120
 )
 
 const (
-	ConnTypeRaw     = 100
+	//ConnTypeRaw is the type of raw connection
+	ConnTypeRaw = 100
+	//ConnTypeChannel is the type of channel connection
 	ConnTypeChannel = 200
 )
 
@@ -45,25 +54,47 @@ func cmdString(cmd byte) string {
 	}
 }
 
+//Conn is the interface that wraps the connection will be running on Router.
+//
+//ID is the unique of connection
+//
+//Name is the channel name, it will be used when join current connection to channel
+//
+//Index is the channel index, it will be used when join current connection to channel.
+//
+//Type is the connection type by ConnTypeRaw/ConnTypeChannel
 type Conn interface {
+	//the basic ReadWriteCloser
 	io.ReadWriteCloser
+	//the connection id
 	ID() uint64
+	//the channel name
 	Name() string
+	//the channel index.
 	Index() int
+	//the connection type
 	Type() int
 }
 
+//CmdReader is the interface that wraps the basic ReadCmd method.
+//
+//ReadCmd will read one command to b buffer, return the command length
+//
+//the command mode is length(4 byte)|data
 type CmdReader interface {
 	ReadCmd(b []byte) (n uint32, err error)
 }
 
+//RawConn is an implementation of the Conn interface for raw network connections.
 type RawConn struct {
+	//the raw connection
 	Raw io.ReadWriteCloser
 	sid uint64
 	uri string
 }
 
-func NewRawConn(raw io.ReadWriteCloser, sid uint64, uri string, bufferSize int) (conn *RawConn) {
+// NewRawConn returns a new RawConn by raw connection/session id/uri
+func NewRawConn(raw io.ReadWriteCloser, sid uint64, uri string) (conn *RawConn) {
 	conn = &RawConn{
 		Raw: raw,
 		sid: sid,
@@ -82,6 +113,7 @@ func (r *RawConn) Read(b []byte) (n int, err error) {
 	panic("not supported")
 }
 
+//ReadCmd is an implementation of CmdReader
 func (r *RawConn) ReadCmd(b []byte) (n uint32, err error) {
 	var readed int
 	readed, err = r.Raw.Read(b[13:])
@@ -94,65 +126,102 @@ func (r *RawConn) ReadCmd(b []byte) (n uint32, err error) {
 	return
 }
 
+//Close will close the raw connection
 func (r *RawConn) Close() (err error) {
 	err = r.Raw.Close()
 	return
 }
 
+//ID is an implementation of Conn
 func (r *RawConn) ID() uint64 {
 	return r.sid
 }
+
+//Name is an implementation of Conn
 func (r *RawConn) Name() string {
 	return ""
 }
+
+//Index is an implementation of Conn
 func (r *RawConn) Index() int {
 	return 0
 }
-func (r *RawConn) String() string {
-	return fmt.Sprintf("raw:%v", r.uri)
-}
+
+//Type is an implementation of Conn
 func (r *RawConn) Type() int {
 	return ConnTypeRaw
 }
 
+func (r *RawConn) String() string {
+	return fmt.Sprintf("raw:%v", r.uri)
+}
+
+//Channel is an implementation of the Conn interface for channel network connections.
 type Channel struct {
+	//the raw connection
 	io.ReadWriteCloser
 	cid   uint64
 	name  string
 	index int
 }
 
+//ID is an implementation of Conn
 func (c *Channel) ID() uint64 {
 	return c.cid
 }
 
+//Name is an implementation of Conn
 func (c *Channel) Name() string {
 	return c.name
 }
 
+//Index is an implementation of Conn
 func (c *Channel) Index() int {
 	return c.index
+}
+
+//Type is an implementation of Conn
+func (c *Channel) Type() int {
+	return ConnTypeChannel
 }
 
 func (c *Channel) String() string {
 	return fmt.Sprintf("channel:%v,%v,%v", c.name, c.index, c.cid)
 }
 
-func (c *Channel) Type() int {
-	return ConnTypeChannel
+//DialRawF is a function type to dial raw connection.
+type DialRawF func(sid uint64, uri string) (raw Conn, err error)
+
+//DialTCP is an implementation of DialRawF for tcp raw connection.
+func DialTCP(sid uint64, uri string) (raw Conn, err error) {
+	targetURI, err := url.Parse(uri)
+	if err != nil {
+		return
+	}
+	conn, err := net.Dial("tcp", targetURI.Host)
+	if err == nil {
+		raw = NewRawConn(conn, sid, uri)
+	}
+	return
 }
 
-type DailRawF func(sid uint64, uri string) (raw Conn, err error)
-
+//AuthOption is a pojo struct to login auth.
 type AuthOption struct {
-	Index int    `json:"index"`
-	Name  string `json:"name"`
+	//the channel index
+	Index int `json:"index"`
+	//the chnnale name
+	Name string `json:"name"`
+	//the auth token
 	Token string `json:"token"`
 }
 
+//ChannelOption is a pojo struct for adding channel to Router
 type ChannelOption struct {
-	Token  string `json:"token"`
-	Local  string `json:"local"`
+	//the auth token
+	Token string `json:"token"`
+	//local tcp address to connection master
+	Local string `json:"local"`
+	//the remote address to login
 	Remote string `json:"remote"`
 }
 
@@ -170,8 +239,10 @@ func newBondChannel() *bondChannel {
 	}
 }
 
+//TableRouter is the router table item
 type TableRouter []interface{}
 
+//Next will return next connection and session id
 func (t TableRouter) Next(conn Conn) (target Conn, rsid uint64) {
 	if t[0] == conn {
 		target = t[2].(Conn)
@@ -183,21 +254,21 @@ func (t TableRouter) Next(conn Conn) (target Conn, rsid uint64) {
 	return
 }
 
+//Router is an implementation of the router control
 type Router struct {
-	Name            string
-	BufferSize      uint32
+	Name            string            //current router name
+	BufferSize      uint32            //buffer size of connection runner
+	DialRaw         DialRawF          //the function to dial raw connection
+	ACL             map[string]string //the access control
+	aclLck          sync.RWMutex
 	connectSequence uint64
 	channel         map[string]*bondChannel
 	channelLck      sync.RWMutex
 	table           map[string]TableRouter
 	tableLck        sync.RWMutex
-	//
-	ACL    map[string]string
-	aclLck sync.RWMutex
-	//
-	DailRaw DailRawF
 }
 
+//NewRouter will return new Router by name
 func NewRouter(name string) (router *Router) {
 	router = &Router{
 		Name:       name,
@@ -212,6 +283,8 @@ func NewRouter(name string) (router *Router) {
 	return
 }
 
+//Accept one raw connecton as channel,
+//it will auth the raw connecton by ACL.
 func (r *Router) Accept(raw io.ReadWriteCloser) {
 	channel := &Channel{
 		ReadWriteCloser: raw,
@@ -220,6 +293,7 @@ func (r *Router) Accept(raw io.ReadWriteCloser) {
 	go r.loopReadRaw(channel, r.BufferSize)
 }
 
+//Register one logined raw connecton to channel,
 func (r *Router) Register(name string, index int, raw io.ReadWriteCloser) {
 	channel := &Channel{
 		ReadWriteCloser: raw,
@@ -231,6 +305,7 @@ func (r *Router) Register(name string, index int, raw io.ReadWriteCloser) {
 	go r.loopReadRaw(channel, r.BufferSize)
 }
 
+//Bind one raw connection to channel by session.
 func (r *Router) Bind(src Conn, srcSid uint64, dst Conn, dstSid uint64) {
 	r.addTable(src, srcSid, dst, dstSid)
 	go r.loopReadRaw(dst, r.BufferSize)
@@ -249,6 +324,7 @@ func (r *Router) addChannel(channel Conn) {
 	r.channelLck.Unlock()
 }
 
+//SelectChannel will pick one channel by name.
 func (r *Router) SelectChannel(name string) (dst Conn) {
 	r.channelLck.RLock()
 	bond := r.channel[name]
@@ -321,9 +397,9 @@ func (r *Router) loopReadRaw(channel Conn, bufferSize uint32) {
 		case CmdLogin:
 			err = r.procLogin(channel, buf, length)
 		case CmdDial:
-			err = r.procDail(channel, buf, length)
+			err = r.procDial(channel, buf, length)
 		case CmdDialBack:
-			err = r.procDailBack(channel, buf, length)
+			err = r.procDialBack(channel, buf, length)
 		case CmdData:
 			err = r.procChannelData(channel, buf, length)
 		case CmdClosed:
@@ -404,7 +480,7 @@ func (r *Router) procLogin(conn Conn, buf []byte, length uint32) (err error) {
 	return
 }
 
-func (r *Router) procDail(channel Conn, buf []byte, length uint32) (err error) {
+func (r *Router) procDial(channel Conn, buf []byte, length uint32) (err error) {
 	sid := binary.BigEndian.Uint64(buf[5:])
 	conn := string(buf[13:length])
 	debugLog("Router(%v) proc dail to %v on channel(%v)", r.Name, conn, channel)
@@ -416,7 +492,7 @@ func (r *Router) procDail(channel Conn, buf []byte, length uint32) (err error) {
 	parts := strings.SplitN(path[1], "->", 2)
 	if len(parts) < 2 {
 		dstSid := atomic.AddUint64(&r.connectSequence, 1)
-		raw, cerr := r.DailRaw(dstSid, parts[0])
+		raw, cerr := r.DialRaw(dstSid, parts[0])
 		if cerr != nil {
 			err = writeCmd(channel, buf, CmdDialBack, sid, []byte(fmt.Sprintf("dial to uri(%v) fail with %v", parts[0], cerr)))
 			return
@@ -444,7 +520,7 @@ func (r *Router) procDail(channel Conn, buf []byte, length uint32) (err error) {
 	return
 }
 
-func (r *Router) procDailBack(channel Conn, buf []byte, length uint32) (err error) {
+func (r *Router) procDialBack(channel Conn, buf []byte, length uint32) (err error) {
 	sid := binary.BigEndian.Uint64(buf[5:])
 	debugLog("Router(%v) proc dail back by %v on channel(%v)", r.Name, sid, channel)
 	r.tableLck.RLock()
@@ -513,7 +589,10 @@ func (r *Router) procClosed(channel Conn, buf []byte, length uint32) (err error)
 	return
 }
 
-func (r *Router) Dail(uri string, raw io.ReadWriteCloser) (sid uint64, err error) {
+//Dial to remote by uri and bind channel to raw connection.
+//
+//return the session id
+func (r *Router) Dial(uri string, raw io.ReadWriteCloser) (sid uint64, err error) {
 	parts := strings.SplitN(uri, "->", 2)
 	if len(parts) < 2 {
 		err = fmt.Errorf("invalid uri(%v), it must like x->y", uri)
@@ -526,7 +605,7 @@ func (r *Router) Dail(uri string, raw io.ReadWriteCloser) (sid uint64, err error
 	}
 	debugLog("Router(%v) start dail to %v on channel(%v)", r.Name, uri, channel)
 	sid = atomic.AddUint64(&r.connectSequence, 1)
-	dst := NewRawConn(raw, sid, uri, 4096)
+	dst := NewRawConn(raw, sid, uri)
 	r.addTable(channel, sid, dst, sid)
 	err = writeCmd(channel, make([]byte, 4096), CmdDial, sid, []byte(fmt.Sprintf("%v@%v", parts[0], parts[1])))
 	if err != nil {
@@ -535,6 +614,7 @@ func (r *Router) Dail(uri string, raw io.ReadWriteCloser) (sid uint64, err error
 	return
 }
 
+//LoginChannel will login all channel by options.
 func (r *Router) LoginChannel(channels ...*ChannelOption) (err error) {
 	for index, channel := range channels {
 		err = r.Login(channel.Local, channel.Remote, channel.Token, index)
@@ -545,6 +625,7 @@ func (r *Router) LoginChannel(channels ...*ChannelOption) (err error) {
 	return
 }
 
+//Login will add channel by local address, master address, auth token, channel index.
 func (r *Router) Login(local, address, token string, index int) (err error) {
 	infoLog("Router(%v) start dial to %v", r.Name, address)
 	var dialer net.Dialer
@@ -563,6 +644,7 @@ func (r *Router) Login(local, address, token string, index int) (err error) {
 	return
 }
 
+//JoinConn will add channel by the connected connection, auth token, channel index
 func (r *Router) JoinConn(conn io.ReadWriteCloser, token string, index int) (err error) {
 	data, _ := json.Marshal(&AuthOption{
 		Name:  r.Name,
