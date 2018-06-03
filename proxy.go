@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"io"
 	"net"
+	"net/url"
 	"sync"
 	"time"
 )
@@ -70,7 +71,11 @@ func (p *Proxy) ListenMaster(addr string) (err error) {
 
 //StartForward will forward address to uri
 func (p *Proxy) StartForward(addr, uri string) (err error) {
-	listener, err := net.Listen("tcp", addr)
+	target, err := url.Parse(addr)
+	if err != nil {
+		return
+	}
+	listener, err := net.Listen("tcp", target.Host)
 	if err == nil {
 		p.forwardsLck.Lock()
 		p.forwards[listener.Addr().String()] = []interface{}{listener, addr, uri}

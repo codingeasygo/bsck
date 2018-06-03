@@ -1,6 +1,21 @@
 {
     "name": "r0",
     "listen": ":2023",
-    "forwards": {},
+    "web": {
+        "listen": ":2024",
+        "suffix": ".test.loc:2024",
+        "auth": ""
+    },
+    "socks5": ":1081",
+    "forwards": {
+        "web://t0": "http://127.0.0.1:80",
+        "web://t1": "http://web?dir=/tmp",
+        "web://b0": "tcp://cmd?exec=bash",
+        "ws://b1": "tcp://cmd?exec=bash",
+        "ws://b2": "tcp://cmd?exec=/bin/bash",
+        "ws://b3": "tcp://cmd?exec=/bin/echo",
+        "ws://b4": "tcp://cmd?exec=./bsrouter/xx/xx",
+        "tcp://:2332": "tcp://cmd?exec=bash"
+    },
     "channels": []
 }

@@ -3,29 +3,40 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
+	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 
 	"github.com/sutils/bsck"
 	"github.com/sutils/dialer"
 )
 
+type Web struct {
+	Suffix string `json:"suffix"`
+	Listen string `json:"listen"`
+	Auth   string `json:"auth"`
+}
+
 type Config struct {
 	Name     string                `json:"name"`
 	Listen   string                `json:"listen"`
+	Socks5   string                `json:"socks5"`
+	Web      Web                   `json:"web"`
 	ShowLog  int                   `json:"showlog"`
-	Forwards map[string]string     `json:"forwads"`
+	Forwards map[string]string     `json:"forwards"`
 	Channels []*bsck.ChannelOption `json:"channels"`
 }
 
 const Version = "1.0.0"
 
 func main() {
-	if len(os.Args) < 3 {
+	if len(os.Args) > 1 && os.Args[1] == "-h" {
 		fmt.Fprintf(os.Stderr, "Bond Socket Router Version %v\n", Version)
-		fmt.Fprintf(os.Stderr, "Usage:  %v -c configure\n", "bsrouter")
-		fmt.Fprintf(os.Stderr, "        %v -c /etc/bsrouter.json'\n", "bsrouter")
+		fmt.Fprintf(os.Stderr, "Usage:  %v configure\n", "bsrouter")
+		fmt.Fprintf(os.Stderr, "        %v /etc/bsrouter.json'\n", "bsrouter")
 		fmt.Fprintf(os.Stderr, "bsrouter options:\n")
 		fmt.Fprintf(os.Stderr, "        name\n")
 		fmt.Fprintf(os.Stderr, "             the router name\n")
@@ -46,10 +57,25 @@ func main() {
 		os.Exit(1)
 	}
 	var config Config
-	data, err := ioutil.ReadFile(os.Args[2])
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "read config from %v fail with %v", os.Args[2], err)
-		os.Exit(1)
+	var err error
+	var data []byte
+	if len(os.Args) > 1 {
+		data, err = ioutil.ReadFile(os.Args[1])
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "read config from %v fail with %v\n", os.Args[1], err)
+			os.Exit(1)
+		}
+	} else {
+		for _, path := range []string{"./.bsrouter.json", "~/.bsrouter.json", "/etc/bsrouer.json"} {
+			data, err = ioutil.ReadFile(path)
+			if err == nil {
+				break
+			}
+		}
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "read config from .bsrouter.json/~/.bsrouter.json/etc/bsrouer.json fail with %v\n", err)
+			os.Exit(1)
+		}
 	}
 	err = json.Unmarshal(data, &config)
 	if err != nil {
@@ -62,7 +88,24 @@ func main() {
 	dialerPool.AddDialer(dialer.NewEchoDialer())
 	dialerPool.AddDialer(dialer.NewWebDialer())
 	dialerPool.AddDialer(dialer.NewTCPDialer())
+	socks5 := bsck.NewSocksProxy()
+	forward := bsck.NewForward()
 	proxy := bsck.NewProxy(config.Name)
+	var dailer = func(uri string, raw io.ReadWriteCloser) (sid uint64, err error) {
+		if strings.Contains(uri, "->") {
+			sid, err = proxy.Dial(uri, raw)
+		} else {
+			var conn io.ReadWriteCloser
+			conn, err = dialerPool.Dial(0, uri)
+			if err == nil {
+				go io.Copy(raw, conn)
+				go io.Copy(conn, raw)
+			}
+		}
+		return
+	}
+	socks5.Dailer = dailer
+	forward.Dailer = dailer
 	proxy.Handler = bsck.DialRawF(func(sid uint64, uri string) (conn bsck.Conn, err error) {
 		raw, err := dialerPool.Dial(sid, uri)
 		if err == nil {
@@ -85,16 +128,44 @@ func main() {
 		}
 	}
 	for loc, uri := range config.Forwards {
-		err := proxy.StartForward(loc, uri)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "start forward by %v fail with %v", loc+"->"+uri, err)
-			os.Exit(1)
+		if strings.HasPrefix(loc, "tcp://") {
+			err := proxy.StartForward(loc, uri)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "start forward by %v fail with %v", loc+"->"+uri, err)
+				os.Exit(1)
+			}
+		} else {
+			err := forward.AddForward(loc, uri)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "add forward by %v fail with %v", loc+"->"+uri, err)
+				os.Exit(1)
+			}
 		}
 	}
 	proxy.StartHeartbeat()
+	if len(config.Socks5) > 0 {
+		err := socks5.Start(config.Socks5)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "start socks5 by %v fail with %v", config.Socks5, err)
+			os.Exit(1)
+		}
+	}
+	http.HandleFunc("/dav/", forward.ProcWebSubsH)
+	http.HandleFunc("/ws/", forward.ProcWebSubsH)
+	http.HandleFunc("/", forward.HostForwardF)
+	forward.WebAuth = config.Web.Auth
+	forward.WebSuffix = config.Web.Suffix
+	server := &http.Server{Addr: config.Web.Listen}
+	if len(config.Web.Listen) > 0 {
+		go func() {
+			bsck.Log.Printf("I bsrouter listen web on %v\n", config.Web.Listen)
+			fmt.Println(server.ListenAndServe())
+		}()
+	}
 	wc := make(chan os.Signal, 1)
 	signal.Notify(wc, os.Interrupt, os.Kill)
 	<-wc
 	fmt.Println("clear bsrouter...")
 	proxy.Close()
+	server.Close()
 }

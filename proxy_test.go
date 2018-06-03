@@ -650,7 +650,7 @@ func TestForward(t *testing.T) {
 	//
 	//test forward
 	//
-	err = client.StartForward(":2335", "master->slaver->xx")
+	err = client.StartForward("tcp://:2335", "master->slaver->xx")
 	if err != nil {
 		t.Error(err)
 		return
@@ -677,7 +677,7 @@ func TestForward(t *testing.T) {
 	//
 	//test forward error
 	fmt.Printf("\n\n\ntest forward error\n")
-	err = client.StartForward(":2336", "not->xx->xx")
+	err = client.StartForward("tcp://:2336", "not->xx->xx")
 	if err != nil {
 		t.Error(err)
 		return
