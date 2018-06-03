@@ -41,7 +41,7 @@ type Proxy struct {
 	master         net.Listener
 	forwards       map[string]forwad
 	forwardsLck    sync.RWMutex
-	tcpDialer      *TCPDailer
+	Handler        RouterHandler
 }
 
 //NewProxy will return new Proxy by name
@@ -50,7 +50,7 @@ func NewProxy(name string) (proxy *Proxy) {
 		Router:         NewRouter(name),
 		forwards:       map[string]forwad{},
 		forwardsLck:    sync.RWMutex{},
-		tcpDialer:      NewTCPDailer(),
+		Handler:        NewTCPDailer(),
 		Running:        true,
 		ReconnectDelay: 3 * time.Second,
 	}
@@ -157,6 +157,6 @@ func (p *Proxy) OnConnClose(conn Conn) error {
 
 //DialRaw will dial raw connection
 func (p *Proxy) DialRaw(sid uint64, uri string) (raw Conn, err error) {
-	raw, err = p.tcpDialer.DialRaw(sid, uri)
+	raw, err = p.Handler.DialRaw(sid, uri)
 	return
 }

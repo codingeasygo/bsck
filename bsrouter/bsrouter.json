@@ -1,0 +1,6 @@
+{
+    "name": "r0",
+    "listen": ":2023",
+    "forwards": {},
+    "channels": []
+}

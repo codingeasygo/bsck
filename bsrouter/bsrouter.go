@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"os/signal"
 
 	"github.com/sutils/bsck"
+	"github.com/sutils/dialer"
 )
 
 type Config struct {
@@ -55,7 +57,19 @@ func main() {
 		os.Exit(1)
 	}
 	bsck.ShowLog = config.ShowLog
+	dialerPool := dialer.NewPool()
+	dialerPool.AddDialer(dialer.NewCmdDialer())
+	dialerPool.AddDialer(dialer.NewEchoDialer())
+	dialerPool.AddDialer(dialer.NewWebDialer())
+	dialerPool.AddDialer(dialer.NewTCPDialer())
 	proxy := bsck.NewProxy(config.Name)
+	proxy.Handler = bsck.DialRawF(func(sid uint64, uri string) (conn bsck.Conn, err error) {
+		raw, err := dialerPool.Dial(sid, uri)
+		if err == nil {
+			conn = bsck.NewRawConn(raw, sid, uri)
+		}
+		return
+	})
 	if len(config.Listen) > 0 {
 		err := proxy.ListenMaster(config.Listen)
 		if err != nil {
@@ -78,6 +92,9 @@ func main() {
 		}
 	}
 	proxy.StartHeartbeat()
-	wc := make(chan int)
-	wc <- 1
+	wc := make(chan os.Signal, 1)
+	signal.Notify(wc, os.Interrupt, os.Kill)
+	<-wc
+	fmt.Println("clear bsrouter...")
+	proxy.Close()
 }
