@@ -3,6 +3,7 @@ case "$1" in
   -i)
     useradd bsrouter
     cp -f bsrouter /usr/local/bin/bsrouter
+    cp -f bsconsole /usr/local/bin/bsconsole
     cp -f bsrouter.service /etc/systemd/system/
     mkdir -p /etc/bsrouter
     cp -f bsrouter.json /etc/bsrouter

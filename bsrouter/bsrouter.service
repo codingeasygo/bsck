@@ -5,7 +5,7 @@ After=network.target
 [Service]
 User=bsrouter
 Restart=always
-WorkingDirectory=~
+WorkingDirectory=/home/bsrouter
 ExecStart=/usr/local/bin/bsrouter
 
 [Install]
