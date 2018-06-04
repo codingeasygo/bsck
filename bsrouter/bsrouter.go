@@ -10,6 +10,7 @@ import (
 	"os/signal"
 	"strings"
 
+	"github.com/Centny/gwf/util"
 	"github.com/sutils/bsck"
 	"github.com/sutils/dialer"
 )
@@ -22,12 +23,15 @@ type Web struct {
 
 type Config struct {
 	Name     string                `json:"name"`
+	Cert     string                `json:"cert"`
+	Key      string                `json:"key"`
 	Listen   string                `json:"listen"`
 	Socks5   string                `json:"socks5"`
 	Web      Web                   `json:"web"`
 	ShowLog  int                   `json:"showlog"`
 	Forwards map[string]string     `json:"forwards"`
 	Channels []*bsck.ChannelOption `json:"channels"`
+	Dialer   util.Map              `json:"dialer"`
 }
 
 const Version = "1.0.0"
@@ -66,14 +70,15 @@ func main() {
 			os.Exit(1)
 		}
 	} else {
-		for _, path := range []string{"./.bsrouter.json", "~/.bsrouter.json", "/etc/bsrouer.json"} {
+		for _, path := range []string{"./.bsrouter.json", "./bsrouter.json", "~/.bsrouter.json", "/etc/bsrouter/bsrouter.json", "/etc/bsrouer.json"} {
 			data, err = ioutil.ReadFile(path)
 			if err == nil {
+				fmt.Printf("bsrouter using config from %v\n", path)
 				break
 			}
 		}
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "read config from .bsrouter.json/~/.bsrouter.json/etc/bsrouer.json fail with %v\n", err)
+			fmt.Fprintf(os.Stderr, "read config from .bsrouter.json or ~/.bsrouter.json or /etc/bsrouter/bsrouter.json or /etc/bsrouter.json fail with %v\n", err)
 			os.Exit(1)
 		}
 	}
@@ -84,13 +89,13 @@ func main() {
 	}
 	bsck.ShowLog = config.ShowLog
 	dialerPool := dialer.NewPool()
-	dialerPool.AddDialer(dialer.NewCmdDialer())
-	dialerPool.AddDialer(dialer.NewEchoDialer())
-	dialerPool.AddDialer(dialer.NewWebDialer())
-	dialerPool.AddDialer(dialer.NewTCPDialer())
+	dialerPool.AddDialer(config.Dialer,
+		dialer.NewCmdDialer(), dialer.NewEchoDialer(),
+		dialer.NewWebDialer(), dialer.NewTCPDialer())
 	socks5 := bsck.NewSocksProxy()
 	forward := bsck.NewForward()
 	proxy := bsck.NewProxy(config.Name)
+	proxy.Cert, proxy.Key = config.Cert, config.Key
 	var dailer = func(uri string, raw io.ReadWriteCloser) (sid uint64, err error) {
 		if strings.Contains(uri, "->") {
 			sid, err = proxy.Dial(uri, raw)
@@ -98,8 +103,16 @@ func main() {
 			var conn io.ReadWriteCloser
 			conn, err = dialerPool.Dial(0, uri)
 			if err == nil {
-				go io.Copy(raw, conn)
-				go io.Copy(conn, raw)
+				go func() {
+					io.Copy(raw, conn)
+					raw.Close()
+					conn.Close()
+				}()
+				go func() {
+					io.Copy(conn, raw)
+					raw.Close()
+					conn.Close()
+				}()
 			}
 		}
 		return

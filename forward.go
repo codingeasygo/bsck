@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/sutils/dialer"
 	"golang.org/x/net/websocket"
@@ -209,7 +210,8 @@ func (f *Forward) RemoveForward(local string) (err error) {
 
 type WaitReadWriteCloser struct {
 	io.ReadWriteCloser
-	wc chan int
+	wc     chan int
+	closed uint32
 }
 
 func NewWaitReadWriteCloser(raw io.ReadWriteCloser) *WaitReadWriteCloser {
@@ -220,11 +222,15 @@ func NewWaitReadWriteCloser(raw io.ReadWriteCloser) *WaitReadWriteCloser {
 }
 
 func (w *WaitReadWriteCloser) Close() (err error) {
-	err = w.ReadWriteCloser.Close()
-	close(w.wc)
+	if atomic.CompareAndSwapUint32(&w.closed, 0, 1) {
+		err = w.ReadWriteCloser.Close()
+		close(w.wc)
+	}
 	return
 }
 
 func (w *WaitReadWriteCloser) Wait() {
-	<-w.wc
+	if atomic.LoadUint32(&w.closed) == 0 {
+		<-w.wc
+	}
 }

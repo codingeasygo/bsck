@@ -689,36 +689,6 @@ func (r *Router) Dial(uri string, raw io.ReadWriteCloser) (sid uint64, err error
 	return
 }
 
-//LoginChannel will login all channel by options.
-func (r *Router) LoginChannel(channels ...*ChannelOption) (err error) {
-	for _, channel := range channels {
-		err = r.Login(channel)
-		if err != nil {
-			return
-		}
-	}
-	return
-}
-
-//Login will add channel by local address, master address, auth token, channel index.
-func (r *Router) Login(option *ChannelOption) (err error) {
-	infoLog("Router(%v) start dial to %v", r.Name, option.Remote)
-	var dialer net.Dialer
-	if len(option.Local) > 0 {
-		dialer.LocalAddr, err = net.ResolveTCPAddr("tcp", option.Local)
-		if err != nil {
-			return
-		}
-	}
-	conn, err := dialer.Dial("tcp", option.Remote)
-	if err != nil {
-		warnLog("Router dial to %v fail with %v", option.Remote, err)
-		return
-	}
-	err = r.JoinConn(conn, option)
-	return
-}
-
 //JoinConn will add channel by the connected connection, auth token, channel index
 func (r *Router) JoinConn(conn io.ReadWriteCloser, option *ChannelOption) (err error) {
 	data, _ := json.Marshal(&AuthOption{

@@ -14,3 +14,7 @@
 coverage.html
 
 coverage.json
+
+bsrouter/build
+bsrouter/bsrouter.key
+bsrouter/bsrouter.pem
