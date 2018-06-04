@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Centny/gwf/util"
 	"github.com/sutils/dialer"
 
 	"golang.org/x/net/websocket"
@@ -37,10 +38,9 @@ func hget(format string, args ...interface{}) (data string, err error) {
 
 func TestForward(t *testing.T) {
 	dialerPool := dialer.NewPool()
-	dialerPool.AddDialer(dialer.NewCmdDialer())
-	dialerPool.AddDialer(dialer.NewEchoDialer())
-	dialerPool.AddDialer(dialer.NewWebDialer())
-	dialerPool.AddDialer(dialer.NewTCPDialer())
+	dialerPool.AddDialer(util.Map{},
+		dialer.NewCmdDialer(), dialer.NewEchoDialer(),
+		dialer.NewWebDialer(), dialer.NewTCPDialer())
 	//
 
 	forward := NewForward()

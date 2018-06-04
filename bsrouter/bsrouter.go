@@ -29,6 +29,7 @@ type Config struct {
 	Socks5   string                `json:"socks5"`
 	Web      Web                   `json:"web"`
 	ShowLog  int                   `json:"showlog"`
+	LogFlags int                   `json:"logflags"`
 	Forwards map[string]string     `json:"forwards"`
 	Channels []*bsck.ChannelOption `json:"channels"`
 	Dialer   util.Map              `json:"dialer"`
@@ -86,6 +87,9 @@ func main() {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "parse config from %v fail with %v", os.Args[2], err)
 		os.Exit(1)
+	}
+	if config.LogFlags > 0 {
+		bsck.Log.SetFlags(config.LogFlags)
 	}
 	bsck.ShowLog = config.ShowLog
 	dialerPool := dialer.NewPool()

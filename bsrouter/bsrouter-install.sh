@@ -2,6 +2,8 @@
 case "$1" in
   -i)
     useradd bsrouter
+    mkdir -p /home/bsrouter
+    chown -R bsrouter:bsrouter /home/bsrouter
     cp -f bsrouter /usr/local/bin/bsrouter
     cp -f bsconsole /usr/local/bin/bsconsole
     cp -f bsrouter.service /etc/systemd/system/

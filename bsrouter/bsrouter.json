@@ -11,5 +11,7 @@
     "socks5": "",
     "forwards": {},
     "channels": [],
-    "dialer": {}
+    "dialer": {},
+    "showlog": 0,
+    "logflags": 16
 }
