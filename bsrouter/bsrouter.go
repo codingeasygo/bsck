@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"os/user"
+	"regexp"
 	"strings"
 
 	"github.com/Centny/gwf/util"
@@ -26,6 +28,7 @@ type Config struct {
 	Cert     string                `json:"cert"`
 	Key      string                `json:"key"`
 	Listen   string                `json:"listen"`
+	ACL      map[string]string     `json:"acl"`
 	Socks5   string                `json:"socks5"`
 	Web      Web                   `json:"web"`
 	ShowLog  int                   `json:"showlog"`
@@ -35,7 +38,7 @@ type Config struct {
 	Dialer   util.Map              `json:"dialer"`
 }
 
-const Version = "1.0.0"
+const Version = "1.1.0"
 
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "-h" {
@@ -71,7 +74,8 @@ func main() {
 			os.Exit(1)
 		}
 	} else {
-		for _, path := range []string{"./.bsrouter.json", "./bsrouter.json", "~/.bsrouter.json", "/etc/bsrouter/bsrouter.json", "/etc/bsrouer.json"} {
+		u, _ := user.Current()
+		for _, path := range []string{"./.bsrouter.json", "./bsrouter.json", u.HomeDir + "/.bsrouter/bsrouter.json", u.HomeDir + "/.bsrouter.json", "/etc/bsrouter/bsrouter.json", "/etc/bsrouer.json"} {
 			data, err = ioutil.ReadFile(path)
 			if err == nil {
 				fmt.Printf("bsrouter using config from %v\n", path)
@@ -85,7 +89,7 @@ func main() {
 	}
 	err = json.Unmarshal(data, &config)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "parse config from %v fail with %v", os.Args[2], err)
+		fmt.Fprintf(os.Stderr, "parse config fail with %v\n", err)
 		os.Exit(1)
 	}
 	if config.LogFlags > 0 {
@@ -100,10 +104,13 @@ func main() {
 	forward := bsck.NewForward()
 	proxy := bsck.NewProxy(config.Name)
 	proxy.Cert, proxy.Key = config.Cert, config.Key
+	if len(config.ACL) > 0 {
+		proxy.ACL = config.ACL
+	}
 	var dailer = func(uri string, raw io.ReadWriteCloser) (sid uint64, err error) {
 		if strings.Contains(uri, "->") {
 			sid, err = proxy.Dial(uri, raw)
-		} else {
+		} else if regexp.MustCompile("^[A-Za-z0-9]*://.*$").MatchString(uri) {
 			var conn io.ReadWriteCloser
 			conn, err = dialerPool.Dial(0, uri)
 			if err == nil {
@@ -118,6 +125,13 @@ func main() {
 					conn.Close()
 				}()
 			}
+		} else {
+			router := forward.FindForward(strings.SplitN(uri, "?", 2)[0])
+			if len(router) < 1 {
+				err = fmt.Errorf("forward not found by %v", uri)
+				return
+			}
+			sid, err = proxy.Dial(router[1], raw)
 		}
 		return
 	}
@@ -133,14 +147,14 @@ func main() {
 	if len(config.Listen) > 0 {
 		err := proxy.ListenMaster(config.Listen)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "start master on %v fail with %v", config.Listen, err)
+			fmt.Fprintf(os.Stderr, "start master on %v fail with %v\n", config.Listen, err)
 			os.Exit(1)
 		}
 	}
 	if len(config.Channels) > 0 {
 		err := proxy.LoginChannel(config.Channels...)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "start master on %v fail with %v", config.Listen, err)
+			fmt.Fprintf(os.Stderr, "start master on %v fail with %v\n", config.Listen, err)
 			os.Exit(1)
 		}
 	}
@@ -148,13 +162,13 @@ func main() {
 		if strings.HasPrefix(loc, "tcp://") {
 			err := proxy.StartForward(loc, uri)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "start forward by %v fail with %v", loc+"->"+uri, err)
+				fmt.Fprintf(os.Stderr, "start forward by %v fail with %v\n", loc+"->"+uri, err)
 				os.Exit(1)
 			}
 		} else {
 			err := forward.AddForward(loc, uri)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "add forward by %v fail with %v", loc+"->"+uri, err)
+				fmt.Fprintf(os.Stderr, "add forward by %v fail with %v\n", loc+"->"+uri, err)
 				os.Exit(1)
 			}
 		}
@@ -163,7 +177,7 @@ func main() {
 	if len(config.Socks5) > 0 {
 		err := socks5.Start(config.Socks5)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "start socks5 by %v fail with %v", config.Socks5, err)
+			fmt.Fprintf(os.Stderr, "start socks5 by %v fail with %v\n", config.Socks5, err)
 			os.Exit(1)
 		}
 	}

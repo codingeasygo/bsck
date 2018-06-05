@@ -31,6 +31,10 @@ func (f ForwardUri) URL() (local *url.URL, remote *url.URL, err error) {
 	return
 }
 
+func (f ForwardUri) String() string {
+	return strings.Join(f, "->")
+}
+
 type Forward struct {
 	webMapping map[string]ForwardUri
 	wsMapping  map[string]ForwardUri
@@ -51,7 +55,7 @@ func NewForward() *Forward {
 
 func (f *Forward) ProcWebSubsH(w http.ResponseWriter, req *http.Request) {
 	parts := strings.SplitN(req.URL.Path, "/", 4)
-	if len(parts) < 3 {
+	if len(parts) < 2 {
 		w.WriteHeader(404)
 		fmt.Fprintf(w, "not supported path:%v", req.URL.Path)
 		return
@@ -60,7 +64,17 @@ func (f *Forward) ProcWebSubsH(w http.ResponseWriter, req *http.Request) {
 	if len(parts) == 4 {
 		req.URL.Path = "/" + parts[3]
 	}
-	f.ProcName(parts[2], w, req)
+	if len(parts) > 2 && len(parts[2]) > 0 {
+		f.ProcName(parts[2], w, req)
+		return
+	}
+	router := req.URL.Query().Get("router")
+	if len(router) < 1 {
+		w.WriteHeader(404)
+		fmt.Fprintf(w, "router argument is not found")
+		return
+	}
+	f.ProcRouter([]string{"loc://args", router}, w, req)
 }
 
 func (f *Forward) HostForwardF(w http.ResponseWriter, req *http.Request) {
@@ -91,10 +105,15 @@ func (f *Forward) ProcName(name string, w http.ResponseWriter, req *http.Request
 		fmt.Fprintf(w, "alias not exist by name:%v", name)
 		return
 	}
+	f.ProcRouter(router, w, req)
+}
+
+func (f *Forward) ProcRouter(router ForwardUri, w http.ResponseWriter, req *http.Request) {
+	connection := req.Header.Get("Connection")
 	local, remote, err := router.URL()
 	if err != nil {
 		w.WriteHeader(500)
-		warnLog("Forward proc web by name(%v),Connection(%v) fail with %v", name, connection, err)
+		warnLog("Forward proc web by router(%v),Connection(%v) fail with %v", router, connection, err)
 		fmt.Fprintf(w, "Error:%v", err)
 		return
 	}
@@ -131,8 +150,17 @@ func (f *Forward) ProcName(name string, w http.ResponseWriter, req *http.Request
 }
 
 func (f *Forward) runWebsocket(conn *websocket.Conn, router string) {
+	if strings.Contains(router, "?") {
+		router += "&" + conn.Request().URL.RawQuery
+	} else {
+		router += "?" + conn.Request().URL.RawQuery
+	}
 	wait := NewWaitReadWriteCloser(conn)
-	f.Dailer(router, wait)
+	_, err := f.Dailer(router, wait)
+	if err != nil {
+		infoLog("Forward proxy %v to %v fail with %v", conn.RemoteAddr(), router, err)
+		wait.Close()
+	}
 	wait.Wait()
 }
 
@@ -204,6 +232,17 @@ func (f *Forward) RemoveForward(local string) (err error) {
 		infoLog("Forward remove ws forward by %v", local)
 	default:
 		err = fmt.Errorf("scheme %v is not suppored", rurl.Scheme)
+	}
+	return
+}
+
+//FindForward will return the forward
+func (f *Forward) FindForward(name string) (uri ForwardUri) {
+	f.lck.Lock()
+	defer f.lck.Unlock()
+	uri, ok := f.wsMapping[name]
+	if !ok {
+		uri = f.webMapping[name]
 	}
 	return
 }

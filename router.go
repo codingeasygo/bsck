@@ -8,6 +8,7 @@ import (
 	"math"
 	"net"
 	"net/url"
+	"regexp"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -536,9 +537,19 @@ func (r *Router) procLogin(conn Conn, buf []byte, length uint32) (err error) {
 		return
 	}
 	r.aclLck.RLock()
-	token := r.ACL[option.Name]
+	var token string
+	for n, t := range r.ACL {
+		reg, err := regexp.Compile(n)
+		if err != nil {
+			warnLog("Router(%v) compile acl name regexp(%v) fail with %v", n, err)
+			continue
+		}
+		if reg.MatchString(option.Name) {
+			token = t
+		}
+	}
 	r.aclLck.RUnlock()
-	if token != option.Token {
+	if len(token) < 1 || token != option.Token {
 		warnLog("Router(%v) login fail with auth fail", r.Name)
 		err = writeCmd(conn, buf, CmdLoginBack, 0, []byte("access denied "))
 		return

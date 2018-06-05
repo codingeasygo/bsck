@@ -88,18 +88,18 @@ func (p *Proxy) ListenMaster(addr string) (err error) {
 }
 
 //StartForward will forward address to uri
-func (p *Proxy) StartForward(addr, uri string) (err error) {
-	target, err := url.Parse(addr)
+func (p *Proxy) StartForward(listen, uri string) (err error) {
+	target, err := url.Parse(listen)
 	if err != nil {
 		return
 	}
-	listener, err := net.Listen("tcp", target.Host)
+	listener, err := net.Listen(target.Scheme, target.Host)
 	if err == nil {
 		p.forwardsLck.Lock()
-		p.forwards[listener.Addr().String()] = []interface{}{listener, addr, uri}
+		p.forwards[listener.Addr().String()] = []interface{}{listener, listen, uri}
 		p.forwardsLck.Unlock()
 		go p.loopForward(listener, uri)
-		infoLog("Proxy(%v) start forward by %v->%v", p.Name, addr, uri)
+		infoLog("Proxy(%v) start forward by %v->%v", p.Name, listen, uri)
 	}
 	return
 }
@@ -224,6 +224,21 @@ func (p *Proxy) Login(option *ChannelOption) (err error) {
 		warnLog("Proxy(%v) dial to %v fail with %v", p.Name, option.Remote, err)
 		return
 	}
-	err = p.JoinConn(conn, option)
+	err = p.JoinConn(NewInfoRWC(conn, conn.RemoteAddr().String()), option)
 	return
+}
+
+//InfoRWC is external ReadWriteCloser to get info to String
+type InfoRWC struct {
+	io.ReadWriteCloser
+	Info string
+}
+
+//NewInfoRWC will return new nfoRWC
+func NewInfoRWC(raw io.ReadWriteCloser, info string) *InfoRWC {
+	return &InfoRWC{ReadWriteCloser: raw, Info: info}
+}
+
+func (i *InfoRWC) String() string {
+	return i.Info
 }

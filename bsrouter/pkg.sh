@@ -18,7 +18,7 @@ mkdir -p $srv_out
 ##build normal
 echo "Build $srv_name normal executor..."
 go build -o $srv_out/$srv_name github.com/sutils/bsck/bsrouter
-go build -o $srv_out/bsconsole github.com/sutils/readkey/rkeynet
+go build -o $srv_out/bsconsole github.com/sutils/bsck/bsconsole
 cp -f bsrouter-install.sh $srv_out
 cp -f bsrouter.service $srv_out
 cp -f create-cert.sh $srv_out

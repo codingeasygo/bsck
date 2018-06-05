@@ -134,20 +134,26 @@ func (s *SocksProxy) procConn(conn net.Conn) {
 		err = fmt.Errorf("only ver 0x05 is supported, but %x", buf[0])
 		return
 	}
-	var remote string
-	var port uint16
+	var uri string
 	switch buf[3] {
 	case 0x01:
 		err = fullBuf(reader, buf[5:], 5, nil)
 		if err == nil {
-			remote = fmt.Sprintf("%v.%v.%v.%v", buf[4], buf[5], buf[6], buf[7])
-			port = uint16(buf[8])*256 + uint16(buf[9])
+			remote := fmt.Sprintf("%v.%v.%v.%v", buf[4], buf[5], buf[6], buf[7])
+			port := uint16(buf[8])*256 + uint16(buf[9])
+			uri = fmt.Sprintf("%v:%v", remote, port)
 		}
 	case 0x03:
 		err = fullBuf(reader, buf[5:], uint32(buf[4]+2), nil)
 		if err == nil {
-			remote = string(buf[5 : buf[4]+5])
-			port = uint16(buf[buf[4]+5])*256 + uint16(buf[buf[4]+6])
+			remote := string(buf[5 : buf[4]+5])
+			port := uint16(buf[buf[4]+5])*256 + uint16(buf[buf[4]+6])
+			uri = fmt.Sprintf("%v:%v", remote, port)
+		}
+	case 0x13:
+		err = fullBuf(reader, buf[5:], uint32(buf[4]+2), nil)
+		if err == nil {
+			uri = string(buf[5 : buf[4]+5])
 		}
 	case 0x04:
 		fallthrough
@@ -155,7 +161,6 @@ func (s *SocksProxy) procConn(conn net.Conn) {
 		err = fmt.Errorf("ATYP %v is not supported", buf[3])
 		return
 	}
-	uri := fmt.Sprintf("%v:%v", remote, port)
 	debugLog("SocksProxy start dial to %v on %v", uri, conn.RemoteAddr())
 	pending := NewPendingConn(conn)
 	_, err = s.Dailer(uri, pending)
@@ -164,7 +169,7 @@ func (s *SocksProxy) procConn(conn net.Conn) {
 		buf[4], buf[5], buf[6], buf[7] = 0x00, 0x00, 0x00, 0x00
 		buf[8], buf[9] = 0x00, 0x00
 		conn.Write(buf[:10])
-		infoLog("SocksProxy dial to %v:%v on %v fail with %v", remote, port, conn.RemoteAddr(), err)
+		infoLog("SocksProxy dial to %v on %v fail with %v", uri, conn.RemoteAddr(), err)
 		pending.Close()
 		return
 	}
