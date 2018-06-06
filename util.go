@@ -59,15 +59,15 @@ func writeCmd(r io.Writer, b []byte, cmd byte, sid uint64, msg []byte) (err erro
 //Log is the bsck package default log
 var Log = log.New(os.Stdout, "", log.LstdFlags|log.Lshortfile)
 
-func debugLog(format string, args ...interface{}) {
+func DebugLog(format string, args ...interface{}) {
 	Log.Output(2, fmt.Sprintf("D "+format, args...))
 }
-func infoLog(format string, args ...interface{}) {
+func InfoLog(format string, args ...interface{}) {
 	Log.Output(2, fmt.Sprintf("I "+format, args...))
 }
-func warnLog(format string, args ...interface{}) {
+func WarnLog(format string, args ...interface{}) {
 	Log.Output(2, fmt.Sprintf("W "+format, args...))
 }
-func errorLog(format string, args ...interface{}) {
+func ErrorLog(format string, args ...interface{}) {
 	Log.Output(2, fmt.Sprintf("E "+format, args...))
 }

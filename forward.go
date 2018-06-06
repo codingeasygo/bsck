@@ -77,11 +77,13 @@ func (f *Forward) HostForwardF(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 	}
+	w.WriteHeader(404)
+	fmt.Fprintf(w, "%v is not supported\n", req.URL.Path)
 }
 
 func (f *Forward) ProcName(name string, w http.ResponseWriter, req *http.Request) {
 	connection := req.Header.Get("Connection")
-	debugLog("Forward proc web by name(%v),Connection(%v)", name, connection)
+	DebugLog("Forward proc web by name(%v),Connection(%v)", name, connection)
 	var router ForwardUri
 	f.lck.RLock()
 	if connection == "Upgrade" {
@@ -92,7 +94,7 @@ func (f *Forward) ProcName(name string, w http.ResponseWriter, req *http.Request
 	f.lck.RUnlock()
 	if len(router) < 1 {
 		w.WriteHeader(404)
-		warnLog("Forward proc web by name(%v),Connection(%v) fail with not found", name, connection)
+		WarnLog("Forward proc web by name(%v),Connection(%v) fail with not found", name, connection)
 		fmt.Fprintf(w, "alias not exist by name:%v", name)
 		return
 	}
@@ -104,7 +106,7 @@ func (f *Forward) ProcRouter(router ForwardUri, w http.ResponseWriter, req *http
 	local, remote, err := router.URL()
 	if err != nil {
 		w.WriteHeader(500)
-		warnLog("Forward proc web by router(%v),Connection(%v) fail with %v", router, connection, err)
+		WarnLog("Forward proc web by router(%v),Connection(%v) fail with %v", router, connection, err)
 		fmt.Fprintf(w, "Error:%v", err)
 		return
 	}
@@ -149,7 +151,7 @@ func (f *Forward) runWebsocket(conn *websocket.Conn, router string) {
 	wait := NewWaitReadWriteCloser(conn)
 	_, err := f.Dailer(router, wait)
 	if err != nil {
-		infoLog("Forward proxy %v to %v fail with %v", conn.RemoteAddr(), router, err)
+		InfoLog("Forward proxy %v to %v fail with %v", conn.RemoteAddr(), router, err)
 		wait.Close()
 	}
 	wait.Wait()
@@ -193,12 +195,12 @@ func (f *Forward) AddForward(loc, uri string) (err error) {
 	switch local.Scheme {
 	case "web":
 		f.webMapping[local.Host] = forward
-		infoLog("Forward add web forward by %v:%v", loc, uri)
+		InfoLog("Forward add web forward by %v:%v", loc, uri)
 	case "ws":
 		fallthrough
 	case "wss":
 		f.wsMapping[local.Host] = forward
-		infoLog("Forward add ws forward by %v:%v", loc, uri)
+		InfoLog("Forward add ws forward by %v:%v", loc, uri)
 	default:
 		err = fmt.Errorf("scheme %v is not suppored", local.Scheme)
 	}
@@ -215,12 +217,12 @@ func (f *Forward) RemoveForward(local string) (err error) {
 	switch rurl.Scheme {
 	case "web":
 		delete(f.webMapping, rurl.Host)
-		infoLog("Forward remove web forward by %v", local)
+		InfoLog("Forward remove web forward by %v", local)
 	case "ws":
 		fallthrough
 	case "wss":
 		delete(f.wsMapping, rurl.Host)
-		infoLog("Forward remove ws forward by %v", local)
+		InfoLog("Forward remove ws forward by %v", local)
 	default:
 		err = fmt.Errorf("scheme %v is not suppored", rurl.Scheme)
 	}

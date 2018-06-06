@@ -73,7 +73,7 @@ func NewSocksProxy() (socks *SocksProxy) {
 func (s *SocksProxy) Start(addr string) (err error) {
 	s.listener, err = net.Listen("tcp", addr)
 	if err == nil {
-		infoLog("SocksProxy listen socks5 proxy on %v", addr)
+		InfoLog("SocksProxy listen socks5 proxy on %v", addr)
 		go s.loopAccept(s.listener)
 	}
 	return
@@ -97,10 +97,10 @@ func (s *SocksProxy) loopAccept(l net.Listener) {
 
 func (s *SocksProxy) procConn(conn net.Conn) {
 	var err error
-	debugLog("SocksProxy proc connection from %v", conn.RemoteAddr())
+	DebugLog("SocksProxy proc connection from %v", conn.RemoteAddr())
 	defer func() {
 		if err != nil {
-			debugLog("SocksProxy proc connection from %v is done with %v", conn.RemoteAddr(), err)
+			DebugLog("SocksProxy proc connection from %v is done with %v", conn.RemoteAddr(), err)
 			conn.Close()
 		}
 	}()
@@ -161,7 +161,7 @@ func (s *SocksProxy) procConn(conn net.Conn) {
 		err = fmt.Errorf("ATYP %v is not supported", buf[3])
 		return
 	}
-	debugLog("SocksProxy start dial to %v on %v", uri, conn.RemoteAddr())
+	DebugLog("SocksProxy start dial to %v on %v", uri, conn.RemoteAddr())
 	pending := NewPendingConn(conn)
 	_, err = s.Dailer(uri, pending)
 	if err != nil {
@@ -169,7 +169,7 @@ func (s *SocksProxy) procConn(conn net.Conn) {
 		buf[4], buf[5], buf[6], buf[7] = 0x00, 0x00, 0x00, 0x00
 		buf[8], buf[9] = 0x00, 0x00
 		conn.Write(buf[:10])
-		infoLog("SocksProxy dial to %v on %v fail with %v", uri, conn.RemoteAddr(), err)
+		InfoLog("SocksProxy dial to %v on %v fail with %v", uri, conn.RemoteAddr(), err)
 		pending.Close()
 		return
 	}

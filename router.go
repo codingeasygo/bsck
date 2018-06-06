@@ -428,7 +428,7 @@ func (r *Router) loopReadRaw(channel Conn, bufferSize uint32) {
 	var last int64
 	var length uint32
 	buf := make([]byte, bufferSize)
-	infoLog("Router(%v) the reader(%v) is starting", r.Name, channel)
+	InfoLog("Router(%v) the reader(%v) is starting", r.Name, channel)
 	var procReadCmd = func(b []byte) (n uint32, err error) {
 		n, err = readCmd(channel, buf, &last)
 		return
@@ -442,11 +442,11 @@ func (r *Router) loopReadRaw(channel Conn, bufferSize uint32) {
 			break
 		}
 		if length < 13 {
-			errorLog("Router(%v) receive invalid frame(length:%v) from %v", length, channel)
+			ErrorLog("Router(%v) receive invalid frame(length:%v) from %v", length, channel)
 			break
 		}
 		if ShowLog > 1 {
-			debugLog("Router(%v) read one command(%v,%v) from %v", r.Name, cmdString(buf[4]), length, channel)
+			DebugLog("Router(%v) read one command(%v,%v) from %v", r.Name, cmdString(buf[4]), length, channel)
 		}
 		switch buf[4] {
 		case CmdLogin:
@@ -469,7 +469,7 @@ func (r *Router) loopReadRaw(channel Conn, bufferSize uint32) {
 		}
 	}
 	channel.Close()
-	infoLog("Router(%v) the reader(%v) is stopped by %v", r.Name, channel, err)
+	InfoLog("Router(%v) the reader(%v) is stopped by %v", r.Name, channel, err)
 	r.channelLck.Lock()
 	bond := r.channel[channel.Name()]
 	if bond != nil {
@@ -529,19 +529,19 @@ func (r *Router) loopHeartbeat() {
 func (r *Router) procLogin(conn Conn, buf []byte, length uint32) (err error) {
 	channel, ok := conn.(*Channel)
 	if !ok {
-		errorLog("Router(%v) proc login error with connection is not channel", r.Name)
+		ErrorLog("Router(%v) proc login error with connection is not channel", r.Name)
 		err = fmt.Errorf("connection is not channel")
 		return
 	}
 	var option AuthOption
 	err = json.Unmarshal(buf[13:length], &option)
 	if err != nil {
-		errorLog("Router(%v) unmarshal login option fail with %v", r.Name, err)
+		ErrorLog("Router(%v) unmarshal login option fail with %v", r.Name, err)
 		err = writeCmd(conn, buf, CmdLoginBack, 0, []byte("parse login opiton fail with "+err.Error()))
 		return
 	}
 	if len(option.Name) < 1 || len(option.Token) < 1 {
-		errorLog("Router(%v) login option fail with name/token is required", r.Name)
+		ErrorLog("Router(%v) login option fail with name/token is required", r.Name)
 		err = writeCmd(conn, buf, CmdLoginBack, 0, []byte("name/token is requried"))
 		return
 	}
@@ -550,7 +550,7 @@ func (r *Router) procLogin(conn Conn, buf []byte, length uint32) (err error) {
 	for n, t := range r.ACL {
 		reg, err := regexp.Compile(n)
 		if err != nil {
-			warnLog("Router(%v) compile acl name regexp(%v) fail with %v", n, err)
+			WarnLog("Router(%v) compile acl name regexp(%v) fail with %v", n, err)
 			continue
 		}
 		if reg.MatchString(option.Name) {
@@ -559,7 +559,7 @@ func (r *Router) procLogin(conn Conn, buf []byte, length uint32) (err error) {
 	}
 	r.aclLck.RUnlock()
 	if len(token) < 1 || token != option.Token {
-		warnLog("Router(%v) login fail with auth fail", r.Name)
+		WarnLog("Router(%v) login fail with auth fail", r.Name)
 		err = writeCmd(conn, buf, CmdLoginBack, 0, []byte("access denied "))
 		return
 	}
@@ -567,14 +567,14 @@ func (r *Router) procLogin(conn Conn, buf []byte, length uint32) (err error) {
 	channel.index = option.Index
 	r.addChannel(channel)
 	writeCmd(channel, buf, CmdLoginBack, 0, []byte("OK:"+r.Name))
-	infoLog("Router(%v) the channel(%v,%v) is login success", r.Name, option.Name, option.Index)
+	InfoLog("Router(%v) the channel(%v,%v) is login success", r.Name, option.Name, option.Index)
 	return
 }
 
 func (r *Router) procDial(channel Conn, buf []byte, length uint32) (err error) {
 	sid := binary.BigEndian.Uint64(buf[5:])
 	conn := string(buf[13:length])
-	debugLog("Router(%v) proc dail to %v on channel(%v)", r.Name, conn, channel)
+	DebugLog("Router(%v) proc dail to %v on channel(%v)", r.Name, conn, channel)
 	path := strings.SplitN(conn, "@", 2)
 	if len(path) < 2 {
 		err = writeCmd(channel, buf, CmdDialBack, sid, []byte(fmt.Sprintf("invalid uri(%v)", conn)))
@@ -585,11 +585,11 @@ func (r *Router) procDial(channel Conn, buf []byte, length uint32) (err error) {
 		dstSid := atomic.AddUint64(&r.connectSequence, 1)
 		raw, cerr := r.Handler.DialRaw(dstSid, parts[0])
 		if cerr != nil {
-			debugLog("Router(%v) dail to %v fail on channel(%v) by %v", r.Name, conn, channel, cerr)
+			DebugLog("Router(%v) dail to %v fail on channel(%v) by %v", r.Name, conn, channel, cerr)
 			err = writeCmd(channel, buf, CmdDialBack, sid, []byte(fmt.Sprintf("dial to uri(%v) fail with %v", parts[0], cerr)))
 			return
 		}
-		debugLog("Router(%v) dail to %v success on channel(%v)", r.Name, conn, channel)
+		DebugLog("Router(%v) dail to %v success on channel(%v)", r.Name, conn, channel)
 		err = writeCmd(channel, buf, CmdDialBack, sid, []byte("OK"))
 		if err == nil {
 			r.Bind(channel, sid, raw, dstSid)
@@ -606,7 +606,7 @@ func (r *Router) procDial(channel Conn, buf []byte, length uint32) (err error) {
 	r.addTable(channel, sid, dst, dstSid)
 	werr := writeCmd(dst, buf, CmdDial, dstSid, []byte(path[0]+"->"+next+"@"+parts[1]))
 	if werr != nil {
-		warnLog("Router(%v) send dial to channel(%v) fail with %v", r.Name, dst, werr)
+		WarnLog("Router(%v) send dial to channel(%v) fail with %v", r.Name, dst, werr)
 		err = writeCmd(channel, buf, CmdDialBack, sid, []byte(werr.Error()))
 		r.removeTable(channel, sid)
 	}
@@ -615,7 +615,7 @@ func (r *Router) procDial(channel Conn, buf []byte, length uint32) (err error) {
 
 func (r *Router) procDialBack(channel Conn, buf []byte, length uint32) (err error) {
 	sid := binary.BigEndian.Uint64(buf[5:])
-	debugLog("Router(%v) proc dail back by %v on channel(%v)", r.Name, sid, channel)
+	DebugLog("Router(%v) proc dail back by %v on channel(%v)", r.Name, sid, channel)
 	r.tableLck.RLock()
 	router := r.table[fmt.Sprintf("%v-%v", channel.ID(), sid)]
 	r.tableLck.RUnlock()
@@ -627,10 +627,10 @@ func (r *Router) procDialBack(channel Conn, buf []byte, length uint32) (err erro
 	if target.Type() == ConnTypeRaw {
 		msg := string(buf[13:length])
 		if msg == "OK" {
-			infoLog("Router(%v) dail to %v success", r.Name, target)
+			InfoLog("Router(%v) dail to %v success", r.Name, target)
 			r.Bind(channel, sid, target, target.ID())
 		} else {
-			infoLog("Router(%v) dail to %v fail with %v", r.Name, target, msg)
+			InfoLog("Router(%v) dail to %v fail with %v", r.Name, target, msg)
 			r.removeTable(channel, sid)
 			target.Close()
 		}
@@ -665,7 +665,7 @@ func (r *Router) procChannelData(channel Conn, buf []byte, length uint32) (err e
 func (r *Router) procClosed(channel Conn, buf []byte, length uint32) (err error) {
 	message := string(buf[13:length])
 	sid := binary.BigEndian.Uint64(buf[5:])
-	debugLog("Router(%v) the session(%v) is closed by %v", r.Name, sid, message)
+	DebugLog("Router(%v) the session(%v) is closed by %v", r.Name, sid, message)
 	r.tableLck.RLock()
 	router := r.table[fmt.Sprintf("%v-%v", channel.ID(), sid)]
 	r.tableLck.RUnlock()
@@ -700,7 +700,7 @@ func (r *Router) Dial(uri string, raw io.ReadWriteCloser) (sid uint64, err error
 		err = fmt.Errorf("channel is not exist by %v", parts[0])
 		return
 	}
-	debugLog("Router(%v) start dail to %v on channel(%v)", r.Name, uri, channel)
+	DebugLog("Router(%v) start dail to %v on channel(%v)", r.Name, uri, channel)
 	sid = atomic.AddUint64(&r.connectSequence, 1)
 	dst := NewRawConn(raw, sid, uri)
 	r.addTable(channel, sid, dst, sid)
@@ -721,18 +721,18 @@ func (r *Router) JoinConn(conn io.ReadWriteCloser, option *ChannelOption) (err e
 	buf := make([]byte, 1024)
 	err = writeCmd(conn, buf, CmdLogin, 0, data)
 	if err != nil {
-		warnLog("Router(%v) send login to %v fail with %v", r.Name, conn, err)
+		WarnLog("Router(%v) send login to %v fail with %v", r.Name, conn, err)
 		return
 	}
 	length, err := readCmd(conn, buf, nil)
 	if err != nil {
-		warnLog("Router(%v) read login back from %v fail with %v", r.Name, conn, err)
+		WarnLog("Router(%v) read login back from %v fail with %v", r.Name, conn, err)
 		return
 	}
 	msg := string(buf[13:length])
 	if !strings.HasPrefix(msg, "OK:") {
 		err = fmt.Errorf("%v", msg)
-		warnLog("Router(%v) login to %v fail with %v", r.Name, conn, err)
+		WarnLog("Router(%v) login to %v fail with %v", r.Name, conn, err)
 		return
 	}
 	remoteName := strings.TrimPrefix(msg, "OK:")
@@ -744,7 +744,7 @@ func (r *Router) JoinConn(conn io.ReadWriteCloser, option *ChannelOption) (err e
 		Option:          option,
 	}
 	r.Register(channel)
-	infoLog("Router(%v) login to %v success, bind to %v,%v", r.Name, conn, remoteName, option.Index)
+	InfoLog("Router(%v) login to %v success, bind to %v,%v", r.Name, conn, remoteName, option.Index)
 	return
 }
 

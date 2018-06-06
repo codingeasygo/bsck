@@ -67,11 +67,11 @@ func NewProxy(name string) (proxy *Proxy) {
 //ListenMaster will listen master router on address
 func (p *Proxy) ListenMaster(addr string) (err error) {
 	if len(p.Cert) > 0 {
-		infoLog("Proxy(%v) load x509 cert:%v,key:%v", p.Name, p.Cert, p.Key)
+		InfoLog("Proxy(%v) load x509 cert:%v,key:%v", p.Name, p.Cert, p.Key)
 		var cert tls.Certificate
 		cert, err = tls.LoadX509KeyPair(p.Cert, p.Key)
 		if err != nil {
-			errorLog("Proxy(%v) load cert fail with %v", p.Name, err)
+			ErrorLog("Proxy(%v) load cert fail with %v", p.Name, err)
 			return
 		}
 		config := &tls.Config{Certificates: []tls.Certificate{cert}, InsecureSkipVerify: true}
@@ -82,7 +82,7 @@ func (p *Proxy) ListenMaster(addr string) (err error) {
 	}
 	if err == nil {
 		go p.loopMaster(p.master)
-		infoLog("Proxy(%v) listen master on %v", p.Name, addr)
+		InfoLog("Proxy(%v) listen master on %v", p.Name, addr)
 	}
 	return
 }
@@ -99,7 +99,7 @@ func (p *Proxy) StartForward(listen, uri string) (err error) {
 		p.forwards[listener.Addr().String()] = []interface{}{listener, listen, uri}
 		p.forwardsLck.Unlock()
 		go p.loopForward(listener, uri)
-		infoLog("Proxy(%v) start forward by %v->%v", p.Name, listen, uri)
+		InfoLog("Proxy(%v) start forward by %v->%v", p.Name, listen, uri)
 	}
 	return
 }
@@ -112,11 +112,11 @@ func (p *Proxy) loopMaster(l net.Listener) {
 		if err != nil {
 			break
 		}
-		debugLog("Proxy(%v) master accepting connection from %v", p.Name, conn.RemoteAddr())
+		DebugLog("Proxy(%v) master accepting connection from %v", p.Name, conn.RemoteAddr())
 		p.Router.Accept(NewBufferConn(conn, 4096))
 	}
 	l.Close()
-	infoLog("Proxy(%v) master aceept on %v is stopped", p.Name, l.Addr())
+	InfoLog("Proxy(%v) master aceept on %v is stopped", p.Name, l.Addr())
 }
 
 func (p *Proxy) loopForward(l net.Listener, uri string) {
@@ -128,17 +128,17 @@ func (p *Proxy) loopForward(l net.Listener, uri string) {
 		if err != nil {
 			break
 		}
-		debugLog("Proxy(%v) accepting forward(%v->%v) connection from %v", p.Name, l.Addr(), uri, conn.RemoteAddr())
+		DebugLog("Proxy(%v) accepting forward(%v->%v) connection from %v", p.Name, l.Addr(), uri, conn.RemoteAddr())
 		sid, err = p.Dial(uri, conn)
 		if err == nil {
-			debugLog("Proxy(%v) proxy forward(%v->%v) success on session(%v)", p.Name, l.Addr(), uri, sid)
+			DebugLog("Proxy(%v) proxy forward(%v->%v) success on session(%v)", p.Name, l.Addr(), uri, sid)
 		} else {
-			warnLog("Proxy(%v) proxy forward(%v->%v) fail with %v", p.Name, l.Addr(), uri, err)
+			WarnLog("Proxy(%v) proxy forward(%v->%v) fail with %v", p.Name, l.Addr(), uri, err)
 			conn.Close()
 		}
 	}
 	l.Close()
-	infoLog("Proxy(%v) proxy forward(%v->%v) aceept runner is stopped", p.Name, l.Addr(), uri)
+	InfoLog("Proxy(%v) proxy forward(%v->%v) aceept runner is stopped", p.Name, l.Addr(), uri)
 	p.forwardsLck.Lock()
 	delete(p.forwards, l.Addr().String())
 	p.forwardsLck.Unlock()
@@ -172,7 +172,7 @@ func (p *Proxy) runReconnect(option *ChannelOption) {
 //OnConnClose will be called when connection is closed
 func (p *Proxy) OnConnClose(conn Conn) error {
 	if channel, ok := conn.(*Channel); ok && p.Running && channel.Option != nil && channel.Option.Remote != "" {
-		infoLog("Proxy(%v) the chnnale(%v) is closed, will reconect it", p.Name, channel)
+		InfoLog("Proxy(%v) the chnnale(%v) is closed, will reconect it", p.Name, channel)
 		go p.runReconnect(channel.Option)
 	}
 	return nil
@@ -214,22 +214,22 @@ func (p *Proxy) Login(option *ChannelOption) (err error) {
 	}
 	var conn net.Conn
 	if len(p.Cert) > 0 {
-		infoLog("Router(%v) start dial to %v by x509 cert:%v,key:%v", p.Name, option.Remote, p.Cert, p.Key)
+		InfoLog("Router(%v) start dial to %v by x509 cert:%v,key:%v", p.Name, option.Remote, p.Cert, p.Key)
 		var cert tls.Certificate
 		cert, err = tls.LoadX509KeyPair(p.Cert, p.Key)
 		if err != nil {
-			errorLog("Proxy(%v) load cert fail with %v", p.Name, err)
+			ErrorLog("Proxy(%v) load cert fail with %v", p.Name, err)
 			return
 		}
 		config := &tls.Config{Certificates: []tls.Certificate{cert}, InsecureSkipVerify: true}
 		config.Rand = rand.Reader
 		conn, err = tls.DialWithDialer(&dialer, "tcp", option.Remote, config)
 	} else {
-		infoLog("Router(%v) start dial to %v", p.Name, option.Remote)
+		InfoLog("Router(%v) start dial to %v", p.Name, option.Remote)
 		conn, err = dialer.Dial("tcp", option.Remote)
 	}
 	if err != nil {
-		warnLog("Proxy(%v) dial to %v fail with %v", p.Name, option.Remote, err)
+		WarnLog("Proxy(%v) dial to %v fail with %v", p.Name, option.Remote, err)
 		return
 	}
 	err = p.JoinConn(NewInfoRWC(conn, conn.RemoteAddr().String()), option)

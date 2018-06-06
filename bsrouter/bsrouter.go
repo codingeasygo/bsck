@@ -42,6 +42,26 @@ type Config struct {
 
 const Version = "1.2.0"
 
+func readConfig(path string) (config *Config, last int64, err error) {
+	var data []byte
+	var dataFile *os.File
+	var dataStat os.FileInfo
+	dataFile, err = os.Open(path)
+	if err == nil {
+		dataStat, err = dataFile.Stat()
+		if err == nil {
+			last = dataStat.ModTime().Local().UnixNano() / 1e6
+			data, err = ioutil.ReadAll(dataFile)
+		}
+		dataFile.Close()
+	}
+	if err == nil {
+		config = &Config{}
+		err = json.Unmarshal(data, config)
+	}
+	return
+}
+
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "-h" {
 		fmt.Fprintf(os.Stderr, "Bond Socket Router Version %v\n", Version)
@@ -66,11 +86,13 @@ func main() {
 		fmt.Fprintf(os.Stderr, "             the master address\n")
 		os.Exit(1)
 	}
-	var config Config
+	var config *Config
+	var configLast int64
+	var configPath string
 	var err error
-	var data []byte
 	if len(os.Args) > 1 {
-		data, err = ioutil.ReadFile(os.Args[1])
+		configPath = os.Args[1]
+		config, configLast, err = readConfig(configPath)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "read config from %v fail with %v\n", os.Args[1], err)
 			os.Exit(1)
@@ -78,8 +100,9 @@ func main() {
 	} else {
 		u, _ := user.Current()
 		for _, path := range []string{"./.bsrouter.json", "./bsrouter.json", u.HomeDir + "/.bsrouter/bsrouter.json", u.HomeDir + "/.bsrouter.json", "/etc/bsrouter/bsrouter.json", "/etc/bsrouer.json"} {
-			data, err = ioutil.ReadFile(path)
-			if err == nil {
+			config, configLast, err = readConfig(path)
+			if err == nil || configLast > 0 {
+				configPath = path
 				fmt.Printf("bsrouter using config from %v\n", path)
 				break
 			}
@@ -88,11 +111,6 @@ func main() {
 			fmt.Fprintf(os.Stderr, "read config from .bsrouter.json or ~/.bsrouter.json or /etc/bsrouter/bsrouter.json or /etc/bsrouter.json fail with %v\n", err)
 			os.Exit(1)
 		}
-	}
-	err = json.Unmarshal(data, &config)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "parse config fail with %v\n", err)
-		os.Exit(1)
 	}
 	if config.LogFlags > 0 {
 		bsck.Log.SetFlags(config.LogFlags)
@@ -204,6 +222,47 @@ func main() {
 			fmt.Println(server.ListenAndServe())
 		}()
 	}
+	go func() { //auto reload forward
+		for {
+			time.Sleep(3 * time.Second)
+			fileInfo, err := os.Stat(configPath)
+			if err != nil {
+				bsck.DebugLog("bsrouter reload configure fail with %v", err)
+				break
+			}
+			newLast := fileInfo.ModTime().Local().UnixNano() / 1e6
+			if newLast == configLast {
+				continue
+			}
+			newConfig, newLast, err := readConfig(configPath)
+			if err != nil {
+				bsck.DebugLog("bsrouter reload configure fail with %v", err)
+				break
+			}
+			bsck.DebugLog("bsrouter will reload modified configure %v by old(%v),new(%v)", configPath, configLast, newLast)
+			//remove missing
+			for loc := range config.Forwards {
+				if _, ok := newConfig.Forwards[loc]; ok {
+					continue
+				}
+				err = forward.RemoveForward(loc)
+				if err != nil {
+					bsck.WarnLog("bsrouter remove forward by %v fail with %v", loc, err)
+				}
+			}
+			for loc, uri := range newConfig.Forwards {
+				if config.Forwards[loc] == uri {
+					continue
+				}
+				err = forward.AddForward(loc, uri)
+				if err != nil {
+					bsck.WarnLog("bsrouter add forward by %v->%v fail with %v", loc, uri, err)
+				}
+			}
+			config.Forwards = newConfig.Forwards
+			configLast = newLast
+		}
+	}()
 	wc := make(chan os.Signal, 1)
 	signal.Notify(wc, os.Interrupt, os.Kill)
 	<-wc
