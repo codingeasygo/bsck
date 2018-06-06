@@ -8,6 +8,9 @@ case "$1" in
     fi
     cp -f bsrouter /usr/local/bin/bsrouter
     cp -f bsconsole /usr/local/bin/bsconsole
+    cp -f bs-ssh.sh /usr/local/bin/bs-ssh
+    cp -f bs-scp.sh /usr/local/bin/bs-scp
+    cp -f bs-sftp.sh /usr/local/bin/bs-sftp
     if [ ! -f /etc/systemd/system/bsrouter.service ];then
       cp -f bsrouter.service /etc/systemd/system/
     fi

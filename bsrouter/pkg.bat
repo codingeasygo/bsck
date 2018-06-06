@@ -1,6 +1,6 @@
 @echo off
 set srv_name=bsrouter
-set srv_ver=1.1.0
+set srv_ver=1.2.0
 del /s /a /q build\%srv_name%
 mkdir build
 mkdir build\%srv_name%

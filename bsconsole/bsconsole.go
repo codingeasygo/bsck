@@ -22,7 +22,7 @@ import (
 	"golang.org/x/net/websocket"
 )
 
-const Version = "1.1.0"
+const Version = "1.2.0"
 
 var CharTerm = []byte{3}
 
@@ -37,7 +37,14 @@ type Config struct {
 	Web    Web    `json:"web"`
 }
 
+var server string
+var win32 bool
+var proxy bool
+
 func appendSize(uri string) string {
+	if proxy {
+		return uri
+	}
 	cols, rows := readkey.GetSize()
 	if strings.Contains(uri, "?") {
 		uri += fmt.Sprintf("&cols=%v&rows=%v", cols, rows)
@@ -48,11 +55,9 @@ func appendSize(uri string) string {
 }
 
 func main() {
-	// tm.Clear()
-	var server string
-	var win32 bool
 	flag.StringVar(&server, "s", "", "")
 	flag.BoolVar(&win32, "win32", false, "win32 command")
+	flag.BoolVar(&proxy, "proxy", false, "proxy mode")
 	flag.Parse()
 	if len(flag.Args()) < 1 {
 		fmt.Fprintf(os.Stderr, "Bond Socket Console Version %v\n", Version)
@@ -161,6 +166,8 @@ func main() {
 	}
 	if win32 {
 		runWinConsole(conn)
+	} else if proxy {
+		runProxy(conn)
 	} else {
 		runUnixConsole(conn)
 	}
@@ -250,4 +257,10 @@ func runUnixConsole(conn io.ReadWriteCloser) {
 			break
 		}
 	}
+}
+
+func runProxy(conn io.ReadWriteCloser) {
+	go io.Copy(os.Stdout, conn)
+	io.Copy(conn, os.Stdin)
+	conn.Close()
 }
