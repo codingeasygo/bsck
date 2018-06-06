@@ -12,12 +12,13 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"os/signal"
 	"os/user"
 	"regexp"
 	"strings"
+	"sync"
 
 	"github.com/sutils/readkey"
-
 	"golang.org/x/net/websocket"
 )
 
@@ -47,8 +48,11 @@ func appendSize(uri string) string {
 }
 
 func main() {
+	// tm.Clear()
 	var server string
-	flag.StringVar(&server, "-s", "", "")
+	var win32 bool
+	flag.StringVar(&server, "s", "", "")
+	flag.BoolVar(&win32, "win32", false, "win32 command")
 	flag.Parse()
 	if len(flag.Args()) < 1 {
 		fmt.Fprintf(os.Stderr, "Bond Socket Console Version %v\n", Version)
@@ -155,6 +159,66 @@ func main() {
 		fmt.Printf("connect to %v fail with %v\n", server, err)
 		os.Exit(1)
 	}
+	if win32 {
+		runWinConsole(conn)
+	} else {
+		runUnixConsole(conn)
+	}
+}
+
+func runWinConsole(conn io.ReadWriteCloser) {
+	last := 0
+	lastLck := sync.RWMutex{}
+	stopc := 0
+	go func() {
+		buf := make([]byte, 1024)
+		for {
+			readed, err := os.Stdin.Read(buf)
+			if err != nil {
+				break
+			}
+			stopc = 0
+			lastLck.Lock()
+			fmt.Fprintf(os.Stdout, "\033[%dA", 1)
+			fmt.Fprintf(os.Stdout, "\033[%dC", last)
+			_, err = conn.Write(buf[:readed])
+			lastLck.Unlock()
+			if err != nil {
+				break
+			}
+		}
+	}()
+	go func() {
+		buf := make([]byte, 1024)
+		for {
+			readed, err := conn.Read(buf)
+			if err != nil {
+				break
+			}
+			lastLck.Lock()
+			parts := bytes.Split(buf[:readed], []byte("\n"))
+			last = len(parts[len(parts)-1])
+			_, err = os.Stdout.Write(buf[:readed])
+			lastLck.Unlock()
+			if err != nil {
+				break
+			}
+		}
+	}()
+	wc := make(chan os.Signal)
+	signal.Notify(wc, os.Interrupt, os.Kill)
+	for {
+		<-wc
+		stopc++
+		if stopc >= 5 {
+			break
+		}
+	}
+	conn.Close()
+	return
+}
+
+func runUnixConsole(conn io.ReadWriteCloser) {
 	readkey.Open()
 	defer func() {
 		conn.Close()

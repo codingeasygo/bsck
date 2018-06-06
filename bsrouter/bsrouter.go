@@ -11,6 +11,7 @@ import (
 	"os/user"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/Centny/gwf/util"
 	"github.com/sutils/bsck"
@@ -24,18 +25,19 @@ type Web struct {
 }
 
 type Config struct {
-	Name     string                `json:"name"`
-	Cert     string                `json:"cert"`
-	Key      string                `json:"key"`
-	Listen   string                `json:"listen"`
-	ACL      map[string]string     `json:"acl"`
-	Socks5   string                `json:"socks5"`
-	Web      Web                   `json:"web"`
-	ShowLog  int                   `json:"showlog"`
-	LogFlags int                   `json:"logflags"`
-	Forwards map[string]string     `json:"forwards"`
-	Channels []*bsck.ChannelOption `json:"channels"`
-	Dialer   util.Map              `json:"dialer"`
+	Name      string                `json:"name"`
+	Cert      string                `json:"cert"`
+	Key       string                `json:"key"`
+	Listen    string                `json:"listen"`
+	ACL       map[string]string     `json:"acl"`
+	Socks5    string                `json:"socks5"`
+	Web       Web                   `json:"web"`
+	ShowLog   int                   `json:"showlog"`
+	LogFlags  int                   `json:"logflags"`
+	Forwards  map[string]string     `json:"forwards"`
+	Channels  []*bsck.ChannelOption `json:"channels"`
+	Dialer    util.Map              `json:"dialer"`
+	Reconnect int64                 `json:"reconnect"`
 }
 
 const Version = "1.1.0"
@@ -104,6 +106,9 @@ func main() {
 	forward := bsck.NewForward()
 	proxy := bsck.NewProxy(config.Name)
 	proxy.Cert, proxy.Key = config.Cert, config.Key
+	if config.Reconnect > 0 {
+		proxy.ReconnectDelay = time.Duration(config.Reconnect) * time.Millisecond
+	}
 	if len(config.ACL) > 0 {
 		proxy.ACL = config.ACL
 	}
@@ -112,7 +117,8 @@ func main() {
 			sid, err = proxy.Dial(uri, raw)
 		} else if regexp.MustCompile("^[A-Za-z0-9]*://.*$").MatchString(uri) {
 			var conn io.ReadWriteCloser
-			conn, err = dialerPool.Dial(0, uri)
+			sid = proxy.UniqueSid()
+			conn, err = dialerPool.Dial(sid, uri)
 			if err == nil {
 				go func() {
 					io.Copy(raw, conn)
@@ -126,12 +132,21 @@ func main() {
 				}()
 			}
 		} else {
-			router := forward.FindForward(strings.SplitN(uri, "?", 2)[0])
+			parts := strings.SplitN(uri, "?", 2)
+			router := forward.FindForward(parts[0])
 			if len(router) < 1 {
 				err = fmt.Errorf("forward not found by %v", uri)
 				return
 			}
-			sid, err = proxy.Dial(router[1], raw)
+			dialURI := router[1]
+			if len(parts) > 1 {
+				if strings.Contains(dialURI, "?") {
+					dialURI += "&" + parts[1]
+				} else {
+					dialURI += "?" + parts[1]
+				}
+			}
+			sid, err = proxy.Dial(dialURI, raw)
 		}
 		return
 	}
@@ -152,11 +167,7 @@ func main() {
 		}
 	}
 	if len(config.Channels) > 0 {
-		err := proxy.LoginChannel(config.Channels...)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "start master on %v fail with %v\n", config.Listen, err)
-			os.Exit(1)
-		}
+		proxy.LoginChannel(true, config.Channels...)
 	}
 	for loc, uri := range config.Forwards {
 		if strings.HasPrefix(loc, "tcp://") {

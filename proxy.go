@@ -185,10 +185,18 @@ func (p *Proxy) DialRaw(sid uint64, uri string) (raw Conn, err error) {
 }
 
 //LoginChannel will login all channel by options.
-func (p *Proxy) LoginChannel(channels ...*ChannelOption) (err error) {
+func (p *Proxy) LoginChannel(reconnect bool, channels ...*ChannelOption) (err error) {
 	for _, channel := range channels {
+		if !channel.Enable {
+			continue
+		}
 		err = p.Login(channel)
-		if err != nil {
+		if err == nil {
+			continue
+		}
+		if reconnect {
+			go p.runReconnect(channel)
+		} else {
 			return
 		}
 	}
@@ -197,7 +205,6 @@ func (p *Proxy) LoginChannel(channels ...*ChannelOption) (err error) {
 
 //Login will add channel by local address, master address, auth token, channel index.
 func (p *Proxy) Login(option *ChannelOption) (err error) {
-	infoLog("Router(%v) start dial to %v", p.Name, option.Remote)
 	var dialer net.Dialer
 	if len(option.Local) > 0 {
 		dialer.LocalAddr, err = net.ResolveTCPAddr("tcp", option.Local)
@@ -207,7 +214,7 @@ func (p *Proxy) Login(option *ChannelOption) (err error) {
 	}
 	var conn net.Conn
 	if len(p.Cert) > 0 {
-		infoLog("Proxy(%v) load x509 cert:%v,key:%v", p.Name, p.Cert, p.Key)
+		infoLog("Router(%v) start dial to %v by x509 cert:%v,key:%v", p.Name, option.Remote, p.Cert, p.Key)
 		var cert tls.Certificate
 		cert, err = tls.LoadX509KeyPair(p.Cert, p.Key)
 		if err != nil {
@@ -218,6 +225,7 @@ func (p *Proxy) Login(option *ChannelOption) (err error) {
 		config.Rand = rand.Reader
 		conn, err = tls.DialWithDialer(&dialer, "tcp", option.Remote, config)
 	} else {
+		infoLog("Router(%v) start dial to %v", p.Name, option.Remote)
 		conn, err = dialer.Dial("tcp", option.Remote)
 	}
 	if err != nil {

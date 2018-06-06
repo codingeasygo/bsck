@@ -21,12 +21,8 @@ type ForwardUri []string
 func (f ForwardUri) URL() (local *url.URL, remote *url.URL, err error) {
 	local, err = url.Parse(f[0])
 	if err == nil {
-		parts := strings.SplitAfterN(f[1], "->", 2)
-		if len(parts) > 1 {
-			remote, err = url.Parse(parts[1])
-		} else {
-			remote, err = url.Parse(parts[0])
-		}
+		parts := strings.Split(f[1], "->")
+		remote, err = url.Parse(parts[len(parts)-1])
 	}
 	return
 }
@@ -55,11 +51,6 @@ func NewForward() *Forward {
 
 func (f *Forward) ProcWebSubsH(w http.ResponseWriter, req *http.Request) {
 	parts := strings.SplitN(req.URL.Path, "/", 4)
-	if len(parts) < 2 {
-		w.WriteHeader(404)
-		fmt.Fprintf(w, "not supported path:%v", req.URL.Path)
-		return
-	}
 	req.URL.Path = "/"
 	if len(parts) == 4 {
 		req.URL.Path = "/" + parts[3]

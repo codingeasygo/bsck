@@ -248,6 +248,8 @@ type AuthOption struct {
 
 //ChannelOption is a pojo struct for adding channel to Router
 type ChannelOption struct {
+	//enable
+	Enable bool `json:"enable"`
 	//the auth token
 	Token string `json:"token"`
 	//local tcp address to connection master
@@ -369,6 +371,12 @@ func (r *Router) addChannel(channel Conn) {
 	r.channelLck.Unlock()
 }
 
+//UniqueSid will return new session id
+func (r *Router) UniqueSid() (sid uint64) {
+	sid = atomic.AddUint64(&r.connectSequence, 1)
+	return
+}
+
 //SelectChannel will pick one channel by name.
 func (r *Router) SelectChannel(name string) (dst Conn) {
 	r.channelLck.RLock()
@@ -460,6 +468,7 @@ func (r *Router) loopReadRaw(channel Conn, bufferSize uint32) {
 			break
 		}
 	}
+	channel.Close()
 	infoLog("Router(%v) the reader(%v) is stopped by %v", r.Name, channel, err)
 	r.channelLck.Lock()
 	bond := r.channel[channel.Name()]
@@ -576,9 +585,11 @@ func (r *Router) procDial(channel Conn, buf []byte, length uint32) (err error) {
 		dstSid := atomic.AddUint64(&r.connectSequence, 1)
 		raw, cerr := r.Handler.DialRaw(dstSid, parts[0])
 		if cerr != nil {
+			debugLog("Router(%v) dail to %v fail on channel(%v) by %v", r.Name, conn, channel, cerr)
 			err = writeCmd(channel, buf, CmdDialBack, sid, []byte(fmt.Sprintf("dial to uri(%v) fail with %v", parts[0], cerr)))
 			return
 		}
+		debugLog("Router(%v) dail to %v success on channel(%v)", r.Name, conn, channel)
 		err = writeCmd(channel, buf, CmdDialBack, sid, []byte("OK"))
 		if err == nil {
 			r.Bind(channel, sid, raw, dstSid)

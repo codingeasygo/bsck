@@ -84,6 +84,10 @@ func TestForward(t *testing.T) {
 			t.Error(err)
 			return
 		}
+		if len(forward.FindForward("loctest0")) < 1 {
+			t.Error("error")
+			return
+		}
 		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 			name := strings.TrimPrefix(req.URL.Path, "/web/")
 			switch name {
@@ -135,6 +139,10 @@ func TestForward(t *testing.T) {
 			t.Error(err)
 			return
 		}
+		if len(forward.FindForward("t0")) < 1 {
+			t.Error("error")
+			return
+		}
 		err = forward.AddForward("web://t1", "http://web?dir=./")
 		if err != nil {
 			t.Error(err)
@@ -143,6 +151,8 @@ func TestForward(t *testing.T) {
 		forward.webMapping["terr"] = []string{"web://terr", "http://we%EX%B8%AG%E6b?dir=dds%EX%B8%AG%E6%96%87"}
 		ts := httptest.NewServer(http.HandlerFunc(forward.ProcWebSubsH))
 		tsURL, _ := url.Parse(ts.URL)
+		//
+		//
 		wsconn, err := websocket.Dial("ws://"+tsURL.Host+"/ws/t0", "", ts.URL)
 		if err != nil {
 			t.Error(err)
@@ -153,6 +163,17 @@ func TestForward(t *testing.T) {
 		readed, err := wsconn.Read(buf)
 		fmt.Println("->", readed, string(buf[:readed]), err)
 		wsconn.Close()
+		//
+		//
+		wsconn2, err := websocket.Dial("ws://"+tsURL.Host+"/ws/?router="+url.QueryEscape("tcp://echo?x=a"), "", ts.URL)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		fmt.Fprintf(wsconn2, "data->%v", 0)
+		readed, err = wsconn2.Read(buf)
+		fmt.Println("->", readed, string(buf[:readed]), err)
+		wsconn2.Close()
 		//
 		data, err := hget("%v/dav/t1/build.sh", ts.URL)
 		if err != nil {
@@ -218,4 +239,17 @@ func TestForwadError(t *testing.T) {
 		return
 	}
 	fmt.Printf("Err:%v\n", err)
+}
+
+func TestForwardUri(t *testing.T) {
+	_, _, err := ForwardUri([]string{"tcp://loc", "xx://loc"}).URL()
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	_, _, err = ForwardUri([]string{"tcp://loc", "a->xx://loc"}).URL()
+	if err != nil {
+		t.Error(err)
+		return
+	}
 }

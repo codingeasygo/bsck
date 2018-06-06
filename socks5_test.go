@@ -55,6 +55,41 @@ func proxDial(t *testing.T, remote string, port uint16) {
 	fmt.Printf("->%v\n", buf[0:readed])
 }
 
+func proxDial2(t *testing.T, remote string, port uint16) {
+	conn, err := net.Dial("tcp", "localhost:1081")
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	buf := make([]byte, 1024*64)
+	proxyReader := bufio.NewReader(conn)
+	_, err = conn.Write([]byte{0x05, 0x01, 0x00})
+	if err != nil {
+		return
+	}
+	err = fullBuf(proxyReader, buf, 2, nil)
+	if err != nil {
+		return
+	}
+	if buf[0] != 0x05 || buf[1] != 0x00 {
+		err = fmt.Errorf("only ver 0x05 / method 0x00 is supported, but %x/%x", buf[0], buf[1])
+		return
+	}
+	buf[0], buf[1], buf[2], buf[3] = 0x05, 0x01, 0x00, 0x13
+	buf[4] = byte(len(remote))
+	copy(buf[5:], []byte(remote))
+	binary.BigEndian.PutUint16(buf[5+len(remote):], port)
+	_, err = conn.Write(buf[:buf[4]+7])
+	if err != nil {
+		return
+	}
+	readed, err := proxyReader.Read(buf)
+	if err != nil {
+		return
+	}
+	fmt.Printf("->%v\n", buf[0:readed])
+}
+
 func proxDialIP(t *testing.T, bys []byte, port uint16) {
 	conn, err := net.Dial("tcp", "localhost:1081")
 	if err != nil {
@@ -141,6 +176,7 @@ func TestSocksProxy(t *testing.T) {
 		return
 	}
 	proxDial(t, "localhost", 80)
+	proxDial2(t, "localhost:80", 0)
 	proxDial(t, "localhost", 81)
 	proxDialIP(t, make([]byte, 4), 80)
 	proxDialIPv6(t, make([]byte, 16), 80)

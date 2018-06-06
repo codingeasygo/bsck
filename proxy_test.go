@@ -72,6 +72,7 @@ func TestProxy(t *testing.T) {
 	master.Router.ACL["slaver"] = "abc"
 	master.Router.ACL["slaver2"] = "abc"
 	master.Router.ACL["slaver3"] = "abc"
+	master.Router.ACL["err[slaver3"] = "abc"
 	master.Heartbeat = 10 * time.Millisecond
 	master.StartHeartbeat()
 	var masterEcho *Echo
@@ -173,7 +174,7 @@ func TestProxy(t *testing.T) {
 			conn = NewRawConn(msEcho, sid, uri)
 			return
 		})
-		err = ms0.LoginChannel(&ChannelOption{
+		err = ms0.LoginChannel(false, &ChannelOption{
 			Token:  "abc",
 			Local:  "0.0.0.0:0",
 			Remote: "localhost:9232",
@@ -402,7 +403,7 @@ func TestError(t *testing.T) {
 		//
 		//test login error
 		slaver := NewProxy("slaver")
-		err = slaver.LoginChannel(&ChannelOption{
+		err = slaver.LoginChannel(false, &ChannelOption{
 			Token:  "abc",
 			Remote: "loclahost:12",
 		})
@@ -780,4 +781,5 @@ func TestProxyTLS(t *testing.T) {
 		t.Error(err)
 		return
 	}
+	master.UniqueSid()
 }
