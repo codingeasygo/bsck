@@ -129,6 +129,13 @@ func TestForward(t *testing.T) {
 		}
 		fmt.Printf("data->:\n%v\n\n\n\n", data)
 		//
+		data, err = hget("%v/web/xxxx", ts.URL)
+		if err == nil {
+			t.Errorf("%v-%v", err, data)
+			return
+		}
+		fmt.Printf("data->:\n%v\n\n\n\n", data)
+		//
 		forward.RemoveForward("web://loctest0")
 		forward.RemoveForward("web://loctest1")
 		//

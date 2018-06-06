@@ -5,12 +5,16 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"os/user"
+	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Centny/gwf/util"
@@ -38,9 +42,35 @@ type Config struct {
 	Channels  []*bsck.ChannelOption `json:"channels"`
 	Dialer    util.Map              `json:"dialer"`
 	Reconnect int64                 `json:"reconnect"`
+	RDPDir    string                `json:"rdp_dir"`
 }
 
 const Version = "1.2.0"
+
+const RDP_T = `
+screen mode id:i:2
+use multimon:i:1
+session bpp:i:24
+full address:s:%v
+audiomode:i:0
+username:s:%v
+disable wallpaper:i:0
+disable full window drag:i:0
+disable menu anims:i:0
+disable themes:i:0
+alternate shell:s:
+shell working directory:s:
+authentication level:i:2
+connect to console:i:0
+gatewayusagemethod:i:0
+disable cursor setting:i:0
+allow font smoothing:i:1
+allow desktop composition:i:1
+redirectprinters:i:0
+prompt for credentials on client:i:0
+bookmarktype:i:3
+use redirection server name:i:0
+`
 
 func readConfig(path string) (config *Config, last int64, err error) {
 	var data []byte
@@ -56,7 +86,10 @@ func readConfig(path string) (config *Config, last int64, err error) {
 		dataFile.Close()
 	}
 	if err == nil {
-		config = &Config{}
+		user, _ := user.Current()
+		config = &Config{
+			RDPDir: filepath.Join(user.HomeDir, "Desktop"),
+		}
 		err = json.Unmarshal(data, config)
 	}
 	return
@@ -177,6 +210,116 @@ func main() {
 		}
 		return
 	})
+	var rdpLck = sync.RWMutex{}
+	var addFoward = func(loc, uri string) (err error) {
+		target, err := url.Parse(loc)
+		if err != nil {
+			return
+		}
+		var rdp bool
+		var listener net.Listener
+		parts := strings.SplitAfterN(target.Host, ":", 2)
+		switch target.Scheme {
+		case "tcp":
+			if len(parts) > 1 {
+				target.Host = ":" + parts[1]
+			} else {
+				target.Host = ":0"
+			}
+			target.Scheme = "tcp"
+			listener, err = proxy.StartForward(parts[0], target, uri)
+		case "loctcp":
+			if len(parts) > 1 {
+				target.Host = "localhost:" + parts[1]
+			} else {
+				target.Host = "localhost:0"
+			}
+			target.Scheme = "tcp"
+			listener, err = proxy.StartForward(parts[0], target, uri)
+		case "rdp":
+			rdp = true
+			if len(parts) > 1 {
+				target.Host = ":" + parts[1]
+			} else {
+				target.Host = ":0"
+			}
+			target.Scheme = "tcp"
+			listener, err = proxy.StartForward(parts[0], target, uri)
+		case "locrdp":
+			rdp = true
+			if len(parts) > 1 {
+				target.Host = "localhost:" + parts[1]
+			} else {
+				target.Host = "localhost:0"
+			}
+			target.Scheme = "tcp"
+			listener, err = proxy.StartForward(parts[0], target, uri)
+		case "unix":
+			if len(parts) > 1 {
+				target.Host = parts[1]
+				listener, err = proxy.StartForward(parts[0], target, uri)
+			} else {
+				err = fmt.Errorf("the unix file is required")
+			}
+		default:
+			err = forward.AddForward(loc, uri)
+		}
+		if err == nil && rdp && len(config.RDPDir) > 0 {
+			rdpLck.Lock()
+			fileData := fmt.Sprintf(RDP_T, listener.Addr(), target.User.Username())
+			savepath := filepath.Join(config.RDPDir, parts[0]+".rdp")
+			err := ioutil.WriteFile(savepath, []byte(fileData), os.ModePerm)
+			rdpLck.Unlock()
+			if err != nil {
+				bsck.WarnLog("bsrouter save rdp info to %v faile with %v", savepath, err)
+			} else {
+				bsck.InfoLog("bsrouter save rdp info to %v success", savepath)
+			}
+		}
+		return
+	}
+	var removeFoward = func(loc string) (err error) {
+		target, err := url.Parse(loc)
+		if err != nil {
+			return
+		}
+		var rdp bool
+		parts := strings.SplitAfterN(target.Host, ":", 2)
+		switch target.Scheme {
+		case "tcp":
+			err = proxy.StopForward(parts[0])
+		case "loctcp":
+			err = proxy.StopForward(parts[0])
+		case "rdp":
+			rdp = true
+			err = proxy.StopForward(parts[0])
+		case "locrdp":
+			rdp = true
+			err = proxy.StopForward(parts[0])
+		case "unix":
+			if len(parts) > 1 {
+				err = proxy.StopForward(parts[0])
+			} else {
+				err = fmt.Errorf("the unix file is required")
+			}
+		default:
+			err = forward.RemoveForward(loc)
+		}
+		if rdp && len(config.RDPDir) > 0 {
+			rdpLck.Lock()
+			savepath := filepath.Join(config.RDPDir, parts[0]+".rdp")
+			err := os.Remove(savepath)
+			rdpLck.Unlock()
+			if err != nil {
+				bsck.WarnLog("bsrouter remove rdp file on %v faile with %v", savepath, err)
+			} else {
+				bsck.InfoLog("bsrouter remove rdp file on %v success", savepath)
+			}
+		}
+		return
+	}
+	//
+	//
 	if len(config.Listen) > 0 {
 		err := proxy.ListenMaster(config.Listen)
 		if err != nil {
@@ -188,18 +331,10 @@ func main() {
 		proxy.LoginChannel(true, config.Channels...)
 	}
 	for loc, uri := range config.Forwards {
-		if strings.HasPrefix(loc, "tcp://") {
-			err := proxy.StartForward(loc, uri)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "start forward by %v fail with %v\n", loc+"->"+uri, err)
-				os.Exit(1)
-			}
-		} else {
-			err := forward.AddForward(loc, uri)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "add forward by %v fail with %v\n", loc+"->"+uri, err)
-				os.Exit(1)
-			}
+		err = addFoward(loc, uri)
+		if err != nil {
+			bsck.ErrorLog("bsrouter add forward by %v->%v fail with %v", loc, uri, err)
+			os.Exit(1)
 		}
 	}
 	proxy.StartHeartbeat()
@@ -245,32 +380,20 @@ func main() {
 				if _, ok := newConfig.Forwards[loc]; ok {
 					continue
 				}
-				if strings.HasPrefix(loc, "tcp://") {
-					err := proxy.StopForward(loc)
-					if err != nil {
-						bsck.WarnLog("bsrouter stop forward by %v fail with %v\n", loc, err)
-					}
-				} else {
-					err := forward.RemoveForward(loc)
-					if err != nil {
-						bsck.WarnLog("bsrouter remove forward by %v fail with %v", loc, err)
-					}
+				err = removeFoward(loc)
+				if err != nil {
+					bsck.ErrorLog("bsrouter remove forward by %v fail with %v", loc, err)
+					os.Exit(1)
 				}
 			}
 			for loc, uri := range newConfig.Forwards {
 				if config.Forwards[loc] == uri {
 					continue
 				}
-				if strings.HasPrefix(loc, "tcp://") {
-					err := proxy.StartForward(loc, uri)
-					if err != nil {
-						bsck.WarnLog("bsrouter start forward by %v fail with %v\n", loc+"->"+uri, err)
-					}
-				} else {
-					err := forward.AddForward(loc, uri)
-					if err != nil {
-						bsck.WarnLog("bsrouter add forward by %v fail with %v\n", loc+"->"+uri, err)
-					}
+				err = addFoward(loc, uri)
+				if err != nil {
+					bsck.ErrorLog("bsrouter add forward by %v->%v fail with %v", loc, uri, err)
+					os.Exit(1)
 				}
 			}
 			config.Forwards = newConfig.Forwards

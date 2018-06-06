@@ -550,7 +550,7 @@ func (r *Router) procLogin(conn Conn, buf []byte, length uint32) (err error) {
 	for n, t := range r.ACL {
 		reg, err := regexp.Compile(n)
 		if err != nil {
-			WarnLog("Router(%v) compile acl name regexp(%v) fail with %v", n, err)
+			WarnLog("Router(%v) compile acl name regexp(%v) fail with %v", r.Name, n, err)
 			continue
 		}
 		if reg.MatchString(option.Name) {

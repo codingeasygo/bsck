@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"net/url"
 	"testing"
 	"time"
 )
@@ -175,11 +176,13 @@ func TestProxy(t *testing.T) {
 			return
 		})
 		err = ms0.LoginChannel(false, &ChannelOption{
+			Enable: true,
 			Token:  "abc",
 			Local:  "0.0.0.0:0",
 			Remote: "localhost:9232",
 			Index:  0,
 		}, &ChannelOption{
+			Enable: true,
 			Token:  "abc",
 			Local:  "0.0.0.0:0",
 			Remote: "localhost:9232",
@@ -222,6 +225,7 @@ func TestProxy(t *testing.T) {
 			return
 		})
 		slaver3.Login(&ChannelOption{
+			Enable: true,
 			Remote: "localhost:9232",
 			Token:  "abc",
 			Index:  0,
@@ -300,6 +304,7 @@ func TestError(t *testing.T) {
 		fmt.Printf("\n\n\ntest login error\n")
 		slaverErr := NewProxy("error")
 		err = slaverErr.Login(&ChannelOption{
+			Enable: true,
 			Remote: "localhost:9232",
 			Token:  "abc",
 			Index:  0,
@@ -310,6 +315,7 @@ func TestError(t *testing.T) {
 		}
 		slaverErr = NewProxy("error")
 		err = slaverErr.Login(&ChannelOption{
+			Enable: true,
 			Remote: "localhost:9232",
 			Token:  "",
 			Index:  0,
@@ -404,6 +410,7 @@ func TestError(t *testing.T) {
 		//test login error
 		slaver := NewProxy("slaver")
 		err = slaver.LoginChannel(false, &ChannelOption{
+			Enable: true,
 			Token:  "abc",
 			Remote: "loclahost:12",
 		})
@@ -412,6 +419,7 @@ func TestError(t *testing.T) {
 			return
 		}
 		err = slaver.Login(&ChannelOption{
+			Enable: true,
 			Local:  "xxx",
 			Remote: "localhost:9232",
 			Token:  "abc",
@@ -422,6 +430,7 @@ func TestError(t *testing.T) {
 			return
 		}
 		err = slaver.Login(&ChannelOption{
+			Enable: true,
 			Remote: "localhost:12",
 			Token:  "abc",
 			Index:  0,
@@ -433,6 +442,7 @@ func TestError(t *testing.T) {
 		merr := NewErrReadWriteCloser([]byte("abc"), 10)
 		merr.ErrType = 10
 		err = slaver.JoinConn(merr, &ChannelOption{
+			Enable: true,
 			Remote: "",
 			Token:  "abc",
 			Index:  0,
@@ -443,6 +453,7 @@ func TestError(t *testing.T) {
 		}
 		merr.ErrType = 20
 		err = slaver.JoinConn(merr, &ChannelOption{
+			Enable: true,
 			Remote: "",
 			Token:  "abc",
 			Index:  0,
@@ -651,7 +662,8 @@ func TestProxyForward(t *testing.T) {
 	//
 	//test forward
 	//
-	err = client.StartForward("tcp://:2335", "master->slaver->xx")
+	listen, _ := url.Parse("tcp://:2335")
+	_, err = client.StartForward("x0", listen, "master->slaver->xx")
 	if err != nil {
 		t.Error(err)
 		return
@@ -678,7 +690,8 @@ func TestProxyForward(t *testing.T) {
 	//
 	//test forward error
 	fmt.Printf("\n\n\ntest forward error\n")
-	err = client.StartForward("tcp://:2336", "not->xx->xx")
+	listen, _ = url.Parse("tcp://:2336")
+	_, err = client.StartForward("x1", listen, "not->xx->xx")
 	if err != nil {
 		t.Error(err)
 		return
@@ -693,13 +706,18 @@ func TestProxyForward(t *testing.T) {
 		t.Error(err)
 		return
 	}
-	{ //test error
-		err := master.StartForward("https://ech%EX%BU%XD%E6%96%87?xx=1", "")
-		if err == nil {
-			t.Error("error")
-			return
-		}
-		fmt.Printf("\n\nErr:%v\n", err)
+	//
+	_, err = client.StartForward("", listen, "not->xx->xx")
+	if err == nil {
+		t.Error(err)
+		return
+	}
+	//
+	//test stop forward
+	err = client.StopForward("x0")
+	if err != nil {
+		t.Error(err)
+		return
 	}
 }
 

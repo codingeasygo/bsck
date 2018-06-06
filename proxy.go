@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"crypto/rand"
 	"crypto/tls"
+	"fmt"
 	"io"
 	"net"
 	"net/url"
@@ -88,31 +89,33 @@ func (p *Proxy) ListenMaster(addr string) (err error) {
 }
 
 //StartForward will forward address to uri
-func (p *Proxy) StartForward(listen, uri string) (err error) {
-	target, err := url.Parse(listen)
-	if err != nil {
+func (p *Proxy) StartForward(name string, listen *url.URL, uri string) (listener net.Listener, err error) {
+	// target, err := url.Parse(listen)
+	// if err != nil {
+	// 	return
+	// }
+	p.forwardsLck.Lock()
+	defer p.forwardsLck.Unlock()
+	if p.forwards[name] != nil || len(name) < 1 {
+		err = fmt.Errorf("the name(%v) is already used", name)
+		InfoLog("Proxy(%v) start forward by %v->%v fail with %v", p.Name, listen, uri, err)
 		return
 	}
-	listener, err := net.Listen(target.Scheme, target.Host)
+	listener, err = net.Listen(listen.Scheme, listen.Host)
 	if err == nil {
-		p.forwardsLck.Lock()
-		p.forwards[target.Host] = []interface{}{listener, listen, uri}
-		p.forwardsLck.Unlock()
-		go p.loopForward(listener, target.Host, uri)
-		InfoLog("Proxy(%v) start forward by %v->%v", p.Name, listen, uri)
+		p.forwards[name] = []interface{}{listener, listen, uri}
+		go p.loopForward(listener, name, listen, uri)
+		InfoLog("Proxy(%v) start forward on %v success by %v->%v", p.Name, listener.Addr(), listen, uri)
 	}
 	return
 }
 
 //StopForward will forward address to uri
-func (p *Proxy) StopForward(listen string) (err error) {
-	target, err := url.Parse(listen)
-	if err != nil {
-		return
-	}
-	InfoLog("Proxy(%v) stop forward by %v", p.Name, listen)
+func (p *Proxy) StopForward(name string) (err error) {
+	InfoLog("Proxy(%v) stop forward by name:%v", p.Name, name)
 	p.forwardsLck.Lock()
-	vals := p.forwards[target.Host]
+	vals := p.forwards[name]
+	delete(p.forwards, name)
 	p.forwardsLck.Unlock()
 	if len(vals) > 0 {
 		err = vals[0].(net.Listener).Close()
@@ -135,7 +138,7 @@ func (p *Proxy) loopMaster(l net.Listener) {
 	InfoLog("Proxy(%v) master aceept on %v is stopped", p.Name, l.Addr())
 }
 
-func (p *Proxy) loopForward(l net.Listener, host, uri string) {
+func (p *Proxy) loopForward(l net.Listener, name string, listen *url.URL, uri string) {
 	var err error
 	var sid uint64
 	var conn net.Conn
@@ -157,7 +160,7 @@ func (p *Proxy) loopForward(l net.Listener, host, uri string) {
 	l.Close()
 	InfoLog("Proxy(%v) proxy forward(%v->%v) aceept runner is stopped", p.Name, l.Addr(), uri)
 	p.forwardsLck.Lock()
-	delete(p.forwards, host)
+	delete(p.forwards, name)
 	p.forwardsLck.Unlock()
 }
 
