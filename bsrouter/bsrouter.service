@@ -6,7 +6,8 @@ After=network.target
 User=bsrouter
 Restart=always
 WorkingDirectory=/home/bsrouter
-ExecStart=/usr/local/bin/bsrouter
+ExecStart=/bin/bash --login -c /usr/local/bin/bsrouter
+EnvironmentFile=/etc/bsrouter/bsrouter.env
 
 [Install]
 WantedBy=multi-user.target

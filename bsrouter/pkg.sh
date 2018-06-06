@@ -11,7 +11,7 @@ output=build
 
 #### Package ####
 srv_name=bsrouter
-srv_ver=1.2.0
+srv_ver=1.2.1
 srv_out=$output/$srv_name
 rm -rf $srv_out
 mkdir -p $srv_out
