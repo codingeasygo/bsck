@@ -45,7 +45,7 @@ type Config struct {
 	RDPDir    string                `json:"rdp_dir"`
 }
 
-const Version = "1.2.0"
+const Version = "1.2.3"
 
 const RDP_T = `
 screen mode id:i:2

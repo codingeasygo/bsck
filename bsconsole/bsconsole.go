@@ -17,12 +17,13 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/sutils/readkey"
 	"golang.org/x/net/websocket"
 )
 
-const Version = "1.2.0"
+const Version = "1.2.3"
 
 var CharTerm = []byte{3}
 
@@ -40,6 +41,7 @@ type Config struct {
 var server string
 var win32 bool
 var proxy bool
+var ping bool
 
 func appendSize(uri string) string {
 	if proxy {
@@ -58,6 +60,7 @@ func main() {
 	flag.StringVar(&server, "s", "", "")
 	flag.BoolVar(&win32, "win32", false, "win32 command")
 	flag.BoolVar(&proxy, "proxy", false, "proxy mode")
+	flag.BoolVar(&ping, "ping", false, "ping mode")
 	flag.Parse()
 	if len(flag.Args()) < 1 {
 		fmt.Fprintf(os.Stderr, "Bond Socket Console Version %v\n", Version)
@@ -69,10 +72,11 @@ func main() {
 		os.Exit(1)
 		return
 	}
-	var uri string
+	var uri, remote string
 	if regexp.MustCompile("^[A-Za-z0-9]*://.*$").MatchString(flag.Arg(0)) {
 		server = flag.Arg(0)
 		uri = ""
+		remote = flag.Arg(0)
 	} else if len(server) < 1 {
 		var err error
 		var data []byte
@@ -104,8 +108,13 @@ func main() {
 			os.Exit(1)
 		}
 		uri = flag.Args()[0]
+		if ping {
+			uri += "->tcp://echo"
+		}
+		remote = flag.Args()[0]
 	}
 	//
+	dialBeg := time.Now()
 	var err error
 	var conn io.ReadWriteCloser
 	rurl, err := url.Parse(server)
@@ -164,13 +173,39 @@ func main() {
 		fmt.Printf("connect to %v fail with %v\n", server, err)
 		os.Exit(1)
 	}
-	if win32 {
+	if ping {
+		runPing(conn, remote, dialBeg)
+	} else if win32 {
 		runWinConsole(conn)
 	} else if proxy {
 		runProxy(conn)
 	} else {
 		runUnixConsole(conn)
 	}
+}
+
+func runPing(conn io.ReadWriteCloser, remote string, dialBeg time.Time) {
+	var i int
+	var err error
+	pingBeg := time.Now()
+	reader := bufio.NewReader(conn)
+	for i = 1; i < 101; i++ {
+		_, err = fmt.Fprintf(conn, "data-%v\n", i)
+		if err != nil {
+			break
+		}
+		_, _, err = reader.ReadLine()
+		if err != nil {
+			break
+		}
+	}
+	status := "OK"
+	if err != nil {
+		status = err.Error()
+	}
+	pingUsed := time.Now().Sub(pingBeg)
+	totalUsed := time.Now().Sub(dialBeg)
+	fmt.Printf("Ping to %v %v\n   Avg:\t\t%v\n   Count:\t\t%v\n   Used:\t%v\n\n", remote, status, pingUsed/time.Duration(i), i, totalUsed)
 }
 
 func runWinConsole(conn io.ReadWriteCloser) {
