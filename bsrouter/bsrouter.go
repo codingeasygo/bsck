@@ -245,18 +245,32 @@ func main() {
 				if _, ok := newConfig.Forwards[loc]; ok {
 					continue
 				}
-				err = forward.RemoveForward(loc)
-				if err != nil {
-					bsck.WarnLog("bsrouter remove forward by %v fail with %v", loc, err)
+				if strings.HasPrefix(loc, "tcp://") {
+					err := proxy.StopForward(loc)
+					if err != nil {
+						bsck.WarnLog("bsrouter stop forward by %v fail with %v\n", loc, err)
+					}
+				} else {
+					err := forward.RemoveForward(loc)
+					if err != nil {
+						bsck.WarnLog("bsrouter remove forward by %v fail with %v", loc, err)
+					}
 				}
 			}
 			for loc, uri := range newConfig.Forwards {
 				if config.Forwards[loc] == uri {
 					continue
 				}
-				err = forward.AddForward(loc, uri)
-				if err != nil {
-					bsck.WarnLog("bsrouter add forward by %v->%v fail with %v", loc, uri, err)
+				if strings.HasPrefix(loc, "tcp://") {
+					err := proxy.StartForward(loc, uri)
+					if err != nil {
+						bsck.WarnLog("bsrouter start forward by %v fail with %v\n", loc+"->"+uri, err)
+					}
+				} else {
+					err := forward.AddForward(loc, uri)
+					if err != nil {
+						bsck.WarnLog("bsrouter add forward by %v fail with %v\n", loc+"->"+uri, err)
+					}
 				}
 			}
 			config.Forwards = newConfig.Forwards
