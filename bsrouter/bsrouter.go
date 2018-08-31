@@ -43,11 +43,12 @@ type Config struct {
 	Dialer    util.Map              `json:"dialer"`
 	Reconnect int64                 `json:"reconnect"`
 	RDPDir    string                `json:"rdp_dir"`
+	VNCDir    string                `json:"vnc_dir"`
 }
 
 const Version = "1.2.3"
 
-const RDP_T = `
+const RDPTmpl = `
 screen mode id:i:2
 use multimon:i:1
 session bpp:i:24
@@ -72,6 +73,15 @@ bookmarktype:i:3
 use redirection server name:i:0
 `
 
+const VNCTmpl = `
+FriendlyName=%v
+FullScreen=1
+Host=%v
+Password=%v
+RelativePtr=0
+Scaling=100%%
+`
+
 func readConfig(path string) (config *Config, last int64, err error) {
 	var data []byte
 	var dataFile *os.File
@@ -89,6 +99,7 @@ func readConfig(path string) (config *Config, last int64, err error) {
 		user, _ := user.Current()
 		config = &Config{
 			RDPDir: filepath.Join(user.HomeDir, "Desktop"),
+			VNCDir: filepath.Join(user.HomeDir, "Desktop"),
 		}
 		err = json.Unmarshal(data, config)
 	}
@@ -163,7 +174,7 @@ func main() {
 	if len(config.ACL) > 0 {
 		proxy.ACL = config.ACL
 	}
-	var dailer = func(uri string, raw io.ReadWriteCloser) (sid uint64, err error) {
+	var dialer = func(uri string, raw io.ReadWriteCloser) (sid uint64, err error) {
 		if strings.Contains(uri, "->") {
 			sid, err = proxy.Dial(uri, raw)
 		} else if regexp.MustCompile("^[A-Za-z0-9]*://.*$").MatchString(uri) {
@@ -201,8 +212,8 @@ func main() {
 		}
 		return
 	}
-	socks5.Dailer = dailer
-	forward.Dailer = dailer
+	socks5.Dialer = dialer
+	forward.Dialer = dialer
 	proxy.Handler = bsck.DialRawF(func(sid uint64, uri string) (conn bsck.Conn, err error) {
 		raw, err := dialerPool.Dial(sid, uri)
 		if err == nil {
@@ -210,13 +221,13 @@ func main() {
 		}
 		return
 	})
-	var rdpLck = sync.RWMutex{}
+	var confLck = sync.RWMutex{}
 	var addFoward = func(loc, uri string) (err error) {
 		target, err := url.Parse(loc)
 		if err != nil {
 			return
 		}
-		var rdp bool
+		var rdp, vnc bool
 		var listener net.Listener
 		parts := strings.SplitAfterN(target.Host, ":", 2)
 		switch target.Scheme {
@@ -254,6 +265,24 @@ func main() {
 			}
 			target.Scheme = "tcp"
 			listener, err = proxy.StartForward(parts[0], target, uri)
+		case "vnc":
+			vnc = true
+			if len(parts) > 1 {
+				target.Host = ":" + parts[1]
+			} else {
+				target.Host = ":0"
+			}
+			target.Scheme = "tcp"
+			listener, err = proxy.StartForward(parts[0], target, uri)
+		case "locvnc":
+			vnc = true
+			if len(parts) > 1 {
+				target.Host = "localhost:" + parts[1]
+			} else {
+				target.Host = "localhost:0"
+			}
+			target.Scheme = "tcp"
+			listener, err = proxy.StartForward(parts[0], target, uri)
 		case "unix":
 			if len(parts) > 1 {
 				target.Host = parts[1]
@@ -265,15 +294,28 @@ func main() {
 			err = forward.AddForward(loc, uri)
 		}
 		if err == nil && rdp && len(config.RDPDir) > 0 {
-			rdpLck.Lock()
-			fileData := fmt.Sprintf(RDP_T, listener.Addr(), target.User.Username())
+			confLck.Lock()
+			fileData := fmt.Sprintf(RDPTmpl, listener.Addr(), target.User.Username())
 			savepath := filepath.Join(config.RDPDir, parts[0]+".rdp")
 			err := ioutil.WriteFile(savepath, []byte(fileData), os.ModePerm)
-			rdpLck.Unlock()
+			confLck.Unlock()
 			if err != nil {
 				bsck.WarnLog("bsrouter save rdp info to %v faile with %v", savepath, err)
 			} else {
 				bsck.InfoLog("bsrouter save rdp info to %v success", savepath)
+			}
+		}
+		if err == nil && vnc && len(config.VNCDir) > 0 {
+			confLck.Lock()
+			password, _ := target.User.Password()
+			fileData := fmt.Sprintf(VNCTmpl, parts[0], listener.Addr(), password)
+			savepath := filepath.Join(config.VNCDir, parts[0]+".vnc")
+			err := ioutil.WriteFile(savepath, []byte(fileData), os.ModePerm)
+			confLck.Unlock()
+			if err != nil {
+				bsck.WarnLog("bsrouter save vnc info to %v faile with %v", savepath, err)
+			} else {
+				bsck.InfoLog("bsrouter save vnc info to %v success", savepath)
 			}
 		}
 		return
@@ -283,7 +325,7 @@ func main() {
 		if err != nil {
 			return
 		}
-		var rdp bool
+		var rdp, vnc bool
 		parts := strings.SplitAfterN(target.Host, ":", 2)
 		switch target.Scheme {
 		case "tcp":
@@ -296,6 +338,12 @@ func main() {
 		case "locrdp":
 			rdp = true
 			err = proxy.StopForward(parts[0])
+		case "vnc":
+			vnc = true
+			err = proxy.StopForward(parts[0])
+		case "locvnc":
+			vnc = true
+			err = proxy.StopForward(parts[0])
 		case "unix":
 			if len(parts) > 1 {
 				err = proxy.StopForward(parts[0])
@@ -306,14 +354,25 @@ func main() {
 			err = forward.RemoveForward(loc)
 		}
 		if rdp && len(config.RDPDir) > 0 {
-			rdpLck.Lock()
+			confLck.Lock()
 			savepath := filepath.Join(config.RDPDir, parts[0]+".rdp")
 			err := os.Remove(savepath)
-			rdpLck.Unlock()
+			confLck.Unlock()
 			if err != nil {
 				bsck.WarnLog("bsrouter remove rdp file on %v faile with %v", savepath, err)
 			} else {
 				bsck.InfoLog("bsrouter remove rdp file on %v success", savepath)
+			}
+		}
+		if vnc && len(config.VNCDir) > 0 {
+			confLck.Lock()
+			savepath := filepath.Join(config.VNCDir, parts[0]+".vnc")
+			err := os.Remove(savepath)
+			confLck.Unlock()
+			if err != nil {
+				bsck.WarnLog("bsrouter remove vnc file on %v faile with %v", savepath, err)
+			} else {
+				bsck.InfoLog("bsrouter remove vnc file on %v success", savepath)
 			}
 		}
 		return
@@ -328,7 +387,7 @@ func main() {
 		}
 	}
 	if len(config.Channels) > 0 {
-		proxy.LoginChannel(true, config.Channels...)
+		go proxy.LoginChannel(true, config.Channels...)
 	}
 	for loc, uri := range config.Forwards {
 		err = addFoward(loc, uri)

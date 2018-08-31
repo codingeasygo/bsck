@@ -160,7 +160,7 @@ func proxDialIPv6(t *testing.T, bys []byte, port uint16) {
 
 func TestSocksProxy(t *testing.T) {
 	proxy := NewSocksProxy()
-	proxy.Dailer = func(uri string, raw io.ReadWriteCloser) (sid uint64, err error) {
+	proxy.Dialer = func(uri string, raw io.ReadWriteCloser) (sid uint64, err error) {
 		conn, err := net.Dial("tcp", uri)
 		if err == nil {
 			go io.Copy(conn, raw)

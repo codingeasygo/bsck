@@ -8,6 +8,11 @@ import (
 	"sync/atomic"
 )
 
+//Codable is interface for get current code
+type Codable interface {
+	Code() byte
+}
+
 //PendingConn is an implementation of io.ReadWriteCloser
 type PendingConn struct {
 	Raw     io.ReadWriteCloser
@@ -60,7 +65,7 @@ func (p *PendingConn) Close() (err error) {
 //SocksProxy is an implementation of socks5 proxy
 type SocksProxy struct {
 	listener net.Listener
-	Dailer   func(uri string, raw io.ReadWriteCloser) (sid uint64, err error)
+	Dialer   func(uri string, raw io.ReadWriteCloser) (sid uint64, err error)
 }
 
 //NewSocksProxy will return new SocksProxy
@@ -163,11 +168,14 @@ func (s *SocksProxy) procConn(conn net.Conn) {
 	}
 	DebugLog("SocksProxy start dial to %v on %v", uri, conn.RemoteAddr())
 	pending := NewPendingConn(conn)
-	_, err = s.Dailer(uri, pending)
+	_, err = s.Dialer(uri, pending)
 	if err != nil {
 		buf[0], buf[1], buf[2], buf[3] = 0x05, 0x04, 0x00, 0x01
 		buf[4], buf[5], buf[6], buf[7] = 0x00, 0x00, 0x00, 0x00
 		buf[8], buf[9] = 0x00, 0x00
+		if cerr, ok := err.(Codable); ok {
+			buf[1] = cerr.Code()
+		}
 		conn.Write(buf[:10])
 		InfoLog("SocksProxy dial to %v on %v fail with %v", uri, conn.RemoteAddr(), err)
 		pending.Close()

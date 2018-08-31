@@ -37,7 +37,7 @@ type Forward struct {
 	lck        sync.RWMutex
 	WebSuffix  string
 	WebAuth    string
-	Dailer     func(uri string, raw io.ReadWriteCloser) (sid uint64, err error)
+	Dialer     func(uri string, raw io.ReadWriteCloser) (sid uint64, err error)
 }
 
 func NewForward() *Forward {
@@ -149,7 +149,7 @@ func (f *Forward) runWebsocket(conn *websocket.Conn, router string) {
 		router += "?" + conn.Request().URL.RawQuery
 	}
 	wait := NewWaitReadWriteCloser(conn)
-	_, err := f.Dailer(router, wait)
+	_, err := f.Dialer(router, wait)
 	if err != nil {
 		InfoLog("Forward proxy %v to %v fail with %v", conn.RemoteAddr(), router, err)
 		wait.Close()
@@ -160,7 +160,7 @@ func (f *Forward) runWebsocket(conn *websocket.Conn, router string) {
 func (f *Forward) procDial(network, addr string, router string) (raw net.Conn, err error) {
 	raw, piped, err := dialer.CreatePipedConn()
 	if err == nil {
-		_, err = f.Dailer(router, piped)
+		_, err = f.Dialer(router, piped)
 	}
 	return
 }
@@ -168,7 +168,7 @@ func (f *Forward) procDial(network, addr string, router string) (raw net.Conn, e
 func (f *Forward) procDialTLS(network, addr string, router string) (raw net.Conn, err error) {
 	rawConn, piped, err := dialer.CreatePipedConn()
 	if err == nil {
-		_, err = f.Dailer(router, piped)
+		_, err = f.Dialer(router, piped)
 	}
 	if err != nil {
 		return

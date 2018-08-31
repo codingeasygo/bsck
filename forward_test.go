@@ -45,7 +45,7 @@ func TestForward(t *testing.T) {
 
 	forward := NewForward()
 	forward.WebSuffix = ".loc"
-	forward.Dailer = func(uri string, raw io.ReadWriteCloser) (sid uint64, err error) {
+	forward.Dialer = func(uri string, raw io.ReadWriteCloser) (sid uint64, err error) {
 		conn, err := dialerPool.Dial(0, uri)
 		if err == nil {
 			go func() {

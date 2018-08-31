@@ -591,7 +591,7 @@ func TestReconnect(t *testing.T) {
 }
 
 func TestDialTCP(t *testing.T) {
-	handler := NewTCPDailer()
+	handler := NewTCPDialer()
 	_, err := handler.DialRaw(10, "tcp://localhost:80")
 	if err != nil {
 		t.Error("error")

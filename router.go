@@ -209,22 +209,22 @@ func (d DialRawF) DialRaw(sid uint64, uri string) (raw Conn, err error) {
 	return
 }
 
-//TCPDailer is an implementation of RouterHandler for tcp raw connection.
-type TCPDailer struct {
+//TCPDialer is an implementation of RouterHandler for tcp raw connection.
+type TCPDialer struct {
 }
 
-//NewTCPDailer will return new TCPDailer.
-func NewTCPDailer() *TCPDailer {
-	return &TCPDailer{}
+//NewTCPDialer will return new TCPDialer.
+func NewTCPDialer() *TCPDialer {
+	return &TCPDialer{}
 }
 
 //OnConnClose will be called when connection is closed
-func (t *TCPDailer) OnConnClose(conn Conn) error {
+func (t *TCPDialer) OnConnClose(conn Conn) error {
 	return nil
 }
 
 //DialRaw will dial raw connection
-func (t *TCPDailer) DialRaw(sid uint64, uri string) (raw Conn, err error) {
+func (t *TCPDialer) DialRaw(sid uint64, uri string) (raw Conn, err error) {
 	targetURI, err := url.Parse(uri)
 	if err != nil {
 		return
@@ -324,7 +324,7 @@ func NewRouter(name string) (router *Router) {
 		aclLck:     sync.RWMutex{},
 		BufferSize: 1024 * 1024,
 		Heartbeat:  5 * time.Second,
-		Handler:    NewTCPDailer(),
+		Handler:    NewTCPDialer(),
 	}
 	return
 }
