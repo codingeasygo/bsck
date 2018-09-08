@@ -1,0 +1,22 @@
+<ul class="nav nav-tabs">
+  <li class="nav-item" (click)="doItemClick('basic')">
+    <a class="nav-link" href="#" [class.active]="activated=='basic'">Basic</a>
+  </li>
+  <li class="nav-item" (click)="doItemClick('forwards')">
+    <a class="nav-link" href="#" [class.active]="activated=='forwards'">Forwards</a>
+  </li>
+  <li class="nav-item" (click)="doItemClick('channels')">
+    <a class="nav-link" href="#" [class.active]="activated=='channels'">Channels</a>
+  </li>
+  <li class="nav-item" (click)="doItemClick('log')">
+    <a class="nav-link" href="#" [class.active]="activated=='log'">Log</a>
+  </li>
+  <li class="nav-item">
+    <table class="nav-status">
+      <tr>
+        <td><span class="nav-status-icon" [ngClass]="taskStatusClass()"></span></td>
+        <td><a class="nav-status-action" href="#" (click)="doTaskAction()">{{status}}</a></td>
+      </tr>
+    </table>
+  </li>
+</ul>

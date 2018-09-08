@@ -1,0 +1,46 @@
+.forwards-table{
+    font-size: 15px;
+    margin-top: 1px;
+}
+
+.forwards-table th,td{
+    padding: 3px;
+    vertical-align: middle;
+}
+
+.forwards-router{
+    font-size: 12px;
+}
+
+.forwards-table input{
+    width: 100%;
+}
+
+
+.forwards-protocol{
+    text-align: center;
+    width: 50px;
+}
+
+.forwards-col1{
+    width: 100px;
+    text-align: left;
+}
+
+.forwards-col2{
+    width: 80px;
+    text-align: left;
+}
+
+.forwards-col3{
+    width: 50px;
+    text-align: left;
+}
+
+.forwards-action{
+    width: 110px;
+}
+
+.forward-red{
+    background-color: rgb(219, 148, 148);
+}

@@ -1,0 +1,36 @@
+<table class="table table-bordered channels-table">
+  <tr>
+    <th>Remote</th>
+    <th>Local</th>
+    <th>Token</th>
+    <th>Index</th>
+    <th>Action</th>
+  </tr>
+  <tr *ngFor="let c of allChannels;let i=index">
+    <td>
+      <input type="checkbox" [checked]="c.enable" (changed)="enable($event,i,c)">
+      &nbsp;
+      {{c.remote}}
+    </td>
+    <td>{{c.local}}</td>
+    <td>{{c.token}}</td>
+    <td>{{c.index}}</td>
+    <td>
+      <a href="#" (click)="remove(i,c)">Remove</a>
+    </td>
+  </tr>
+  <tr class="channels-editing">
+    <td [class.channels-red]="showError&&!channel.remote">
+      <input class="channels-enable" type="checkbox" [(ngModel)]="channel.enable">
+      <input class="channels-remote" type="text" [(ngModel)]="channel.remote">
+    </td>
+    <td><input type="text" [(ngModel)]="channel.local"></td>
+    <td [class.channels-red]="showError&&!channel.token"><input type="text" [(ngModel)]="channel.token"></td>
+    <td [class.channels-red]="showError&&(channel.index==undefined||channel.index<0)">
+      <input [(ngModel)]="channel.index" type="number" min="0" step="1">
+    </td>
+    <td>
+      <a href="#" (click)="add()">Add</a>
+    </td>
+  </tr>
+</table>

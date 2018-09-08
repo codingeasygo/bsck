@@ -1,0 +1,48 @@
+{
+    "name": "cny",
+    "listen": ":2023",
+    "cert": "/Users/vty/.bsrouter/bsrouter.pem",
+    "key": "/Users/vty/.bsrouter/bsrouter.key",
+    "web": {
+        "listen": ":2024",
+        "suffix": "",
+        "auth": ""
+    },
+    "socks5": ":1081",
+    "forwards": {
+        "ws://dev": "MkDev->tcp://cmd?exec=/bin/bash",
+        "ws://dev-network": "MkDev->tcp://192.168.1.131:22",
+        "rdp://mk@dev-win-x86": "MkDev->tcp://10.211.1.103:3389",
+        "vnc://:17544784f035a496@CzyVnc1": "MkIdc->UmsCzy->tcp://192.168.33.102:5900",
+        "vnc://:17544784f035a496@CzyVnc2": "MkIdc->UmsCzy->tcp://192.168.33.104:5900",
+        "tcp://IdcExsi@:10443": "MkIdc->tcp://192.168.2.132:443",
+        "rdp://gjp@idc-win-gjp": "MkIdc->tcp://192.168.2.131:3389",
+        "tcp://UmsDb:13306": "MkIdc->tcp://192.168.2.152:3306"
+    },
+    "channels": [
+        {
+            "enable": true,
+            "token": "scorpion",
+            "local": "",
+            "remote": "rs.dyang.org:2023",
+            "index": 0
+        },
+        {
+            "enable": false,
+            "token": "scorpion",
+            "local": "",
+            "remote": "14.23.162.172:2023",
+            "index": 0
+        },
+        {
+            "enable": false,
+            "token": "scorpion",
+            "local": "",
+            "remote": "loc.m:2023",
+            "index": 0
+        }
+    ],
+    "dialer": {},
+    "showlog": 0,
+    "logflags": 16
+}
