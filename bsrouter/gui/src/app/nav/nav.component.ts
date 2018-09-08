@@ -22,6 +22,7 @@ export class NavComponent implements OnInit {
       if (n.cmd == "status") {
         this.status = n.status;
         this.ref.detectChanges()
+        console.log("bsrouter status is ", this.status);
       }
     })
   }
@@ -36,6 +37,7 @@ export class NavComponent implements OnInit {
           this.srv.stopBsrouter()
           break
         case "Stopped":
+        case "Error":
           this.srv.startBsrouter()
           this.status = "Pending"
           break
@@ -57,6 +59,13 @@ export class NavComponent implements OnInit {
     }
   }
   taskActionText(): string {
-    return this.status;
+    switch (this.status) {
+      case "Running":
+        return "Stop"
+      case "Pending":
+        return "Pending"
+      default:
+        return "Start"
+    }
   }
 }

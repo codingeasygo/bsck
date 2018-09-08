@@ -3,6 +3,8 @@ import { Subject } from 'rxjs';
 declare var fs: any;
 declare var os: any;
 declare var spawn: any;
+declare var process: any;
+declare var __dirname: any;
 const homedir = os.homedir();
 
 @Injectable({
@@ -14,12 +16,18 @@ export class BsrouterService {
   public bsrouterHandler = new Subject<any>()
   bsrouterStatus: string;
   bsrouter: any;
-  constructor() { }
+  constructor() {
+    window.onunload = () => {
+      if (this.bsrouter) {
+        this.bsrouter.kill();
+      }
+    }
+  }
   public startBsrouter() {
     if (this.bsrouterStatus == "Started") {
       throw "Started";
     }
-    this.bsrouter = spawn('bsrouter');
+    this.bsrouter = spawn(__dirname + '/../bsrouter');
     this.bsrouter.stdout.on('data', (data) => {
       if (this.bsrouterHandler) {
         this.bsrouterHandler.next({ cmd: "log", m: data.toString() });
@@ -38,11 +46,18 @@ export class BsrouterService {
         this.bsrouterHandler.next({ cmd: "status", status: this.bsrouterStatus });
       }
     });
-    this.bsrouter.on('close', (code) => {
+    this.bsrouter.on('exit', (code) => {
       if (this.bsrouterHandler) {
         this.bsrouterHandler.next({ cmd: "log", m: `child process exited with code ${code}` });
       }
       this.bsrouterStatus = "Stopped"
+      this.bsrouterHandler.next({ cmd: "status", status: this.bsrouterStatus });
+    });
+    this.bsrouter.on('error', (e) => {
+      if (this.bsrouterHandler) {
+        this.bsrouterHandler.next({ cmd: "log", m: `child process error with ${e}` });
+      }
+      this.bsrouterStatus = "Error"
       this.bsrouterHandler.next({ cmd: "status", status: this.bsrouterStatus });
     });
     // this.bsrouterStatus = "Pending"

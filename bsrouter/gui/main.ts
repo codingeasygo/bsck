@@ -29,14 +29,15 @@ function createWindow() {
     mainWindow = new BrowserWindow({
         width: 1024,
         height: level == "debug" ? 768 : 500,
-        frame: level == "debug"
+        frame: level == "debug",
+        title: "bsrouter",
     })
     // mainWindow.setIgnoreMouseEvents(true)
     // mainWindow.setMenuBarVisibility(false)
     if (level == "debug") {
         mainWindow.webContents.openDevTools()
     }
-    mainWindow.loadFile(`dist/bsrouter/index.html`)
+    mainWindow.loadFile(`dist/view/index.html`)
     // mainWindow.loadFile(`/tmp/t.html`)
     // mainWindow.loadURL("http://www.baidu.com")
     // mainWindow.on("close", (e: Event) => {
