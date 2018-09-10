@@ -8,7 +8,6 @@ declare var ipcRenderer: any;
 })
 export class AppComponent {
   public activated: string = "basic"
-  @ViewChild("title") title: ElementRef
   constructor() {
   }
   ngOnInit() {

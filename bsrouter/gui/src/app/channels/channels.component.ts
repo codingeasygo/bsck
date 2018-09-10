@@ -20,30 +20,21 @@ export class ChannelsComponent implements OnInit {
   ngOnInit() {
     this.reload();
   }
-
   reload() {
     this.allChannels = this.srv.loadChannels();
   }
   remove(i: number) {
-    try {
-      this.srv.removeChannel(i);
-      this.reload();
-    } catch (e) {
-      window.alert(e)
-    }
+    this.srv.removeChannel(i);
+    this.reload();
   }
   add() {
-    try {
-      if (!this.channel.remote || !this.channel.token || this.channel.index == undefined || this.channel.index < 0) {
-        this.showError = true
-        return;
-      }
-      this.showError = false
-      this.srv.addChannel(this.channel)
-      this.channel = { index: 0 }
-      this.reload()
-    } catch (e) {
-      window.alert(e)
+    if (!this.channel.remote || !this.channel.token || this.channel.index == undefined || this.channel.index < 0) {
+      this.showError = true
+      return;
     }
+    this.showError = false
+    this.srv.addChannel(this.channel)
+    this.channel = { index: 0 }
+    this.reload()
   }
 }

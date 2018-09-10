@@ -12,35 +12,33 @@ export class BasicComponent implements OnInit {
     web: {},
   }
   message: string = ""
+  dimissDelay: number = 4000
   @Input() set activated(v: boolean) {
   }
   constructor(srv: BsrouterService) {
     this.srv = srv;
   }
-
   ngOnInit() {
     this.reload();
   }
-
   reload() {
     this.conf = this.srv.loadBasic()
     this.conf.showlog = true && this.conf.showlog;
     console.log("load config ", this.conf);
   }
   save() {
-    try {
-      var c = Object.assign({}, this.conf);
-      c.showlog = c.showlog ? 1 : 0;
-      console.log("saving config ", c);
-      this.srv.saveBasic(c);
+    let c = Object.assign({}, this.conf);
+    c.showlog = c.showlog ? 1 : 0;
+    console.log("saving config ", c);
+    let res = this.srv.saveBasic(c);
+    if (res == "OK") {
       this.showMessage("saved");
-    } catch (e) {
-      console.error("saving config fail with ", e)
-      this.showMessage("save fail");
+    } else {
+      this.showMessage("save fail by " + res);
     }
   }
   showMessage(m: string) {
     this.message = m;
-    setTimeout(() => this.message = "", 4000);
+    setTimeout(() => this.message = "", this.dimissDelay);
   }
 }

@@ -15,7 +15,7 @@
     <table class="nav-status">
       <tr>
         <td><span class="nav-status-icon" [ngClass]="taskStatusClass()"></span></td>
-        <td><a class="nav-status-action" href="#" (click)="doTaskAction()">{{status}}</a></td>
+        <td><a class="nav-status-action" href="#" (click)="doTaskAction()">{{taskActionText()}}</a></td>
       </tr>
     </table>
   </li>

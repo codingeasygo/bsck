@@ -17,7 +17,6 @@ export class NavComponent implements OnInit {
     this.ref = ref;
   }
   ngOnInit() {
-    // this.activated = ["active", "", ""]
     this.srv.bsrouterHandler.subscribe(n => {
       if (n.cmd == "status") {
         this.status = n.status;
@@ -31,21 +30,11 @@ export class NavComponent implements OnInit {
     this.switch.emit({ key: key })
   }
   doTaskAction() {
-    try {
-      switch (this.status) {
-        case "Running":
-          this.srv.stopBsrouter()
-          break
-        case "Stopped":
-        case "Error":
-          this.srv.startBsrouter()
-          this.status = "Pending"
-          break
-        default:
-          break
-      }
-    } catch (e) {
-      window.alert(e)
+    if (this.status == "Running") {
+      this.srv.stopBsrouter()
+    } else {
+      this.srv.startBsrouter()
+      this.status = "Pending"
     }
   }
   taskStatusClass() {

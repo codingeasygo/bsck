@@ -8,14 +8,12 @@ import { BsrouterService } from '../bsrouter.service';
 })
 export class LogComponent implements OnInit {
   @Input() set activated(v: boolean) {
-
   }
   @ViewChild("log") log: ElementRef
   srv: BsrouterService;
   constructor(srv: BsrouterService) {
     this.srv = srv;
   }
-
   ngOnInit() {
     this.srv.bsrouterHandler.subscribe(n => {
       if (n.cmd == "log") {
@@ -23,5 +21,4 @@ export class LogComponent implements OnInit {
       }
     })
   }
-
 }
