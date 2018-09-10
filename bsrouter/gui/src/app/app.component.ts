@@ -1,4 +1,6 @@
-import { Component } from '@angular/core';
+import { Component, ViewChild, ElementRef } from '@angular/core';
+declare var ipcRenderer: any;
+
 @Component({
   selector: 'app-root',
   templateUrl: './app.component.html',
@@ -6,6 +8,7 @@ import { Component } from '@angular/core';
 })
 export class AppComponent {
   public activated: string = "basic"
+  @ViewChild("title") title: ElementRef
   constructor() {
   }
   ngOnInit() {
@@ -13,5 +16,8 @@ export class AppComponent {
   doNavSwitch(e: { key: string }) {
     this.activated = e.key
     console.log("nav switch to " + e.key)
+  }
+  clickClose(e) {
+    ipcRenderer.send("hideConfigure", {})
   }
 }

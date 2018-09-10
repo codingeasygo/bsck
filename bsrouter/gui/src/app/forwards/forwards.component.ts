@@ -10,7 +10,7 @@ declare var url: any;
 export class ForwardsComponent implements OnInit {
   srv: BsrouterService;
   allForwards: any = []
-  forward: any = {}
+  forward: any = { protocol: "ws" }
   showError: boolean = false;
   @Input() set activated(v: boolean) {
   }
@@ -80,29 +80,12 @@ export class ForwardsComponent implements OnInit {
       }
       this.srv.addForward(key, this.forward.router);
       this.reload();
-      this.forward = {};
+      this.forward = { protocol: "ws" };
     } catch (e) {
       window.alert(e)
     }
   }
   open(f) {
-    try {
-      let basic = this.srv.loadBasic()
-      if (f.protocol == "vnc") {
-        var dir = basic.vnc_dir;
-        if (!dir) {
-          dir = this.srv.homeDir + "/Desktop";
-        }
-        this.srv.openForward(dir + "/" + f.name + ".vnc");
-      } else if (f.protocol == "rdp") {
-        var dir = basic.vnc_dir;
-        if (!dir) {
-          dir = this.srv.homeDir + "/Desktop";
-        }
-        this.srv.openForward(dir + "/" + f.name + ".rdp");
-      }
-    } catch (e) {
-      window.alert(e)
-    }
+    this.srv.openForward(f.k)
   }
 }
