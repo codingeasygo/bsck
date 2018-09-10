@@ -173,7 +173,7 @@ function createWindow() {
             default: { appenders: ['ruleConsole', 'ruleFile'], level: level }
         },
     });
-    let tray = new Tray(__dirname + '/view/assets/stopped.png')
+    let tray = new Tray(__dirname + '/view/assets/stopped@4x.png')
     tray.setToolTip('This is BSRouter')
     mainWindow = new BrowserWindow({
         width: 1024,
@@ -280,9 +280,9 @@ function createWindow() {
             mainWindow.webContents.send("status", s)
             reloadMenu()
             if (s == "Running") {
-                tray.setImage(__dirname + '/view/assets/running.png')
+                tray.setImage(__dirname + '/view/assets/running@4x.png')
             } else {
-                tray.setImage(__dirname + '/view/assets/stopped.png')
+                tray.setImage(__dirname + '/view/assets/stopped@4x.png')
             }
         }
     }
