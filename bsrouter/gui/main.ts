@@ -326,6 +326,31 @@ function createWindow() {
         e.returnValue = bsrouter.removeChannel(args)
     })
     reloadMenu()
+    const template: MenuItemConstructorOptions[] = [
+        {
+            label: 'Edit',
+            submenu: [
+                { role: 'undo' },
+                { role: 'redo' },
+                { type: 'separator' },
+                { role: 'cut' },
+                { role: 'copy' },
+                { role: 'paste' },
+                { role: 'pasteandmatchstyle' },
+                { role: 'delete' },
+                { role: 'selectall' }
+            ]
+        },
+        {
+            role: 'window',
+            submenu: [
+                { role: 'minimize' },
+                { role: 'close' }
+            ]
+        }
+    ]
+    const menu = Menu.buildFromTemplate(template)
+    Menu.setApplicationMenu(menu)
 }
 
 app.on('ready', () => {
