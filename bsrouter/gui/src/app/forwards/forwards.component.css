@@ -1,6 +1,13 @@
+.forwards-container{
+    height: 410px;
+    overflow-x: hidden;
+    overflow-y: auto;
+}
+
 .forwards-table{
     font-size: 15px;
     margin-top: 1px;
+    margin-bottom: 1px;
 }
 
 .forwards-table th,td{

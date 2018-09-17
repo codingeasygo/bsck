@@ -42,6 +42,16 @@ export class ForwardsComponent implements OnInit {
       f.router = fs[k];
       forwards.push(f);
     }
+    forwards.sort((a, b) => {
+      if (a.name == b.name) {
+        return 0;
+      }
+      if (a.name < b.name) {
+        return -1;
+      } else {
+        return 1;
+      }
+    })
     this.allForwards = forwards;
   }
   remove(f: any) {

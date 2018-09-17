@@ -176,8 +176,8 @@ function createWindow() {
     let tray = new Tray(__dirname + '/view/assets/stopped@4x.png')
     tray.setToolTip('This is BSRouter')
     mainWindow = new BrowserWindow({
-        width: 1024,
-        height: level == "debug" ? 768 : 500,
+        width: level == "debug" ? 1500 : 1024,
+        height: 500,
         frame: level == "debug",
         title: "bsrouter",
     })
