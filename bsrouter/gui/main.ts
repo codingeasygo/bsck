@@ -177,7 +177,7 @@ function createWindow() {
     tray.setToolTip('This is BSRouter')
     mainWindow = new BrowserWindow({
         width: level == "debug" ? 1500 : 1024,
-        height: 500,
+        height: level == "debug" ? 518 : 500,
         frame: level == "debug",
         title: "bsrouter",
     })
