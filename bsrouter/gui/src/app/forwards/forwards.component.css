@@ -23,14 +23,13 @@
     width: 100%;
 }
 
-
 .forwards-protocol{
     text-align: center;
     width: 50px;
 }
 
 .forwards-col1{
-    width: 100px;
+    max-width: 200px;
     text-align: left;
 }
 
