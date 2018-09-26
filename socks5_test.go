@@ -20,12 +20,13 @@ func TestPendingConn(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 }
 
-func proxDial(t *testing.T, remote string, port uint16) {
+func proxyDial(t *testing.T, remote string, port uint16) {
 	conn, err := net.Dial("tcp", "localhost:1081")
 	if err != nil {
 		t.Error(err)
 		return
 	}
+	defer conn.Close()
 	buf := make([]byte, 1024*64)
 	proxyReader := bufio.NewReader(conn)
 	_, err = conn.Write([]byte{0x05, 0x01, 0x00})
@@ -55,12 +56,13 @@ func proxDial(t *testing.T, remote string, port uint16) {
 	fmt.Printf("->%v\n", buf[0:readed])
 }
 
-func proxDial2(t *testing.T, remote string, port uint16) {
+func proxyDial2(t *testing.T, remote string, port uint16) {
 	conn, err := net.Dial("tcp", "localhost:1081")
 	if err != nil {
 		t.Error(err)
 		return
 	}
+	defer conn.Close()
 	buf := make([]byte, 1024*64)
 	proxyReader := bufio.NewReader(conn)
 	_, err = conn.Write([]byte{0x05, 0x01, 0x00})
@@ -90,12 +92,13 @@ func proxDial2(t *testing.T, remote string, port uint16) {
 	fmt.Printf("->%v\n", buf[0:readed])
 }
 
-func proxDialIP(t *testing.T, bys []byte, port uint16) {
+func proxyDialIP(t *testing.T, bys []byte, port uint16) {
 	conn, err := net.Dial("tcp", "localhost:1081")
 	if err != nil {
 		t.Error(err)
 		return
 	}
+	defer conn.Close()
 	buf := make([]byte, 1024*64)
 	proxyReader := bufio.NewReader(conn)
 	_, err = conn.Write([]byte{0x05, 0x01, 0x00})
@@ -124,12 +127,13 @@ func proxDialIP(t *testing.T, bys []byte, port uint16) {
 	fmt.Printf("->%v\n", buf[0:readed])
 }
 
-func proxDialIPv6(t *testing.T, bys []byte, port uint16) {
+func proxyDialIPv6(t *testing.T, bys []byte, port uint16) {
 	conn, err := net.Dial("tcp", "localhost:1081")
 	if err != nil {
 		t.Error(err)
 		return
 	}
+	defer conn.Close()
 	buf := make([]byte, 1024*64)
 	proxyReader := bufio.NewReader(conn)
 	_, err = conn.Write([]byte{0x05, 0x01, 0x00})
@@ -175,11 +179,11 @@ func TestSocksProxy(t *testing.T) {
 		t.Error(err)
 		return
 	}
-	proxDial(t, "localhost", 80)
-	proxDial2(t, "localhost:80", 0)
-	proxDial(t, "localhost", 81)
-	proxDialIP(t, make([]byte, 4), 80)
-	proxDialIPv6(t, make([]byte, 16), 80)
+	proxyDial(t, "localhost", 80)
+	proxyDial2(t, "localhost:80", 0)
+	proxyDial(t, "localhost", 81)
+	proxyDialIP(t, make([]byte, 4), 80)
+	proxyDialIPv6(t, make([]byte, 16), 80)
 	{ //test error
 		//
 		conn, conb, _ := dialer.CreatePipedConn()

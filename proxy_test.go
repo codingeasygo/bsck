@@ -45,7 +45,7 @@ func (e *Echo) Write(p []byte) (n int, err error) {
 }
 
 func (e *Echo) Read(b []byte) (n int, err error) {
-	fmt.Println("-->", e)
+	fmt.Println("Echo.Read-->started", e)
 	if e.Err != nil {
 		err = e.Err
 		return
@@ -54,6 +54,7 @@ func (e *Echo) Read(b []byte) (n int, err error) {
 	copy(b, []byte(e.Data))
 	n = len(e.Data)
 	e.Send++
+	fmt.Println("Echo.Read-->done", e)
 	return
 }
 
@@ -367,6 +368,7 @@ func TestError(t *testing.T) {
 		copy(buf[13:], data)
 		echo = NewEcho("data")
 		err = master.Router.procDial(&Channel{ReadWriteCloser: echo}, buf, uint32(len(data)+13))
+		time.Sleep(time.Second) //wait for go
 		if err != nil || echo.Recv != 1 {
 			t.Error(err)
 			return
@@ -712,6 +714,154 @@ func TestProxyForward(t *testing.T) {
 		t.Error(err)
 		return
 	}
+	//
+	//test stop forward
+	err = client.StopForward("x0")
+	if err != nil {
+		t.Error(err)
+		return
+	}
+}
+
+func dialProxyConn(proxy, remote string, port uint16) (conn net.Conn, err error) {
+	conn, err = net.Dial("tcp", proxy)
+	if err != nil {
+		return
+	}
+	_, err = conn.Write([]byte{0x05, 0x01, 0x00})
+	if err != nil {
+		conn.Close()
+		return
+	}
+	buf := make([]byte, 1024*64)
+	err = fullBuf(conn, buf, 2, nil)
+	if err != nil {
+		conn.Close()
+		return
+	}
+	if buf[0] != 0x05 || buf[1] != 0x00 {
+		err = fmt.Errorf("unsupported %x", buf)
+		conn.Close()
+		return
+	}
+	blen := len(remote) + 7
+	buf[0], buf[1], buf[2] = 0x05, 0x01, 0x00
+	buf[3], buf[4] = 0x03, byte(len(remote))
+	copy(buf[5:], []byte(remote))
+	buf[blen-2] = byte(port / 256)
+	buf[blen-1] = byte(port % 256)
+	_, err = conn.Write(buf[:blen])
+	if err != nil {
+		conn.Close()
+		return
+	}
+	err = fullBuf(conn, buf, 5, nil)
+	if err != nil {
+		conn.Close()
+		return
+	}
+	switch buf[3] {
+	case 0x01:
+		err = fullBuf(conn, buf[5:], 5, nil)
+	case 0x03:
+		err = fullBuf(conn, buf[5:], uint32(buf[4])+2, nil)
+	case 0x04:
+		err = fullBuf(conn, buf[5:], 17, nil)
+	default:
+		err = fmt.Errorf("reply address type is not supported:%v", buf[3])
+	}
+	if err != nil {
+		conn.Close()
+		return
+	}
+	if buf[1] != 0x00 {
+		err = fmt.Errorf("response code(%x)", buf[1])
+	}
+	return
+}
+
+func TestSocketProxyForward(t *testing.T) {
+	master := NewProxy("master")
+	master.Router.ACL["slaver"] = "abc"
+	master.Router.ACL["client"] = "abc"
+	var masterEcho *Echo
+	master.Router.Handler = DialRawF(func(sid uint64, uri string) (conn Conn, err error) {
+		fmt.Println("master test dail to", uri)
+		if uri == "error" {
+			err = fmt.Errorf("error")
+		} else {
+			conn = NewRawConn(masterEcho, sid, uri)
+		}
+		// err = fmt.Errorf("error")
+		return
+	})
+	err := master.ListenMaster(":9232")
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	slaver := NewProxy("slaver")
+	var slaverEcho = NewEcho("slaver")
+	slaver.Handler = DialRawF(func(sid uint64, uri string) (conn Conn, err error) {
+		fmt.Println("slaver test dail to ", uri)
+		conn = NewRawConn(slaverEcho, sid, uri)
+		// err = fmt.Errorf("error")
+		return
+	})
+	slaver.Login(&ChannelOption{
+		Remote: "localhost:9232",
+		Token:  "abc",
+		Index:  0,
+	})
+	//
+	client := NewProxy("client")
+	err = client.Login(&ChannelOption{
+		Remote: "localhost:9232",
+		Token:  "abc",
+		Index:  0,
+	})
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	defer func() {
+		master.Close()
+		client.Close()
+		time.Sleep(time.Second)
+	}()
+	//
+	//test forward
+	//
+	listen, _ := url.Parse("socks://:2336")
+	_, err = client.StartForward("x0", listen, "master->slaver")
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	conn, err := dialProxyConn("localhost:2336", "xx", 100)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	fmt.Println("start send data---->")
+	fmt.Fprintf(conn, "forward data")
+	<-slaverEcho.R
+	//
+	slaverEcho.W <- 1
+	buf := make([]byte, 1024)
+	readed, err := conn.Read(buf)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	if readed < 1 {
+		t.Error("not data")
+		return
+	}
+	fmt.Println("readed--->", readed, string(buf[:readed]))
+	//
+	conn.Close()
+	<-slaverEcho.R
 	//
 	//test stop forward
 	err = client.StopForward("x0")

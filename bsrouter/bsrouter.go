@@ -46,7 +46,7 @@ type Config struct {
 	VNCDir    string                `json:"vnc_dir"`
 }
 
-const Version = "1.2.3"
+const Version = "1.3.0"
 
 const RDPTmpl = `
 screen mode id:i:2
@@ -231,6 +231,22 @@ func main() {
 		var listener net.Listener
 		parts := strings.SplitAfterN(target.Host, ":", 2)
 		switch target.Scheme {
+		case "socks":
+			if len(parts) > 1 {
+				target.Host = ":" + parts[1]
+			} else {
+				target.Host = ":0"
+			}
+			target.Scheme = "socks"
+			listener, err = proxy.StartForward(parts[0], target, uri)
+		case "locsocks":
+			if len(parts) > 1 {
+				target.Host = "localhost:" + parts[1]
+			} else {
+				target.Host = "localhost:0"
+			}
+			target.Scheme = "socks"
+			listener, err = proxy.StartForward(parts[0], target, uri)
 		case "tcp":
 			if len(parts) > 1 {
 				target.Host = ":" + parts[1]
@@ -328,6 +344,10 @@ func main() {
 		var rdp, vnc bool
 		parts := strings.SplitAfterN(target.Host, ":", 2)
 		switch target.Scheme {
+		case "socks":
+			err = proxy.StopForward(parts[0])
+		case "locsocks":
+			err = proxy.StopForward(parts[0])
 		case "tcp":
 			err = proxy.StopForward(parts[0])
 		case "loctcp":

@@ -571,6 +571,23 @@ func (r *Router) procLogin(conn Conn, buf []byte, length uint32) (err error) {
 	return
 }
 
+func (r *Router) procRawDial(channel Conn, sid uint64, conn, uri string) (err error) {
+	buf := make([]byte, 10240)
+	dstSid := atomic.AddUint64(&r.connectSequence, 1)
+	raw, cerr := r.Handler.DialRaw(dstSid, uri)
+	if cerr != nil {
+		DebugLog("Router(%v) dail to %v fail on channel(%v) by %v", r.Name, conn, channel, cerr)
+		err = writeCmd(channel, buf, CmdDialBack, sid, []byte(fmt.Sprintf("dial to uri(%v) fail with %v", uri, cerr)))
+		return
+	}
+	DebugLog("Router(%v) dail to %v success on channel(%v)", r.Name, conn, channel)
+	err = writeCmd(channel, buf, CmdDialBack, sid, []byte("OK"))
+	if err == nil {
+		r.Bind(channel, sid, raw, dstSid)
+	}
+	return
+}
+
 func (r *Router) procDial(channel Conn, buf []byte, length uint32) (err error) {
 	sid := binary.BigEndian.Uint64(buf[5:])
 	conn := string(buf[13:length])
@@ -582,18 +599,7 @@ func (r *Router) procDial(channel Conn, buf []byte, length uint32) (err error) {
 	}
 	parts := strings.SplitN(path[1], "->", 2)
 	if len(parts) < 2 {
-		dstSid := atomic.AddUint64(&r.connectSequence, 1)
-		raw, cerr := r.Handler.DialRaw(dstSid, parts[0])
-		if cerr != nil {
-			DebugLog("Router(%v) dail to %v fail on channel(%v) by %v", r.Name, conn, channel, cerr)
-			err = writeCmd(channel, buf, CmdDialBack, sid, []byte(fmt.Sprintf("dial to uri(%v) fail with %v", parts[0], cerr)))
-			return
-		}
-		DebugLog("Router(%v) dail to %v success on channel(%v)", r.Name, conn, channel)
-		err = writeCmd(channel, buf, CmdDialBack, sid, []byte("OK"))
-		if err == nil {
-			r.Bind(channel, sid, raw, dstSid)
-		}
+		go r.procRawDial(channel, sid, conn, parts[0])
 		return
 	}
 	next := parts[0]

@@ -1,7 +1,6 @@
 package bsck
 
 import (
-	"bufio"
 	"fmt"
 	"io"
 	"net"
@@ -64,8 +63,8 @@ func (p *PendingConn) Close() (err error) {
 
 //SocksProxy is an implementation of socks5 proxy
 type SocksProxy struct {
-	listener net.Listener
-	Dialer   func(uri string, raw io.ReadWriteCloser) (sid uint64, err error)
+	net.Listener
+	Dialer func(uri string, raw io.ReadWriteCloser) (sid uint64, err error)
 }
 
 //NewSocksProxy will return new SocksProxy
@@ -76,17 +75,11 @@ func NewSocksProxy() (socks *SocksProxy) {
 
 //Start proxy listener
 func (s *SocksProxy) Start(addr string) (err error) {
-	s.listener, err = net.Listen("tcp", addr)
+	s.Listener, err = net.Listen("tcp", addr)
 	if err == nil {
 		InfoLog("SocksProxy listen socks5 proxy on %v", addr)
-		go s.loopAccept(s.listener)
+		go s.loopAccept(s.Listener)
 	}
-	return
-}
-
-//Close the listner
-func (s *SocksProxy) Close() (err error) {
-	err = s.listener.Close()
 	return
 }
 
@@ -102,18 +95,17 @@ func (s *SocksProxy) loopAccept(l net.Listener) {
 
 func (s *SocksProxy) procConn(conn net.Conn) {
 	var err error
-	DebugLog("SocksProxy proc connection from %v", conn.RemoteAddr())
+	DebugLog("SocksProxy proxy connection from %v", conn.RemoteAddr())
 	defer func() {
 		if err != nil {
-			DebugLog("SocksProxy proc connection from %v is done with %v", conn.RemoteAddr(), err)
+			DebugLog("SocksProxy proxy connection from %v is done with %v", conn.RemoteAddr(), err)
 			conn.Close()
 		}
 	}()
 	buf := make([]byte, 1024*64)
-	reader := bufio.NewReader(conn)
 	//
 	//Procedure method
-	err = fullBuf(reader, buf, 2, nil)
+	err = fullBuf(conn, buf, 2, nil)
 	if err != nil {
 		return
 	}
@@ -121,7 +113,7 @@ func (s *SocksProxy) procConn(conn net.Conn) {
 		err = fmt.Errorf("only ver 0x05 is supported, but %x", buf[0])
 		return
 	}
-	err = fullBuf(reader, buf[2:], uint32(buf[1]), nil)
+	err = fullBuf(conn, buf[2:], uint32(buf[1]), nil)
 	if err != nil {
 		return
 	}
@@ -131,7 +123,7 @@ func (s *SocksProxy) procConn(conn net.Conn) {
 	}
 	//
 	//Procedure request
-	err = fullBuf(reader, buf, 5, nil)
+	err = fullBuf(conn, buf, 5, nil)
 	if err != nil {
 		return
 	}
@@ -142,21 +134,21 @@ func (s *SocksProxy) procConn(conn net.Conn) {
 	var uri string
 	switch buf[3] {
 	case 0x01:
-		err = fullBuf(reader, buf[5:], 5, nil)
+		err = fullBuf(conn, buf[5:], 5, nil)
 		if err == nil {
 			remote := fmt.Sprintf("%v.%v.%v.%v", buf[4], buf[5], buf[6], buf[7])
 			port := uint16(buf[8])*256 + uint16(buf[9])
 			uri = fmt.Sprintf("%v:%v", remote, port)
 		}
 	case 0x03:
-		err = fullBuf(reader, buf[5:], uint32(buf[4]+2), nil)
+		err = fullBuf(conn, buf[5:], uint32(buf[4]+2), nil)
 		if err == nil {
 			remote := string(buf[5 : buf[4]+5])
 			port := uint16(buf[buf[4]+5])*256 + uint16(buf[buf[4]+6])
 			uri = fmt.Sprintf("%v:%v", remote, port)
 		}
 	case 0x13:
-		err = fullBuf(reader, buf[5:], uint32(buf[4]+2), nil)
+		err = fullBuf(conn, buf[5:], uint32(buf[4]+2), nil)
 		if err == nil {
 			uri = string(buf[5 : buf[4]+5])
 		}

@@ -89,7 +89,7 @@ func (p *Proxy) ListenMaster(addr string) (err error) {
 }
 
 //StartForward will forward address to uri
-func (p *Proxy) StartForward(name string, listen *url.URL, uri string) (listener net.Listener, err error) {
+func (p *Proxy) StartForward(name string, listen *url.URL, router string) (listener net.Listener, err error) {
 	// target, err := url.Parse(listen)
 	// if err != nil {
 	// 	return
@@ -98,14 +98,29 @@ func (p *Proxy) StartForward(name string, listen *url.URL, uri string) (listener
 	defer p.forwardsLck.Unlock()
 	if p.forwards[name] != nil || len(name) < 1 {
 		err = fmt.Errorf("the name(%v) is already used", name)
-		InfoLog("Proxy(%v) start forward by %v->%v fail with %v", p.Name, listen, uri, err)
+		InfoLog("Proxy(%v) start forward by %v->%v fail with %v", p.Name, listen, router, err)
 		return
 	}
-	listener, err = net.Listen(listen.Scheme, listen.Host)
-	if err == nil {
-		p.forwards[name] = []interface{}{listener, listen, uri}
-		go p.loopForward(listener, name, listen, uri)
-		InfoLog("Proxy(%v) start forward on %v success by %v->%v", p.Name, listener.Addr(), listen, uri)
+	switch listen.Scheme {
+	case "socks":
+		sp := NewSocksProxy()
+		sp.Dialer = func(uri string, raw io.ReadWriteCloser) (sid uint64, err error) {
+			sid, err = p.Dial(router+"->tcp://"+uri, raw)
+			return
+		}
+		err = sp.Start(listen.Host)
+		if err == nil {
+			listener = sp
+			p.forwards[name] = []interface{}{sp, listen, router}
+			InfoLog("Proxy(%v) start socket forward on %v success by %v->%v", p.Name, listener.Addr(), listen, router)
+		}
+	default:
+		listener, err = net.Listen(listen.Scheme, listen.Host)
+		if err == nil {
+			p.forwards[name] = []interface{}{listener, listen, router}
+			go p.loopForward(listener, name, listen, router)
+			InfoLog("Proxy(%v) start tcp forward on %v success by %v->%v", p.Name, listener.Addr(), listen, router)
+		}
 	}
 	return
 }
@@ -118,7 +133,7 @@ func (p *Proxy) StopForward(name string) (err error) {
 	delete(p.forwards, name)
 	p.forwardsLck.Unlock()
 	if len(vals) > 0 {
-		err = vals[0].(net.Listener).Close()
+		err = vals[0].(io.Closer).Close()
 	}
 	return
 }
