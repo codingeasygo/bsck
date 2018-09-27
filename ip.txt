@@ -1,10 +1,43 @@
 
-ip route add 192.168.0.0/16 dev ens192 src 192.168.2.131 table rt.ens192
-ip route add default via 192.168.2.1 dev ens192 table rt.ens192
-ip rule add from 192.168.2.131/32 table rt.ens192
-ip rule add to 192.168.2.131/32 table rt.ens192
+ip route add 192.168.1.0/24 dev ens9f1 src 192.168.1.133 table rt.133
+ip route add default via 192.168.1.1 dev ens9f1 table rt.133
+ip rule add from 192.168.1.132/32 table rt.133
+ip rule add to 192.168.1.133/32 table rt.133
 
 ip route add 192.168.0.0/16 dev ens224 src 192.168.2.132 table rt.ens224
 ip route add default via 192.168.2.1 dev ens224 table rt.ens224
 ip rule add from 192.168.2.132/32 table rt.ens224
 ip rule add to 192.168.2.132/32 table rt.ens224
+
+
+
+echo 201 rt.24 >> /etc/iproute2/rt_tables
+echo 202 rt.25 >> /etc/iproute2/rt_tables
+
+ip route add 10.211.55.0/24 dev eth0:0 src 10.211.55.24 table rt.24
+ip route add table rt.24 default via 10.211.55.1 dev eth0:0
+ip route show table rt.24
+
+ip route add 10.211.55.0/24 dev eth0:1 src 10.211.55.25 table rt.25
+ip route add table rt.25 default via 10.211.55.1 dev eth0:1
+ip route show table rt.25
+
+ip rule add table rt.24 from 10.211.55.24
+ip rule add table rt.25 from 10.211.55.25
+ip route show
+
+
+echo 201 rt.132 >> /etc/iproute2/rt_tables
+echo 202 rt.133 >> /etc/iproute2/rt_tables
+
+ip route add 192.168.1.0/24 dev eth0:0 src 10.211.55.24 table rt.24
+ip route add table rt.24 default via 10.211.55.1 dev eth0:0
+ip route show table rt.24
+
+ip route add 10.211.55.0/24 dev eth0:1 src 10.211.55.25 table rt.25
+ip route add table rt.25 default via 10.211.55.1 dev eth0:1
+ip route show table rt.25
+
+ip rule add table rt.24 from 10.211.55.24
+ip rule add table rt.25 from 10.211.55.25
+ip route show

@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"net/url"
+	"strings"
 	"sync"
 	"time"
 )
@@ -105,7 +106,7 @@ func (p *Proxy) StartForward(name string, listen *url.URL, router string) (liste
 	case "socks":
 		sp := NewSocksProxy()
 		sp.Dialer = func(uri string, raw io.ReadWriteCloser) (sid uint64, err error) {
-			sid, err = p.Dial(router+"->tcp://"+uri, raw)
+			sid, err = p.Dial(strings.Replace(router, "${HOST}", uri, -1), raw)
 			return
 		}
 		err = sp.Start(listen.Host)
