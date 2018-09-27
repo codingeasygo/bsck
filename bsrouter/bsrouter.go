@@ -413,7 +413,7 @@ func main() {
 		err = addFoward(loc, uri)
 		if err != nil {
 			bsck.ErrorLog("bsrouter add forward by %v->%v fail with %v", loc, uri, err)
-			os.Exit(1)
+			// os.Exit(1)
 		}
 	}
 	proxy.StartHeartbeat()
