@@ -46,7 +46,7 @@ type Config struct {
 	VNCDir    string                `json:"vnc_dir"`
 }
 
-const Version = "1.3.0"
+const Version = "1.3.1"
 
 const RDPTmpl = `
 screen mode id:i:2
@@ -462,7 +462,7 @@ func main() {
 				err = removeFoward(loc)
 				if err != nil {
 					bsck.ErrorLog("bsrouter remove forward by %v fail with %v", loc, err)
-					os.Exit(1)
+					// os.Exit(1)
 				}
 			}
 			for loc, uri := range newConfig.Forwards {
@@ -472,7 +472,7 @@ func main() {
 				err = addFoward(loc, uri)
 				if err != nil {
 					bsck.ErrorLog("bsrouter add forward by %v->%v fail with %v", loc, uri, err)
-					os.Exit(1)
+					// os.Exit(1)
 				}
 			}
 			config.Forwards = newConfig.Forwards
