@@ -61,10 +61,15 @@ func (p *PendingConn) Close() (err error) {
 	return
 }
 
+const (
+	SocksUriTypeNormal = 0
+	SocksUriTypeBS     = 1
+)
+
 //SocksProxy is an implementation of socks5 proxy
 type SocksProxy struct {
 	net.Listener
-	Dialer func(uri string, raw io.ReadWriteCloser) (sid uint64, err error)
+	Dialer func(utype int, uri string, raw io.ReadWriteCloser) (sid uint64, err error)
 }
 
 //NewSocksProxy will return new SocksProxy
@@ -132,6 +137,7 @@ func (s *SocksProxy) procConn(conn net.Conn) {
 		return
 	}
 	var uri string
+	var utype int
 	switch buf[3] {
 	case 0x01:
 		err = fullBuf(conn, buf[5:], 5, nil)
@@ -139,6 +145,7 @@ func (s *SocksProxy) procConn(conn net.Conn) {
 			remote := fmt.Sprintf("%v.%v.%v.%v", buf[4], buf[5], buf[6], buf[7])
 			port := uint16(buf[8])*256 + uint16(buf[9])
 			uri = fmt.Sprintf("%v:%v", remote, port)
+			utype = SocksUriTypeNormal
 		}
 	case 0x03:
 		err = fullBuf(conn, buf[5:], uint32(buf[4]+2), nil)
@@ -146,21 +153,21 @@ func (s *SocksProxy) procConn(conn net.Conn) {
 			remote := string(buf[5 : buf[4]+5])
 			port := uint16(buf[buf[4]+5])*256 + uint16(buf[buf[4]+6])
 			uri = fmt.Sprintf("%v:%v", remote, port)
+			utype = SocksUriTypeNormal
 		}
 	case 0x13:
 		err = fullBuf(conn, buf[5:], uint32(buf[4]+2), nil)
 		if err == nil {
 			uri = string(buf[5 : buf[4]+5])
+			utype = SocksUriTypeBS
 		}
-	case 0x04:
-		fallthrough
 	default:
 		err = fmt.Errorf("ATYP %v is not supported", buf[3])
 		return
 	}
 	DebugLog("SocksProxy start dial to %v on %v", uri, conn.RemoteAddr())
 	pending := NewPendingConn(conn)
-	_, err = s.Dialer(uri, pending)
+	_, err = s.Dialer(utype, uri, pending)
 	if err != nil {
 		buf[0], buf[1], buf[2], buf[3] = 0x05, 0x04, 0x00, 0x01
 		buf[4], buf[5], buf[6], buf[7] = 0x00, 0x00, 0x00, 0x00

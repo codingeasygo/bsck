@@ -41,6 +41,7 @@ type Config struct {
 	Forwards  map[string]string     `json:"forwards"`
 	Channels  []*bsck.ChannelOption `json:"channels"`
 	Dialer    util.Map              `json:"dialer"`
+	Proxy     util.Map              `json:"proxy"`
 	Reconnect int64                 `json:"reconnect"`
 	RDPDir    string                `json:"rdp_dir"`
 	VNCDir    string                `json:"vnc_dir"`
@@ -160,61 +161,74 @@ func main() {
 		bsck.Log.SetFlags(config.LogFlags)
 	}
 	bsck.ShowLog = config.ShowLog
-	dialerPool := dialer.NewPool()
-	dialerPool.AddDialer(config.Dialer,
-		dialer.NewCmdDialer(), dialer.NewEchoDialer(),
-		dialer.NewWebDialer(), dialer.NewTCPDialer())
 	socks5 := bsck.NewSocksProxy()
 	forward := bsck.NewForward()
-	proxy := bsck.NewProxy(config.Name)
-	proxy.Cert, proxy.Key = config.Cert, config.Key
+	node := bsck.NewProxy(config.Name)
+	node.Cert, node.Key = config.Cert, config.Key
 	if config.Reconnect > 0 {
-		proxy.ReconnectDelay = time.Duration(config.Reconnect) * time.Millisecond
+		node.ReconnectDelay = time.Duration(config.Reconnect) * time.Millisecond
 	}
 	if len(config.ACL) > 0 {
-		proxy.ACL = config.ACL
+		node.ACL = config.ACL
 	}
-	var dialer = func(uri string, raw io.ReadWriteCloser) (sid uint64, err error) {
+	dialer.NewDialer = func(t string) dialer.Dialer {
+		if t == "router" {
+			return NewRouterDialer(node.Router)
+		}
+		return dialer.DefaultDialerCreator(t)
+	}
+	dialerPool := dialer.NewPool()
+	dialerPool.Bootstrap(config.Dialer)
+	dialerProxy := dialer.NewBalancedDialer()
+	dialerProxy.Bootstrap(config.Proxy)
+	var protocolMatcher = regexp.MustCompile("^[A-Za-z0-9]*://.*$")
+	var dialerAll = func(uri string, raw io.ReadWriteCloser) (sid uint64, err error) {
 		if strings.Contains(uri, "->") {
-			sid, err = proxy.Dial(uri, raw)
-		} else if regexp.MustCompile("^[A-Za-z0-9]*://.*$").MatchString(uri) {
-			var conn io.ReadWriteCloser
-			sid = proxy.UniqueSid()
+			sid, err = node.Dial(uri, raw)
+			return
+		}
+		if protocolMatcher.MatchString(uri) {
+			var conn dialer.Conn
+			sid = node.UniqueSid()
 			conn, err = dialerPool.Dial(sid, uri)
 			if err == nil {
-				go func() {
-					io.Copy(raw, conn)
-					raw.Close()
-					conn.Close()
-				}()
-				go func() {
-					io.Copy(conn, raw)
-					raw.Close()
-					conn.Close()
-				}()
+				err = conn.Pipe(raw)
 			}
-		} else {
-			parts := strings.SplitN(uri, "?", 2)
-			router := forward.FindForward(parts[0])
-			if len(router) < 1 {
-				err = fmt.Errorf("forward not found by %v", uri)
-				return
+			return
+		}
+		parts := strings.SplitN(uri, "?", 2)
+		router := forward.FindForward(parts[0])
+		if len(router) < 1 {
+			err = fmt.Errorf("forward not found by %v", uri)
+			return
+		}
+		dialURI := router[1]
+		if len(parts) > 1 {
+			if strings.Contains(dialURI, "?") {
+				dialURI += "&" + parts[1]
+			} else {
+				dialURI += "?" + parts[1]
 			}
-			dialURI := router[1]
-			if len(parts) > 1 {
-				if strings.Contains(dialURI, "?") {
-					dialURI += "&" + parts[1]
-				} else {
-					dialURI += "?" + parts[1]
-				}
+		}
+		sid, err = node.Dial(dialURI, raw)
+		return
+	}
+	socks5.Dialer = func(utype int, uri string, raw io.ReadWriteCloser) (sid uint64, err error) {
+		switch utype {
+		case bsck.SocksUriTypeBS:
+			sid, err = dialerAll(uri, raw)
+		default:
+			var conn dialer.Conn
+			sid = node.UniqueSid()
+			conn, err = dialerProxy.Dial(sid, "tcp://"+uri)
+			if err == nil {
+				err = conn.Pipe(raw)
 			}
-			sid, err = proxy.Dial(dialURI, raw)
 		}
 		return
 	}
-	socks5.Dialer = dialer
-	forward.Dialer = dialer
-	proxy.Handler = bsck.DialRawF(func(sid uint64, uri string) (conn bsck.Conn, err error) {
+	forward.Dialer = dialerAll
+	node.Handler = bsck.DialRawF(func(sid uint64, uri string) (conn bsck.Conn, err error) {
 		raw, err := dialerPool.Dial(sid, uri)
 		if err == nil {
 			conn = bsck.NewRawConn(raw, sid, uri)
@@ -238,7 +252,7 @@ func main() {
 				target.Host = ":0"
 			}
 			target.Scheme = "socks"
-			listener, err = proxy.StartForward(parts[0], target, uri)
+			listener, err = node.StartForward(parts[0], target, uri)
 		case "locsocks":
 			if len(parts) > 1 {
 				target.Host = "localhost:" + parts[1]
@@ -246,7 +260,7 @@ func main() {
 				target.Host = "localhost:0"
 			}
 			target.Scheme = "socks"
-			listener, err = proxy.StartForward(parts[0], target, uri)
+			listener, err = node.StartForward(parts[0], target, uri)
 		case "tcp":
 			if len(parts) > 1 {
 				target.Host = ":" + parts[1]
@@ -254,7 +268,7 @@ func main() {
 				target.Host = ":0"
 			}
 			target.Scheme = "tcp"
-			listener, err = proxy.StartForward(parts[0], target, uri)
+			listener, err = node.StartForward(parts[0], target, uri)
 		case "loctcp":
 			if len(parts) > 1 {
 				target.Host = "localhost:" + parts[1]
@@ -262,7 +276,7 @@ func main() {
 				target.Host = "localhost:0"
 			}
 			target.Scheme = "tcp"
-			listener, err = proxy.StartForward(parts[0], target, uri)
+			listener, err = node.StartForward(parts[0], target, uri)
 		case "rdp":
 			rdp = true
 			if len(parts) > 1 {
@@ -271,7 +285,7 @@ func main() {
 				target.Host = ":0"
 			}
 			target.Scheme = "tcp"
-			listener, err = proxy.StartForward(parts[0], target, uri)
+			listener, err = node.StartForward(parts[0], target, uri)
 		case "locrdp":
 			rdp = true
 			if len(parts) > 1 {
@@ -280,7 +294,7 @@ func main() {
 				target.Host = "localhost:0"
 			}
 			target.Scheme = "tcp"
-			listener, err = proxy.StartForward(parts[0], target, uri)
+			listener, err = node.StartForward(parts[0], target, uri)
 		case "vnc":
 			vnc = true
 			if len(parts) > 1 {
@@ -289,7 +303,7 @@ func main() {
 				target.Host = ":0"
 			}
 			target.Scheme = "tcp"
-			listener, err = proxy.StartForward(parts[0], target, uri)
+			listener, err = node.StartForward(parts[0], target, uri)
 		case "locvnc":
 			vnc = true
 			if len(parts) > 1 {
@@ -298,11 +312,11 @@ func main() {
 				target.Host = "localhost:0"
 			}
 			target.Scheme = "tcp"
-			listener, err = proxy.StartForward(parts[0], target, uri)
+			listener, err = node.StartForward(parts[0], target, uri)
 		case "unix":
 			if len(parts) > 1 {
 				target.Host = parts[1]
-				listener, err = proxy.StartForward(parts[0], target, uri)
+				listener, err = node.StartForward(parts[0], target, uri)
 			} else {
 				err = fmt.Errorf("the unix file is required")
 			}
@@ -345,28 +359,28 @@ func main() {
 		parts := strings.SplitAfterN(target.Host, ":", 2)
 		switch target.Scheme {
 		case "socks":
-			err = proxy.StopForward(parts[0])
+			err = node.StopForward(parts[0])
 		case "locsocks":
-			err = proxy.StopForward(parts[0])
+			err = node.StopForward(parts[0])
 		case "tcp":
-			err = proxy.StopForward(parts[0])
+			err = node.StopForward(parts[0])
 		case "loctcp":
-			err = proxy.StopForward(parts[0])
+			err = node.StopForward(parts[0])
 		case "rdp":
 			rdp = true
-			err = proxy.StopForward(parts[0])
+			err = node.StopForward(parts[0])
 		case "locrdp":
 			rdp = true
-			err = proxy.StopForward(parts[0])
+			err = node.StopForward(parts[0])
 		case "vnc":
 			vnc = true
-			err = proxy.StopForward(parts[0])
+			err = node.StopForward(parts[0])
 		case "locvnc":
 			vnc = true
-			err = proxy.StopForward(parts[0])
+			err = node.StopForward(parts[0])
 		case "unix":
 			if len(parts) > 1 {
-				err = proxy.StopForward(parts[0])
+				err = node.StopForward(parts[0])
 			} else {
 				err = fmt.Errorf("the unix file is required")
 			}
@@ -400,14 +414,14 @@ func main() {
 	//
 	//
 	if len(config.Listen) > 0 {
-		err := proxy.ListenMaster(config.Listen)
+		err := node.ListenMaster(config.Listen)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "start master on %v fail with %v\n", config.Listen, err)
 			os.Exit(1)
 		}
 	}
 	if len(config.Channels) > 0 {
-		go proxy.LoginChannel(true, config.Channels...)
+		go node.LoginChannel(true, config.Channels...)
 	}
 	for loc, uri := range config.Forwards {
 		err = addFoward(loc, uri)
@@ -416,7 +430,7 @@ func main() {
 			// os.Exit(1)
 		}
 	}
-	proxy.StartHeartbeat()
+	node.StartHeartbeat()
 	if len(config.Socks5) > 0 {
 		err := socks5.Start(config.Socks5)
 		if err != nil {
@@ -483,6 +497,100 @@ func main() {
 	signal.Notify(wc, os.Interrupt, os.Kill)
 	<-wc
 	fmt.Println("clear bsrouter...")
-	proxy.Close()
+	node.Close()
 	server.Close()
+}
+
+type RouterDialer struct {
+	basic   *bsck.Router
+	ID      string
+	conf    util.Map
+	matcher *regexp.Regexp
+	router  string
+	args    string
+}
+
+func NewRouterDialer(basic *bsck.Router) *RouterDialer {
+	return &RouterDialer{
+		basic:   basic,
+		conf:    util.Map{},
+		matcher: regexp.MustCompile("^.*$"),
+	}
+}
+
+func (r *RouterDialer) Name() string {
+	return r.ID
+}
+
+//initial dialer
+func (r *RouterDialer) Bootstrap(options util.Map) (err error) {
+	r.conf = options
+	r.ID = options.StrVal("id")
+	if len(r.ID) < 1 {
+		return fmt.Errorf("the dialer id is required")
+	}
+	matcher := options.StrVal("matcher")
+	if len(matcher) > 0 {
+		r.matcher, err = regexp.Compile(matcher)
+	}
+	r.router = options.StrVal("router")
+	if len(r.router) < 1 {
+		err = fmt.Errorf("the dialer router is required")
+	}
+	r.args = options.StrVal("args")
+	return
+}
+
+//
+func (r *RouterDialer) Options() util.Map {
+	return r.conf
+}
+
+//match uri
+func (r *RouterDialer) Matched(uri string) bool {
+	return r.matcher.MatchString(uri)
+}
+
+//dial raw connection
+func (r *RouterDialer) Dial(sid uint64, uri string) (rw dialer.Conn, err error) {
+	rw = &RouterConn{
+		dialer: r,
+		uri:    uri,
+	}
+	return
+}
+
+func (r *RouterDialer) Pipe(uri string, raw io.ReadWriteCloser) (sid uint64, err error) {
+	sid, err = r.basic.Dial(strings.Replace(r.router, "${URI}", uri, -1), raw)
+	return
+}
+
+type RouterConn struct {
+	sid    uint64
+	raw    io.ReadWriteCloser
+	dialer *RouterDialer
+	uri    string
+}
+
+func (r *RouterConn) Pipe(raw io.ReadWriteCloser) (err error) {
+	r.raw = raw
+	r.sid, err = r.dialer.Pipe(r.uri, raw)
+	return
+}
+
+func (r *RouterConn) Read(p []byte) (n int, err error) {
+	err = fmt.Errorf("RouterConn.Read is not impl")
+	return
+}
+
+func (r *RouterConn) Write(p []byte) (n int, err error) {
+	err = fmt.Errorf("RouterConn.Write is not impl")
+	return
+}
+
+func (r *RouterConn) Close() (err error) {
+	if r.raw != nil {
+		err = r.raw.Close()
+	}
+	return
 }

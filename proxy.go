@@ -105,7 +105,7 @@ func (p *Proxy) StartForward(name string, listen *url.URL, router string) (liste
 	switch listen.Scheme {
 	case "socks":
 		sp := NewSocksProxy()
-		sp.Dialer = func(uri string, raw io.ReadWriteCloser) (sid uint64, err error) {
+		sp.Dialer = func(utype int, uri string, raw io.ReadWriteCloser) (sid uint64, err error) {
 			sid, err = p.Dial(strings.Replace(router, "${HOST}", uri, -1), raw)
 			return
 		}
