@@ -82,6 +82,11 @@ type Conn interface {
 	Type() int
 }
 
+type ConnectedWaiter interface {
+	Wait() bool
+	Ready()
+}
+
 //CmdReader is the interface that wraps the basic ReadCmd method.
 //
 //ReadCmd will read one command to b buffer, return the command length
@@ -94,18 +99,24 @@ type CmdReader interface {
 //RawConn is an implementation of the Conn interface for raw network connections.
 type RawConn struct {
 	//the raw connection
-	Raw io.ReadWriteCloser
-	sid uint64
-	uri string
+	Raw       io.ReadWriteCloser
+	sid       uint64
+	uri       string
+	connected chan int
+	closed    uint32
+	lck       chan int
 }
 
 // NewRawConn returns a new RawConn by raw connection/session id/uri
 func NewRawConn(raw io.ReadWriteCloser, sid uint64, uri string) (conn *RawConn) {
 	conn = &RawConn{
-		Raw: raw,
-		sid: sid,
-		uri: uri,
+		Raw:       raw,
+		sid:       sid,
+		uri:       uri,
+		connected: make(chan int, 1),
+		lck:       make(chan int, 1),
 	}
+	conn.lck <- 1
 	return
 }
 
@@ -134,8 +145,25 @@ func (r *RawConn) ReadCmd(b []byte) (n uint32, err error) {
 
 //Close will close the raw connection
 func (r *RawConn) Close() (err error) {
+	<-r.lck
+	close(r.connected)
+	r.closed = 1
+	r.lck <- 1
 	err = r.Raw.Close()
 	return
+}
+
+func (r *RawConn) Wait() bool {
+	v := <-r.connected
+	return v > 0
+}
+
+func (r *RawConn) Ready() {
+	<-r.lck
+	if r.closed < 1 {
+		r.connected <- 1
+	}
+	r.lck <- 1
 }
 
 //ID is an implementation of Conn
@@ -635,6 +663,9 @@ func (r *Router) procDialBack(channel Conn, buf []byte, length uint32) (err erro
 		if msg == "OK" {
 			InfoLog("Router(%v) dail to %v success", r.Name, target)
 			r.Bind(channel, sid, target, target.ID())
+			if waiter, ok := target.(ConnectedWaiter); ok {
+				waiter.Ready()
+			}
 		} else {
 			InfoLog("Router(%v) dail to %v fail with %v", r.Name, target, msg)
 			r.removeTable(channel, sid)
@@ -696,6 +727,11 @@ func (r *Router) procHeartbeat(channel Conn, buf []byte, length uint32) (err err
 //
 //return the session id
 func (r *Router) Dial(uri string, raw io.ReadWriteCloser) (sid uint64, err error) {
+	sid, _, err = r.DialConn(uri, raw)
+	return
+}
+
+func (r *Router) DialConn(uri string, raw io.ReadWriteCloser) (sid uint64, conn *RawConn, err error) {
 	parts := strings.SplitN(uri, "->", 2)
 	if len(parts) < 2 {
 		err = fmt.Errorf("invalid uri(%v), it must like x->y", uri)
@@ -708,11 +744,22 @@ func (r *Router) Dial(uri string, raw io.ReadWriteCloser) (sid uint64, err error
 	}
 	DebugLog("Router(%v) start dail to %v on channel(%v)", r.Name, uri, channel)
 	sid = atomic.AddUint64(&r.connectSequence, 1)
-	dst := NewRawConn(raw, sid, uri)
-	r.addTable(channel, sid, dst, sid)
+	conn = NewRawConn(raw, sid, uri)
+	r.addTable(channel, sid, conn, sid)
 	err = writeCmd(channel, make([]byte, 4096), CmdDial, sid, []byte(fmt.Sprintf("%v@%v", parts[0], parts[1])))
 	if err != nil {
 		r.removeTable(channel, sid)
+	}
+	return
+}
+
+func (r *Router) SyncDial(uri string, raw io.ReadWriteCloser) (sid uint64, err error) {
+	sid, conn, err := r.DialConn(uri, raw)
+	if err != nil {
+		return
+	}
+	if !conn.Wait() {
+		err = fmt.Errorf("connect reseted")
 	}
 	return
 }

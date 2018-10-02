@@ -579,7 +579,7 @@ func (r *RouterDialer) Dial(sid uint64, uri string, pipe io.ReadWriteCloser) (rw
 		err = fmt.Errorf("pipe is nil")
 		return
 	}
-	sid, err = r.basic.Dial(strings.Replace(r.router, "${URI}", uri, -1), pipe)
+	sid, err = r.basic.SyncDial(strings.Replace(r.router, "${URI}", uri, -1), pipe)
 	return
 }
 
