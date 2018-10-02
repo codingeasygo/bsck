@@ -49,7 +49,7 @@ type Config struct {
 	VNCDir    string                `json:"vnc_dir"`
 }
 
-const Version = "1.4.0"
+const Version = "1.4.1"
 
 const RDPTmpl = `
 screen mode id:i:2
