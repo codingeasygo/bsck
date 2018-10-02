@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/Centny/gwf/log"
+	"github.com/Centny/gwf/smartio"
 
 	"github.com/Centny/gwf/util"
 	"github.com/sutils/bsck"
@@ -111,6 +112,16 @@ func readConfig(path string) (config *Config, last int64, err error) {
 	return
 }
 
+var exitf = func(code int) {
+	if smartio.Stdout != nil {
+		smartio.Stdout.Flush()
+	}
+	if smartio.Stderr != nil {
+		smartio.Stderr.Flush()
+	}
+	os.Exit(code)
+}
+
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "-h" {
 		fmt.Fprintf(os.Stderr, "Bond Socket Router Version %v\n", Version)
@@ -144,7 +155,7 @@ func main() {
 		config, configLast, err = readConfig(configPath)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "read config from %v fail with %v\n", os.Args[1], err)
-			os.Exit(1)
+			exitf(1)
 		}
 	} else {
 		u, _ := user.Current()
@@ -158,11 +169,12 @@ func main() {
 		}
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "read config from .bsrouter.json or ~/.bsrouter.json or /etc/bsrouter/bsrouter.json or /etc/bsrouter.json fail with %v\n", err)
-			os.Exit(1)
+			exitf(1)
 		}
 	}
 	if len(config.LogOut) > 0 || len(config.LogErr) > 0 {
 		log.Redirect(config.LogOut, config.LogErr)
+		bsck.Log.SetOutput(os.Stdout)
 	}
 	if config.LogFlags > 0 {
 		bsck.Log.SetFlags(config.LogFlags)
@@ -188,14 +200,16 @@ func main() {
 	dialerPool := dialer.NewPool()
 	err = dialerPool.Bootstrap(config.Dialer)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "boot dialer pool fail with %v\n", err)
-		os.Exit(1)
+		log.E("boot dialer pool fail with %v\n", err)
+		exitf(1)
 	}
 	dialerProxy := dialer.NewBalancedDialer()
-	err = dialerProxy.Bootstrap(config.Proxy)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "boot proxy dialer fail with %v\n", err)
-		os.Exit(1)
+	if config.Proxy != nil && len(config.Proxy.StrVal("id")) > 0 {
+		err = dialerProxy.Bootstrap(config.Proxy)
+		if err != nil {
+			log.E("boot proxy dialer fail with %v\n", err)
+			os.Exit(1)
+		}
 	}
 	var protocolMatcher = regexp.MustCompile("^[A-Za-z0-9]*://.*$")
 	var dialerAll = func(uri string, raw io.ReadWriteCloser) (sid uint64, err error) {
