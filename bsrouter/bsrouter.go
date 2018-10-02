@@ -40,6 +40,8 @@ type Config struct {
 	Web       Web                   `json:"web"`
 	ShowLog   int                   `json:"showlog"`
 	LogFlags  int                   `json:"logflags"`
+	LogOut    string                `json:"log_out"`
+	LogErr    string                `json:"log_err"`
 	Forwards  map[string]string     `json:"forwards"`
 	Channels  []*bsck.ChannelOption `json:"channels"`
 	Dialer    util.Map              `json:"dialer"`
@@ -158,6 +160,9 @@ func main() {
 			fmt.Fprintf(os.Stderr, "read config from .bsrouter.json or ~/.bsrouter.json or /etc/bsrouter/bsrouter.json or /etc/bsrouter.json fail with %v\n", err)
 			os.Exit(1)
 		}
+	}
+	if len(config.LogOut) > 0 || len(config.LogErr) > 0 {
+		log.Redirect(config.LogOut, config.LogErr)
 	}
 	if config.LogFlags > 0 {
 		bsck.Log.SetFlags(config.LogFlags)
