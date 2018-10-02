@@ -579,7 +579,7 @@ func (r *RouterDialer) Dial(sid uint64, uri string, pipe io.ReadWriteCloser) (rw
 		err = fmt.Errorf("pipe is nil")
 		return
 	}
-	sid, err = r.basic.SyncDial(strings.Replace(r.router, "${URI}", uri, -1), pipe)
+	sid, err = r.basic.SyncDial(strings.Replace(r.router, "${URI}", uri, -1), NewNotCloseRWC(pipe))
 	return
 }
 
@@ -590,4 +590,18 @@ func (r *RouterDialer) Pipe(uri string, raw io.ReadWriteCloser) (sid uint64, err
 
 func (r *RouterDialer) String() string {
 	return r.ID
+}
+
+type NotCloseRWC struct {
+	io.ReadWriteCloser
+}
+
+func NewNotCloseRWC(base io.ReadWriteCloser) *NotCloseRWC {
+	return &NotCloseRWC{
+		ReadWriteCloser: base,
+	}
+}
+
+func (n *NotCloseRWC) Close() (err error) {
+	return
 }
