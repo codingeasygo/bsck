@@ -218,12 +218,8 @@ func main() {
 			return
 		}
 		if protocolMatcher.MatchString(uri) {
-			var conn dialer.Conn
 			sid = node.UniqueSid()
-			conn, err = dialerPool.Dial(sid, uri)
-			if err == nil {
-				err = conn.Pipe(raw)
-			}
+			_, err = dialerPool.Dial(sid, uri, raw)
 			return
 		}
 		parts := strings.SplitN(uri, "?", 2)
@@ -248,18 +244,14 @@ func main() {
 		case bsck.SocksUriTypeBS:
 			sid, err = dialerAll(uri, raw)
 		default:
-			var conn dialer.Conn
 			sid = node.UniqueSid()
-			conn, err = dialerProxy.Dial(sid, "tcp://"+uri)
-			if err == nil {
-				err = conn.Pipe(raw)
-			}
+			_, err = dialerProxy.Dial(sid, "tcp://"+uri, raw)
 		}
 		return
 	}
 	forward.Dialer = dialerAll
 	node.Handler = bsck.DialRawF(func(sid uint64, uri string) (conn bsck.Conn, err error) {
-		raw, err := dialerPool.Dial(sid, uri)
+		raw, err := dialerPool.Dial(sid, uri, nil)
 		if err == nil {
 			conn = bsck.NewRawConn(raw, sid, uri)
 		}
@@ -582,45 +574,20 @@ func (r *RouterDialer) Matched(uri string) bool {
 }
 
 //dial raw connection
-func (r *RouterDialer) Dial(sid uint64, uri string) (rw dialer.Conn, err error) {
-	rw = &RouterConn{
-		dialer: r,
-		uri:    uri,
+func (r *RouterDialer) Dial(sid uint64, uri string, pipe io.ReadWriteCloser) (rw dialer.Conn, err error) {
+	if pipe == nil {
+		err = fmt.Errorf("pipe is nil")
+		return
 	}
+	sid, err = r.basic.Dial(strings.Replace(r.router, "${URI}", uri, -1), pipe)
 	return
 }
 
 func (r *RouterDialer) Pipe(uri string, raw io.ReadWriteCloser) (sid uint64, err error) {
-	sid, err = r.basic.Dial(strings.Replace(r.router, "${URI}", uri, -1), raw)
+	err = fmt.Errorf("not supported")
 	return
 }
 
-type RouterConn struct {
-	sid    uint64
-	raw    io.ReadWriteCloser
-	dialer *RouterDialer
-	uri    string
-}
-
-func (r *RouterConn) Pipe(raw io.ReadWriteCloser) (err error) {
-	r.raw = raw
-	r.sid, err = r.dialer.Pipe(r.uri, raw)
-	return
-}
-
-func (r *RouterConn) Read(p []byte) (n int, err error) {
-	err = fmt.Errorf("RouterConn.Read is not impl")
-	return
-}
-
-func (r *RouterConn) Write(p []byte) (n int, err error) {
-	err = fmt.Errorf("RouterConn.Write is not impl")
-	return
-}
-
-func (r *RouterConn) Close() (err error) {
-	if r.raw != nil {
-		err = r.raw.Close()
-	}
-	return
+func (r *RouterDialer) String() string {
+	return r.ID
 }
