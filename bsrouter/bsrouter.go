@@ -181,7 +181,11 @@ func main() {
 		return dialer.DefaultDialerCreator(t)
 	}
 	dialerPool := dialer.NewPool()
-	dialerPool.Bootstrap(config.Dialer)
+	err = dialerPool.Bootstrap(config.Dialer)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "boot dialer pool fail with %v\n", err)
+		os.Exit(1)
+	}
 	dialerProxy := dialer.NewBalancedDialer()
 	err = dialerProxy.Bootstrap(config.Proxy)
 	if err != nil {
