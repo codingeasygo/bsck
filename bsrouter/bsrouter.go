@@ -17,6 +17,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Centny/gwf/log"
+
 	"github.com/Centny/gwf/util"
 	"github.com/sutils/bsck"
 	"github.com/sutils/dialer"
@@ -159,6 +161,7 @@ func main() {
 	}
 	if config.LogFlags > 0 {
 		bsck.Log.SetFlags(config.LogFlags)
+		log.SharedLogger().SetFlags(config.LogFlags)
 	}
 	bsck.ShowLog = config.ShowLog
 	socks5 := bsck.NewSocksProxy()
@@ -180,7 +183,11 @@ func main() {
 	dialerPool := dialer.NewPool()
 	dialerPool.Bootstrap(config.Dialer)
 	dialerProxy := dialer.NewBalancedDialer()
-	dialerProxy.Bootstrap(config.Proxy)
+	err = dialerProxy.Bootstrap(config.Proxy)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "boot proxy dialer fail with %v\n", err)
+		os.Exit(1)
+	}
 	var protocolMatcher = regexp.MustCompile("^[A-Za-z0-9]*://.*$")
 	var dialerAll = func(uri string, raw io.ReadWriteCloser) (sid uint64, err error) {
 		if strings.Contains(uri, "->") {
