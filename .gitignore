@@ -17,3 +17,4 @@ coverage.json
 bsrouter/build
 bsrouter/bsrouter.key
 bsrouter/bsrouter.pem
+test.log

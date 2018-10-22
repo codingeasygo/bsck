@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sutils/dialer"
+	"github.com/sutils/bsck/dialer"
 )
 
 func TestPendingConn(t *testing.T) {
@@ -162,14 +162,28 @@ func proxyDialIPv6(t *testing.T, bys []byte, port uint16) {
 	fmt.Printf("->%v\n", buf[0:readed])
 }
 
+type CodableErr struct {
+	Err error
+}
+
+func (c *CodableErr) Error() string {
+	return c.Err.Error()
+}
+
+func (c *CodableErr) Code() byte {
+	return 0x01
+}
+
 func TestSocksProxy(t *testing.T) {
 	proxy := NewSocksProxy()
-	proxy.Dialer = func(uri string, raw io.ReadWriteCloser) (sid uint64, err error) {
+	proxy.Dialer = func(utype int, uri string, raw io.ReadWriteCloser) (sid uint64, err error) {
 		conn, err := net.Dial("tcp", uri)
 		if err == nil {
 			go io.Copy(conn, raw)
 			go io.Copy(raw, conn)
 			time.Sleep(100 * time.Millisecond)
+		} else {
+			err = &CodableErr{Err: err}
 		}
 		fmt.Println("dial to ", uri, err)
 		return

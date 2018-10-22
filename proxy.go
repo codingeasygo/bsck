@@ -58,7 +58,7 @@ func NewProxy(name string) (proxy *Proxy) {
 		Router:         NewRouter(name),
 		forwards:       map[string]ForwardEntry{},
 		forwardsLck:    sync.RWMutex{},
-		Handler:        NewTCPDialer(),
+		Handler:        nil,
 		Running:        true,
 		ReconnectDelay: 3 * time.Second,
 	}

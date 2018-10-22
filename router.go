@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"io"
 	"math"
-	"net"
-	"net/url"
 	"regexp"
 	"strings"
 	"sync"
@@ -146,8 +144,10 @@ func (r *RawConn) ReadCmd(b []byte) (n uint32, err error) {
 //Close will close the raw connection
 func (r *RawConn) Close() (err error) {
 	<-r.lck
-	close(r.connected)
-	r.closed = 1
+	if r.closed < 1 {
+		close(r.connected)
+		r.closed = 1
+	}
 	r.lck <- 1
 	err = r.Raw.Close()
 	return
@@ -234,33 +234,6 @@ func (d DialRawF) OnConnClose(conn Conn) error {
 //DialRaw will dial raw connection
 func (d DialRawF) DialRaw(sid uint64, uri string) (raw Conn, err error) {
 	raw, err = d(sid, uri)
-	return
-}
-
-//TCPDialer is an implementation of RouterHandler for tcp raw connection.
-type TCPDialer struct {
-}
-
-//NewTCPDialer will return new TCPDialer.
-func NewTCPDialer() *TCPDialer {
-	return &TCPDialer{}
-}
-
-//OnConnClose will be called when connection is closed
-func (t *TCPDialer) OnConnClose(conn Conn) error {
-	return nil
-}
-
-//DialRaw will dial raw connection
-func (t *TCPDialer) DialRaw(sid uint64, uri string) (raw Conn, err error) {
-	targetURI, err := url.Parse(uri)
-	if err != nil {
-		return
-	}
-	conn, err := net.Dial("tcp", targetURI.Host)
-	if err == nil {
-		raw = NewRawConn(conn, sid, uri)
-	}
 	return
 }
 
@@ -352,7 +325,7 @@ func NewRouter(name string) (router *Router) {
 		aclLck:     sync.RWMutex{},
 		BufferSize: 1024 * 1024,
 		Heartbeat:  5 * time.Second,
-		Handler:    NewTCPDialer(),
+		Handler:    nil,
 	}
 	return
 }
@@ -755,10 +728,7 @@ func (r *Router) DialConn(uri string, raw io.ReadWriteCloser) (sid uint64, conn 
 
 func (r *Router) SyncDial(uri string, raw io.ReadWriteCloser) (sid uint64, err error) {
 	sid, conn, err := r.DialConn(uri, raw)
-	if err != nil {
-		return
-	}
-	if !conn.Wait() {
+	if err == nil && !conn.Wait() {
 		err = fmt.Errorf("connect reseted")
 	}
 	return
