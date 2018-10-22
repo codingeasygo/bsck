@@ -146,8 +146,10 @@ func (r *RawConn) ReadCmd(b []byte) (n uint32, err error) {
 //Close will close the raw connection
 func (r *RawConn) Close() (err error) {
 	<-r.lck
-	close(r.connected)
-	r.closed = 1
+	if r.closed < 1 {
+		close(r.connected)
+		r.closed = 1
+	}
 	r.lck <- 1
 	err = r.Raw.Close()
 	return
