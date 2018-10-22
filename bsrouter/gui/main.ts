@@ -45,7 +45,7 @@ class Bsrouter {
         });
         this.runner.on('exit', (code) => {
             if (this.handler) {
-                this.handler.onLog(`child process exited with code ${code}`);
+                this.handler.onLog(`child process exited with code ${code}` + "\n");
             }
             this.status = "Stopped";
             this.handler.onStatus(this.status);
@@ -55,7 +55,7 @@ class Bsrouter {
         });
         this.runner.on('error', (e) => {
             if (this.handler) {
-                this.handler.onLog(`child process error with ${e}`);
+                this.handler.onLog(`child process error with ${e}` + "\n");
             }
             this.status = "Error"
             this.handler.onStatus(this.status);
@@ -138,6 +138,12 @@ class Bsrouter {
     public removeChannel(i: number) {
         var old = this.loadConf();
         old.channels.splice(i, 1);
+        fs.writeFileSync(this.workingFile, JSON.stringify(old));
+        return "OK"
+    }
+    public enableChannel(i: number, enabled: any) {
+        var old = this.loadConf();
+        old.channels[i].enable = enabled && true;
         fs.writeFileSync(this.workingFile, JSON.stringify(old));
         return "OK"
     }
@@ -274,6 +280,7 @@ function createWindow() {
     }
     bsrouter.handler = {
         onLog: (m) => {
+            // Log.info("%s", m.replace("\n", ""));
             mainWindow.webContents.send("log", m)
         },
         onStatus: (s) => {
@@ -324,6 +331,9 @@ function createWindow() {
     })
     ipcMain.on("removeChannel", (e, args) => {
         e.returnValue = bsrouter.removeChannel(args)
+    })
+    ipcMain.on("enableChannel", (e, args) => {
+        e.returnValue = bsrouter.enableChannel(args.index, args.enabled)
     })
     reloadMenu()
     const template: MenuItemConstructorOptions[] = [

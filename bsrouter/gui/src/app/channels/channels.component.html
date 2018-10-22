@@ -8,7 +8,7 @@
   </tr>
   <tr *ngFor="let c of allChannels;let i=index">
     <td>
-      <input type="checkbox" [checked]="c.enable" (changed)="enable($event,i,c)">
+      <input type="checkbox" [checked]="c.enable" (change)="enable($event,i,c)">
       &nbsp;
       {{c.remote}}
     </td>

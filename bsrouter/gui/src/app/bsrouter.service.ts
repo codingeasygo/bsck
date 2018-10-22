@@ -50,4 +50,7 @@ export class BsrouterService {
   public removeChannel(i: number) {
     return ipcRenderer.sendSync("removeChannel", i)
   }
+  public enableChannel(i: number, enabled: boolean) {
+    return ipcRenderer.sendSync("enableChannel", { index: i, enabled: enabled })
+  }
 }
