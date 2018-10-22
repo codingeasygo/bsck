@@ -1,6 +1,7 @@
 package dialer
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"os"
@@ -188,6 +189,51 @@ func TestCmdDialer2(t *testing.T) {
 	_, err = cmd.Dial(100, "://cmd", nil)
 	if err == nil {
 		t.Error("error")
+		return
+	}
+}
+
+func TestCmdDialerPipe(t *testing.T) {
+	cmd := NewCmdDialer()
+	cmd.PS1 = "CmdDialer"
+	cmd.Prefix = `echo testing`
+	cmd.Bootstrap(util.Map{})
+	cona, conb, _ := CreatePipedConn()
+	cmd.Dial(0, "tcp://cmd?exec=/bin/bash", conb)
+	go io.Copy(os.Stdout, cona)
+	fmt.Fprintf(cona, "ls\n")
+	time.Sleep(time.Millisecond)
+	cona.Close()
+	cmd.Shutdown()
+
+	//
+	cona, conb, _ = CreatePipedConn()
+	reader := NewClosableBuffer(bytes.NewBufferString("1234567890"))
+	rwc := NewReusableRWC(reader)
+	rwc.Pipe(conb)
+	buf := make([]byte, 10)
+	cona.Read(buf)
+	fmt.Println(string(buf))
+	//
+	//test pipe error
+	err := rwc.Pipe(conb)
+	if err == nil {
+		t.Error(err)
+	}
+	//
+	rwc.Close()
+}
+
+func TestCmdStdinWriter(t *testing.T) {
+	writer := NewCmdStdinWriter(os.Stdout, []byte("test"), []byte("close"))
+	_, err := fmt.Fprintf(writer, "testing-%v", 0)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	_, err = fmt.Fprintf(writer, "close")
+	if err == nil {
+		t.Error(err)
 		return
 	}
 }

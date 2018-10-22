@@ -57,6 +57,16 @@ func TestWebDialer(t *testing.T) {
 	}()
 	fmt.Println(util.HGet("http://localhost:2422/"))
 	fmt.Println(util.HPost("http://localhost:2422/", nil))
+	//
+	//test pipe
+	cona, conb, _ := CreatePipedConn()
+	_, err = dialer.Dial(100, "http://web?dir=/tmp", conb)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	cona.Close()
+	//
 	dialer.Shutdown()
 	time.Sleep(100 * time.Millisecond)
 	//for cover

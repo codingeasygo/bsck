@@ -391,9 +391,76 @@ func TestBalancedDialerLimit(t *testing.T) {
 	wg.Wait()
 }
 
-func TestXX(t *testing.T) {
-	xx := make(chan int, 1)
-	xx <- 1
-	close(xx)
-	<-xx
+func TestBalancedDialerFilter(t *testing.T) {
+	NewDialer = func(t string) Dialer {
+		return &TimeDialer{}
+	}
+	defer func() {
+		NewDialer = DefaultDialerCreator
+	}()
+	dialer := NewBalancedDialer()
+	err := dialer.Bootstrap(util.Map{
+		"id":      "t1",
+		"matcher": ".*",
+		"timeout": 10000,
+		"delay":   1,
+		"filter": []util.Map{
+			{
+				"matcher": "time-[0-2]",
+				"access":  0,
+			},
+			{
+				"matcher": "time-[3-5]",
+				"access":  1,
+			},
+		},
+		"dialers": []util.Map{
+			{
+				"id":    "i0",
+				"type":  "time",
+				"limit": []int{110, 1},
+			},
+		},
+	})
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	for i := 0; i < 5; i++ {
+		_, err = dialer.Dial(uint64(i), fmt.Sprintf("time-%v", i), nil)
+		if i < 3 && err == nil {
+			t.Errorf("%v->%v", i, err)
+			return
+		}
+		if i > 2 && err != nil {
+			t.Errorf("%v->%v", i, err)
+			return
+		}
+	}
+	//
+	//test bootstrap error
+	dialer = NewBalancedDialer()
+	err = dialer.Bootstrap(util.Map{
+		"id":      "t1",
+		"matcher": ".*",
+		"timeout": 10000,
+		"delay":   1,
+		"filter": []util.Map{
+			{
+				"matcher": "tim[e-[0-2]",
+				"access":  0,
+			},
+		},
+		"dialers": []util.Map{
+			{
+				"id":    "i0",
+				"type":  "time",
+				"limit": []int{110, 1},
+			},
+		},
+	})
+	if err == nil {
+		t.Error(err)
+		return
+	}
 }

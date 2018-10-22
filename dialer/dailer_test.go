@@ -1,6 +1,8 @@
 package dialer
 
 import (
+	"bytes"
+	"fmt"
 	"testing"
 
 	"github.com/Centny/gwf/util"
@@ -81,4 +83,34 @@ func TestPool(t *testing.T) {
 		t.Error(err)
 		return
 	}
+}
+
+type ClosableBuffer struct {
+	*bytes.Buffer
+}
+
+func NewClosableBuffer(b *bytes.Buffer) *ClosableBuffer {
+	return &ClosableBuffer{Buffer: b}
+}
+
+func (c *ClosableBuffer) Close() error {
+	return nil
+}
+
+func TestCopyPipable(t *testing.T) {
+	cona, conb, _ := CreatePipedConn()
+	reader := NewClosableBuffer(bytes.NewBufferString("1234567890"))
+	piped := NewCopyPipable(reader)
+	piped.Pipe(conb)
+	buf := make([]byte, 10)
+	cona.Read(buf)
+	fmt.Println(string(buf))
+	//
+	//test pipe error
+	err := piped.Pipe(conb)
+	if err == nil {
+		t.Error(err)
+	}
+	//
+	piped.Close()
 }

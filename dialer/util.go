@@ -186,3 +186,9 @@ func fullBuf(r io.Reader, p []byte, length uint32, last *int64) error {
 	}
 	return nil
 }
+
+func assert(v bool) {
+	if !v {
+		panic("assert fail")
+	}
+}

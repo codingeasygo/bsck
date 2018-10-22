@@ -17,6 +17,7 @@ import (
 
 //WebDialer is an implementation of the Dialer interface for dial to web server
 type WebDialer struct {
+	stopped bool
 	accept  chan net.Conn
 	consLck sync.RWMutex
 	cons    map[string]*WebDialerConn
@@ -47,7 +48,10 @@ func (web *WebDialer) Name() string {
 func (web *WebDialer) Bootstrap(options util.Map) error {
 	go func() {
 		http.Serve(web, web)
+		web.consLck.Lock()
 		close(web.accept)
+		web.stopped = true
+		web.consLck.Unlock()
 	}()
 	return nil
 }
@@ -70,21 +74,20 @@ func (web *WebDialer) Matched(uri string) bool {
 
 //Dial to web server
 func (web *WebDialer) Dial(sid uint64, uri string, pipe io.ReadWriteCloser) (raw Conn, err error) {
+	web.consLck.Lock()
+	defer web.consLck.Unlock()
+	if web.stopped {
+		err = fmt.Errorf("stopped")
+	}
 	conn, basic, err := PipeWebDialerConn(sid, uri)
 	if err != nil {
 		return
 	}
-	web.consLck.Lock()
 	web.cons[fmt.Sprintf("%v", sid)] = conn
-	web.consLck.Unlock()
 	web.accept <- conn
 	raw = NewCopyPipable(basic)
 	if pipe != nil {
-		err = raw.Pipe(pipe)
-		if err != nil {
-			conn.Close()
-			basic.Close()
-		}
+		assert(raw.Pipe(pipe) == nil)
 	}
 	return
 }

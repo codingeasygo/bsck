@@ -3,6 +3,8 @@ package dialer
 import (
 	"fmt"
 	"testing"
+
+	"github.com/Centny/gwf/util"
 )
 
 func TestTCPDialer(t *testing.T) {
@@ -16,21 +18,27 @@ func TestTCPDialer(t *testing.T) {
 		t.Error("error")
 		return
 	}
-	_, err := tcp.Dial(10, "http://localhost", nil)
+	con, err := tcp.Dial(10, "http://localhost", nil)
 	if err != nil {
 		t.Error(err)
 		return
 	}
-	_, err = tcp.Dial(10, "https://www.baidu.com", nil)
+	con.Close()
+	//
+	con, err = tcp.Dial(10, "https://www.baidu.com", nil)
 	if err != nil {
 		t.Error(err)
 		return
 	}
-	_, err = tcp.Dial(10, "http://localhost?bind=0.0.0.0:0", nil)
+	con.Close()
+	//
+	con, err = tcp.Dial(10, "http://localhost?bind=0.0.0.0:0", nil)
 	if err != nil {
 		t.Error(err)
 		return
 	}
+	con.Close()
+	//
 	fmt.Printf("%v test done...", tcp)
 	tcp.Name()
 	tcp.Options()
@@ -41,4 +49,26 @@ func TestTCPDialer(t *testing.T) {
 		t.Error(err)
 		return
 	}
+	//
+	//test bind configure
+	tcp = NewTCPDialer()
+	tcp.Bootstrap(util.Map{
+		"bind": "0.0.0.0:0",
+	})
+	con, err = tcp.Dial(10, "http://localhost", nil)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	con.Close()
+	//
+	//test pipe
+	cona, conb, _ := CreatePipedConn()
+	con, err = tcp.Dial(10, "http://localhost", conb)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	con.Close()
+	cona.Close()
 }

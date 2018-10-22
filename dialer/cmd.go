@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"io"
 	"net/url"
-	"os"
-	"os/exec"
 	"runtime"
 	"sync"
 	"sync/atomic"
@@ -169,59 +167,7 @@ func (c *CmdDialer) Dial(sid uint64, uri string, pipe io.ReadWriteCloser) (raw C
 	}
 	runnable := remote.Query().Get("exec")
 	log.D("CmdDialer dial to cmd:%v", runnable)
-	var cmdReader io.Reader
-	var cmdWriter io.Writer
-	var cmdCloser func() error
-	var cmdStart func() error
-	switch runtime.GOOS {
-	case "windows":
-		cmd := exec.Command("cmd", "/C", runnable)
-		stdin, _ := cmd.StdinPipe()
-		stdout, piped, _ := os.Pipe()
-		cmd.Stdout = piped
-		cmd.Stderr = piped
-		cmdReader = stdout
-		cmdWriter = stdin
-		cmdCloser = func() error {
-			stdin.Close()
-			piped.Close()
-			cmd.Process.Kill()
-			err := cmd.Wait()
-			return err
-		}
-		cmdStart = cmd.Start
-	default:
-		cmd := NewCmd("Cmd", c.PS1, "bash", "-c", runnable)
-		if len(c.Prefix) > 0 {
-			cmd.Prefix = bytes.NewBuffer([]byte(c.Prefix))
-		}
-		cmd.Dir = c.Dir
-		cmd.Raw.Env = append(cmd.Raw.Env, c.Env...)
-		ps1 := remote.Query().Get("PS1")
-		if len(ps1) > 0 {
-			cmd.PS1 = ps1
-		}
-		dir := remote.Query().Get("Dir")
-		if len(dir) > 0 {
-			cmd.Dir = dir
-		}
-		for key, vals := range remote.Query() {
-			switch key {
-			case "PS1":
-			case "Dir":
-			case "LC":
-			case "exec":
-			default:
-				cmd.Raw.Env = append(cmd.Raw.Env, fmt.Sprintf("%v=%v", key, vals[0]))
-			}
-		}
-		cmd.Cols, cmd.Rows = 80, 60
-		util.ValidAttrF(`cols,O|I,R:0;rows,O|I,R:0;`, remote.Query().Get, true, &cmd.Cols, &cmd.Rows)
-		cmdReader = cmd
-		cmdWriter = cmd
-		cmdCloser = cmd.Close
-		cmdStart = cmd.Start
-	}
+	cmdReader, cmdWriter, cmdCloser, cmdStart := createCmd(c, runnable, remote)
 	//
 	lc := remote.Query().Get("LC")
 	if len(lc) < 1 {
@@ -376,7 +322,6 @@ func (r *ReusableRWC) Pipe(raw io.ReadWriteCloser) (err error) {
 }
 
 func (r *ReusableRWC) copyAndClose(src io.ReadWriteCloser, dst io.ReadWriteCloser) {
-
 	io.Copy(dst, src)
 	dst.Close()
 	src.Close()

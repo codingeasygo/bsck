@@ -76,10 +76,7 @@ func (t *TCPDialer) Dial(sid uint64, uri string, pipe io.ReadWriteCloser) (raw C
 		if err == nil {
 			raw = NewCopyPipable(basic)
 			if pipe != nil {
-				err = raw.Pipe(pipe)
-			}
-			if err != nil {
-				basic.Close()
+				assert(raw.Pipe(pipe) == nil)
 			}
 		}
 	}

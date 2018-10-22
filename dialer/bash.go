@@ -38,9 +38,9 @@ func NewCmd(name, ps1, shell string, args ...string) (cmd *Cmd) {
 	return
 }
 
-func (c *Cmd) AddEnvf(format string, args ...interface{}) {
-	c.Raw.Env = append(c.Raw.Env, fmt.Sprintf(format, args...))
-}
+// func (c *Cmd) AddEnvf(format string, args ...interface{}) {
+// 	c.Raw.Env = append(c.Raw.Env, fmt.Sprintf(format, args...))
+// }
 
 // func (c *Cmd) String() string {
 // 	return c.Name

@@ -125,12 +125,7 @@ func (s *SocksProxyDialer) Dial(sid uint64, uri string, pipe io.ReadWriteCloser)
 		doneErr = &CodeError{Inner: err, ByteCode: 0x10}
 		return
 	}
-	_, err = conn.Write([]byte{0x05, 0x01, 0x00})
-	if err != nil {
-		conn.Close()
-		doneErr = &CodeError{Inner: err, ByteCode: 0x10}
-		return
-	}
+	conn.Write([]byte{0x05, 0x01, 0x00})
 	buf := make([]byte, 1024*64)
 	err = fullBuf(conn, buf, 2, nil)
 	if err != nil {
@@ -150,12 +145,7 @@ func (s *SocksProxyDialer) Dial(sid uint64, uri string, pipe io.ReadWriteCloser)
 	copy(buf[5:], []byte(host))
 	buf[blen-2] = byte(port / 256)
 	buf[blen-1] = byte(port % 256)
-	_, err = conn.Write(buf[:blen])
-	if err != nil {
-		conn.Close()
-		doneErr = &CodeError{Inner: err, ByteCode: 0x10}
-		return
-	}
+	conn.Write(buf[:blen])
 	err = fullBuf(conn, buf, 5, nil)
 	if err != nil {
 		conn.Close()
@@ -187,10 +177,7 @@ func (s *SocksProxyDialer) Dial(sid uint64, uri string, pipe io.ReadWriteCloser)
 	}
 	raw = NewCopyPipable(conn)
 	if pipe != nil {
-		err = raw.Pipe(pipe)
-	}
-	if err != nil {
-		conn.Close()
+		assert(raw.Pipe(pipe) == nil)
 	}
 	return
 }
