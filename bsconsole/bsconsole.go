@@ -23,14 +23,18 @@ import (
 	"golang.org/x/net/websocket"
 )
 
-const Version = "1.2.3"
+//Version is bsrouter version
+const Version = "1.4.2"
 
+//CharTerm is console stop command
 var CharTerm = []byte{3}
 
+//Web is pojo for web configure
 type Web struct {
 	Listen string `json:"listen"`
 }
 
+//Web is pojo for configure
 type Config struct {
 	Name   string `json:"name"`
 	Listen string `json:"listen"`
@@ -57,25 +61,33 @@ func appendSize(uri string) string {
 }
 
 func main() {
-	flag.StringVar(&server, "s", "", "")
+	var showVersion bool
+	flag.StringVar(&server, "srv", "", "")
 	flag.BoolVar(&win32, "win32", false, "win32 command")
 	flag.BoolVar(&proxy, "proxy", false, "proxy mode")
 	flag.BoolVar(&ping, "ping", false, "ping mode")
+	flag.BoolVar(&showVersion, "version", false, "show version")
+	flag.BoolVar(&showVersion, "v", false, "show version")
 	flag.Parse()
+	if showVersion {
+		fmt.Println(Version)
+		os.Exit(1)
+		return
+	}
 	if len(flag.Args()) < 1 {
 		fmt.Fprintf(os.Stderr, "Bond Socket Console Version %v\n", Version)
-		fmt.Fprintf(os.Stderr, "Usage:  %v [option] <forward uri>\n", "bsrouter")
-		fmt.Fprintf(os.Stderr, "        %v 'x->y->tcp://127.0.0.1:80'\n", "bsrouter")
+		fmt.Fprintf(os.Stderr, "Usage:  %v [option] <forward uri>\n", "bsconsole")
+		fmt.Fprintf(os.Stderr, "        %v 'x->y->tcp://127.0.0.1:80'\n", "bsconsole")
 		fmt.Fprintf(os.Stderr, "bsrouter options:\n")
-		fmt.Fprintf(os.Stderr, "        s\n")
+		fmt.Fprintf(os.Stderr, "        srv\n")
 		fmt.Fprintf(os.Stderr, "             the remote bsrouter listen address, eg: ws://127.0.0.1:1082, tcp://127.0.0.1:2023\n")
 		os.Exit(1)
 		return
 	}
-	var uri, remote string
+	var fullURI, remote string
 	if regexp.MustCompile("^[A-Za-z0-9]*://.*$").MatchString(flag.Arg(0)) {
 		server = flag.Arg(0)
-		uri = ""
+		fullURI = ""
 		remote = flag.Arg(0)
 	} else if len(server) < 1 {
 		var err error
@@ -107,9 +119,12 @@ func main() {
 			fmt.Fprintf(os.Stderr, "not client access listen on config %v\n", path)
 			os.Exit(1)
 		}
-		uri = flag.Args()[0]
-		if ping {
-			uri += "->tcp://echo"
+		fullURI = flag.Args()[0]
+		if ping && !strings.Contains(fullURI, "tcp://echo") {
+			fullURI += "->tcp://echo"
+		}
+		if !ping && !proxy && !win32 && !strings.Contains(fullURI, "tcp://cmd") {
+			fullURI += "->tcp://cmd?exec=bash"
 		}
 		remote = flag.Args()[0]
 	}
@@ -126,21 +141,24 @@ func main() {
 	case "ws":
 		fallthrough
 	case "wss":
-		fullURI := server
-		if len(uri) > 0 {
-			if strings.Contains(uri, "->") {
-				uri = appendSize(uri)
-				fullURI += "/?router=" + url.QueryEscape(uri)
-			} else {
-				fullURI += "/" + uri
+		targetURI := server
+		if len(fullURI) > 0 {
+			if strings.Contains(fullURI, "->") {
+				//for full forward
 				fullURI = appendSize(fullURI)
+				targetURI += "/?router=" + url.QueryEscape(fullURI)
+			} else {
+				//for alias forward
+				targetURI += "/" + fullURI
+				targetURI = appendSize(targetURI)
 			}
 		} else {
-			fullURI = appendSize(fullURI)
+			//for command full uri.
+			targetURI = appendSize(targetURI)
 		}
-		conn, err = websocket.Dial(fullURI, "", "https://"+rurl.Host)
+		conn, err = websocket.Dial(targetURI, "", "https://"+rurl.Host)
 	case "socks5":
-		uri = appendSize(uri)
+		fullURI = appendSize(fullURI)
 		conn, err = net.Dial("tcp", rurl.Host)
 		if err == nil {
 			buf := make([]byte, 1024*64)
@@ -151,9 +169,9 @@ func main() {
 			}
 			_, err = conn.Read(buf)
 			buf[0], buf[1], buf[2], buf[3] = 0x05, 0x01, 0x00, 0x13
-			buf[4] = byte(len(uri))
-			copy(buf[5:], []byte(uri))
-			binary.BigEndian.PutUint16(buf[5+len(uri):], 0)
+			buf[4] = byte(len(fullURI))
+			copy(buf[5:], []byte(fullURI))
+			binary.BigEndian.PutUint16(buf[5+len(fullURI):], 0)
 			_, err = conn.Write(buf[:buf[4]+7])
 			if err != nil {
 				return
@@ -189,7 +207,7 @@ func runPing(conn io.ReadWriteCloser, remote string, dialBeg time.Time) {
 	var err error
 	pingBeg := time.Now()
 	reader := bufio.NewReader(conn)
-	for i = 1; i < 101; i++ {
+	for i = 0; i < 100; i++ {
 		_, err = fmt.Fprintf(conn, "data-%v\n", i)
 		if err != nil {
 			break

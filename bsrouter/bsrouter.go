@@ -22,15 +22,17 @@ import (
 
 	"github.com/Centny/gwf/util"
 	"github.com/sutils/bsck"
-	"github.com/sutils/dialer"
+	"github.com/sutils/bsck/dialer"
 )
 
+//Web is pojo for web configure
 type Web struct {
 	Suffix string `json:"suffix"`
 	Listen string `json:"listen"`
 	Auth   string `json:"auth"`
 }
 
+//Config is pojo for all configure
 type Config struct {
 	Name      string                `json:"name"`
 	Cert      string                `json:"cert"`
@@ -52,8 +54,10 @@ type Config struct {
 	VNCDir    string                `json:"vnc_dir"`
 }
 
-const Version = "1.4.1"
+//Version is bsrouter version
+const Version = "1.4.2"
 
+//RDPTmpl is the template string for rdp file
 const RDPTmpl = `
 screen mode id:i:2
 use multimon:i:1
@@ -79,6 +83,7 @@ bookmarktype:i:3
 use redirection server name:i:0
 `
 
+//VNCTmpl is the template string for vnc file
 const VNCTmpl = `
 FriendlyName=%v
 FullScreen=1
@@ -123,6 +128,10 @@ var exitf = func(code int) {
 }
 
 func main() {
+	if len(os.Args) > 1 && (os.Args[1] == "-v" || os.Args[1] == "--version") {
+		fmt.Println(Version)
+		os.Exit(0)
+	}
 	if len(os.Args) > 1 && os.Args[1] == "-h" {
 		fmt.Fprintf(os.Stderr, "Bond Socket Router Version %v\n", Version)
 		fmt.Fprintf(os.Stderr, "Usage:  %v configure\n", "bsrouter")
@@ -348,6 +357,7 @@ func main() {
 		if err == nil && rdp && len(config.RDPDir) > 0 {
 			confLck.Lock()
 			fileData := fmt.Sprintf(RDPTmpl, listener.Addr(), target.User.Username())
+			os.MkdirAll(config.RDPDir, os.ModePerm)
 			savepath := filepath.Join(config.RDPDir, parts[0]+".rdp")
 			err := ioutil.WriteFile(savepath, []byte(fileData), os.ModePerm)
 			confLck.Unlock()
@@ -361,6 +371,7 @@ func main() {
 			confLck.Lock()
 			password, _ := target.User.Password()
 			fileData := fmt.Sprintf(VNCTmpl, parts[0], listener.Addr(), password)
+			os.MkdirAll(config.VNCDir, os.ModePerm)
 			savepath := filepath.Join(config.VNCDir, parts[0]+".vnc")
 			err := ioutil.WriteFile(savepath, []byte(fileData), os.ModePerm)
 			confLck.Unlock()
@@ -523,6 +534,7 @@ func main() {
 	server.Close()
 }
 
+//RouterDialer is an impl for dialer.Dialder to dialer the connection by bsck.Router.
 type RouterDialer struct {
 	basic   *bsck.Router
 	ID      string
@@ -532,6 +544,7 @@ type RouterDialer struct {
 	args    string
 }
 
+//NewRouterDialer is default creator by basic Router.
 func NewRouterDialer(basic *bsck.Router) *RouterDialer {
 	return &RouterDialer{
 		basic:   basic,
@@ -540,11 +553,12 @@ func NewRouterDialer(basic *bsck.Router) *RouterDialer {
 	}
 }
 
+//Name return dialer name.
 func (r *RouterDialer) Name() string {
 	return r.ID
 }
 
-//initial dialer
+//Bootstrap will initial dialer
 func (r *RouterDialer) Bootstrap(options util.Map) (err error) {
 	r.conf = options
 	r.ID = options.StrVal("id")
@@ -563,17 +577,17 @@ func (r *RouterDialer) Bootstrap(options util.Map) (err error) {
 	return
 }
 
-//
+//Options return current configure
 func (r *RouterDialer) Options() util.Map {
 	return r.conf
 }
 
-//match uri
+//Matched will verify uri is matched
 func (r *RouterDialer) Matched(uri string) bool {
 	return r.matcher.MatchString(uri)
 }
 
-//dial raw connection
+//Dial to uri by router
 func (r *RouterDialer) Dial(sid uint64, uri string, pipe io.ReadWriteCloser) (rw dialer.Conn, err error) {
 	if pipe == nil {
 		err = fmt.Errorf("pipe is nil")
@@ -583,6 +597,7 @@ func (r *RouterDialer) Dial(sid uint64, uri string, pipe io.ReadWriteCloser) (rw
 	return
 }
 
+//Pipe to uri by router
 func (r *RouterDialer) Pipe(uri string, raw io.ReadWriteCloser) (sid uint64, err error) {
 	err = fmt.Errorf("not supported")
 	return
@@ -592,16 +607,19 @@ func (r *RouterDialer) String() string {
 	return r.ID
 }
 
+//NotCloseRWC is struct to prevent close base ReadWriteCloser
 type NotCloseRWC struct {
 	io.ReadWriteCloser
 }
 
+//NewNotCloseRWC is default creator by base NewNotCloseRWC
 func NewNotCloseRWC(base io.ReadWriteCloser) *NotCloseRWC {
 	return &NotCloseRWC{
 		ReadWriteCloser: base,
 	}
 }
 
+//Close is imple to io.Closer
 func (n *NotCloseRWC) Close() (err error) {
 	return
 }
