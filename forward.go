@@ -266,3 +266,10 @@ func (w *WaitReadWriteCloser) Wait() {
 		<-w.wc
 	}
 }
+
+func (w *WaitReadWriteCloser) String() string {
+	if conn, ok := w.ReadWriteCloser.(net.Conn); ok {
+		return conn.RemoteAddr().String()
+	}
+	return fmt.Sprintf("%v", w.ReadWriteCloser)
+}

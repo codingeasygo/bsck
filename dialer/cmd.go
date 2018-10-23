@@ -177,18 +177,21 @@ func (c *CmdDialer) Dial(sid uint64, uri string, pipe io.ReadWriteCloser) (raw C
 	switch lc {
 	case "zh_CN.GBK":
 		combined = &CombinedRWC{
+			Info:   runnable,
 			Reader: transform.NewReader(cmdReader, simplifiedchinese.GBK.NewDecoder()),
 			Writer: NewCmdStdinWriter(transform.NewWriter(cmdWriter, simplifiedchinese.GBK.NewEncoder()), c.Replace, c.CloseTag),
 			Closer: cmdCloser,
 		}
 	case "zh_CN.GB18030":
 		combined = &CombinedRWC{
+			Info:   runnable,
 			Reader: transform.NewReader(cmdReader, simplifiedchinese.GB18030.NewDecoder()),
 			Writer: NewCmdStdinWriter(transform.NewWriter(cmdWriter, simplifiedchinese.GB18030.NewEncoder()), c.Replace, c.CloseTag),
 			Closer: cmdCloser,
 		}
 	default:
 		combined = &CombinedRWC{
+			Info:   runnable,
 			Reader: cmdReader,
 			Writer: NewCmdStdinWriter(cmdWriter, c.Replace, c.CloseTag),
 			Closer: cmdCloser,
@@ -224,6 +227,7 @@ type CombinedRWC struct {
 	io.Writer
 	Closer func() error
 	closed uint32
+	Info   string
 }
 
 //Close will call closer only once
@@ -235,6 +239,10 @@ func (c *CombinedRWC) Close() (err error) {
 		err = c.Closer()
 	}
 	return
+}
+
+func (c *CombinedRWC) String() string {
+	return c.Info
 }
 
 //ReusableRWC
@@ -325,4 +333,8 @@ func (r *ReusableRWC) copyAndClose(src io.ReadWriteCloser, dst io.ReadWriteClose
 	io.Copy(dst, src)
 	dst.Close()
 	src.Close()
+}
+
+func (r *ReusableRWC) String() string {
+	return fmt.Sprintf("%v", r.Raw)
 }

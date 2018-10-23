@@ -36,6 +36,13 @@ func (b *BufferConn) Close() (err error) {
 	return
 }
 
+func (b *BufferConn) String() string {
+	if conn, ok := b.Raw.(net.Conn); ok {
+		return conn.RemoteAddr().String()
+	}
+	return fmt.Sprintf("%v", b.Raw)
+}
+
 //ForwardEntry is the forward entry
 type ForwardEntry []interface{}
 

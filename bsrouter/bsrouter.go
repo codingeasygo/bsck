@@ -207,6 +207,7 @@ func main() {
 		return dialer.DefaultDialerCreator(t)
 	}
 	dialerPool := dialer.NewPool()
+	dialerPool.AddDialer(dialer.NewStateDialer("router", node.Router))
 	err = dialerPool.Bootstrap(config.Dialer)
 	if err != nil {
 		log.E("boot dialer pool fail with %v\n", err)

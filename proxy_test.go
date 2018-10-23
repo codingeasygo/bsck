@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Centny/gwf/util"
 	"github.com/sutils/bsck/dialer"
 )
 
@@ -1042,6 +1043,9 @@ func TestProxyDialSync(t *testing.T) {
 		t.Error("error")
 		return
 	}
+	fmt.Printf("master-->\n%v\n\n", util.S2Json(master.State()))
+	fmt.Printf("slaver-->\n%v\n\n", util.S2Json(slaver.State()))
+	fmt.Printf("client-->\n%v\n\n", util.S2Json(client.State()))
 	_, err = client.SyncDial("master->error", connb)
 	if err == nil {
 		t.Error("error")

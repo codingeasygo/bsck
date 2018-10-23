@@ -3,6 +3,7 @@ package dialer
 import (
 	"fmt"
 	"io"
+	"net"
 	"sync/atomic"
 
 	"github.com/Centny/gwf/util"
@@ -40,6 +41,13 @@ func (c *CopyPipable) copyAndClose(src io.ReadWriteCloser, dst io.ReadWriteClose
 	io.Copy(dst, src)
 	dst.Close()
 	src.Close()
+}
+
+func (c *CopyPipable) String() string {
+	if conn, ok := c.ReadWriteCloser.(net.Conn); ok {
+		return conn.RemoteAddr().String()
+	}
+	return fmt.Sprintf("%v", c.ReadWriteCloser)
 }
 
 // Dialer is the interface that wraps the dialer
@@ -86,22 +94,22 @@ func (p *Pool) Bootstrap(options util.Map) error {
 		}
 		p.Dialers = append(p.Dialers, dialer)
 	}
-	if options.Val("cmd") != nil || options.IntValV("standard", 0) > 0 {
+	if options.Val("cmd") != nil || options.IntValV("standard", 0) > 0 || options.IntValV("std", 0) > 0 {
 		cmd := NewCmdDialer()
 		cmd.Bootstrap(options.MapValV("cmd", util.Map{}))
 		p.Dialers = append(p.Dialers, cmd)
 	}
-	if options.Val("echo") != nil || options.IntValV("standard", 0) > 0 {
+	if options.Val("echo") != nil || options.IntValV("standard", 0) > 0 || options.IntValV("std", 0) > 0 {
 		echo := NewEchoDialer()
 		echo.Bootstrap(options.MapValV("echo", util.Map{}))
 		p.Dialers = append(p.Dialers, echo)
 	}
-	if options.Val("web") != nil || options.IntValV("standard", 0) > 0 {
+	if options.Val("web") != nil || options.IntValV("standard", 0) > 0 || options.IntValV("std", 0) > 0 {
 		web := NewWebDialer()
 		web.Bootstrap(options.MapValV("web", util.Map{}))
 		p.Dialers = append(p.Dialers, web)
 	}
-	if options.Val("tcp") != nil || options.IntValV("standard", 0) > 0 {
+	if options.Val("tcp") != nil || options.IntValV("standard", 0) > 0 || options.IntValV("std", 0) > 0 {
 		tcp := NewTCPDialer()
 		tcp.Bootstrap(options.MapValV("tcp", util.Map{}))
 		p.Dialers = append(p.Dialers, tcp)

@@ -19,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Centny/gwf/util"
 	"github.com/sutils/readkey"
 	"golang.org/x/net/websocket"
 )
@@ -46,6 +47,8 @@ var server string
 var win32 bool
 var proxy bool
 var ping bool
+var state string
+var help bool
 
 func appendSize(uri string) string {
 	if proxy {
@@ -66,6 +69,9 @@ func main() {
 	flag.BoolVar(&win32, "win32", false, "win32 command")
 	flag.BoolVar(&proxy, "proxy", false, "proxy mode")
 	flag.BoolVar(&ping, "ping", false, "ping mode")
+	flag.BoolVar(&help, "help", false, "show help")
+	flag.BoolVar(&help, "h", false, "show help")
+	flag.StringVar(&state, "state", "", "state mode")
 	flag.BoolVar(&showVersion, "version", false, "show version")
 	flag.BoolVar(&showVersion, "v", false, "show version")
 	flag.Parse()
@@ -74,7 +80,7 @@ func main() {
 		os.Exit(1)
 		return
 	}
-	if len(flag.Args()) < 1 {
+	if help {
 		fmt.Fprintf(os.Stderr, "Bond Socket Console Version %v\n", Version)
 		fmt.Fprintf(os.Stderr, "Usage:  %v [option] <forward uri>\n", "bsconsole")
 		fmt.Fprintf(os.Stderr, "        %v 'x->y->tcp://127.0.0.1:80'\n", "bsconsole")
@@ -85,7 +91,7 @@ func main() {
 		return
 	}
 	var fullURI, remote string
-	if regexp.MustCompile("^[A-Za-z0-9]*://.*$").MatchString(flag.Arg(0)) {
+	if regexp.MustCompile("^(ws|wss|socks5)://.*$").MatchString(flag.Arg(0)) {
 		server = flag.Arg(0)
 		fullURI = ""
 		remote = flag.Arg(0)
@@ -119,14 +125,23 @@ func main() {
 			fmt.Fprintf(os.Stderr, "not client access listen on config %v\n", path)
 			os.Exit(1)
 		}
-		fullURI = flag.Args()[0]
+		if len(flag.Args()) > 0 {
+			fullURI = flag.Args()[0]
+		}
 		if ping && !strings.Contains(fullURI, "tcp://echo") {
 			fullURI += "->tcp://echo"
 		}
-		if !ping && !proxy && !win32 && !strings.Contains(fullURI, "tcp://cmd") {
+		if len(state) > 0 {
+			if len(fullURI) > 0 {
+				fullURI += "->state://" + state
+			} else {
+				fullURI += "state://" + state
+			}
+		}
+		if len(state) < 1 && !ping && !proxy && !win32 && !strings.Contains(fullURI, "://") {
 			fullURI += "->tcp://cmd?exec=bash"
 		}
-		remote = flag.Args()[0]
+		remote = fullURI
 	}
 	//
 	dialBeg := time.Now()
@@ -143,20 +158,20 @@ func main() {
 	case "wss":
 		targetURI := server
 		if len(fullURI) > 0 {
-			if strings.Contains(fullURI, "->") {
-				//for full forward
-				fullURI = appendSize(fullURI)
-				targetURI += "/?router=" + url.QueryEscape(fullURI)
-			} else {
+			if !strings.Contains(fullURI, "->") && !strings.Contains(fullURI, "://") {
 				//for alias forward
 				targetURI += "/" + fullURI
 				targetURI = appendSize(targetURI)
+			} else {
+				//for full forward
+				fullURI = appendSize(fullURI)
+				targetURI += "/?router=" + url.QueryEscape(fullURI)
 			}
 		} else {
 			//for command full uri.
 			targetURI = appendSize(targetURI)
 		}
-		conn, err = websocket.Dial(targetURI, "", "https://"+rurl.Host)
+		conn, err = websocket.Dial(targetURI, "", rurl.Scheme+"://"+rurl.Host)
 	case "socks5":
 		fullURI = appendSize(fullURI)
 		conn, err = net.Dial("tcp", rurl.Host)
@@ -197,6 +212,8 @@ func main() {
 		runWinConsole(conn)
 	} else if proxy {
 		runProxy(conn)
+	} else if len(state) > 0 {
+		runState(conn)
 	} else {
 		runUnixConsole(conn)
 	}
@@ -316,4 +333,38 @@ func runProxy(conn io.ReadWriteCloser) {
 	go io.Copy(os.Stdout, conn)
 	io.Copy(conn, os.Stdin)
 	conn.Close()
+}
+
+func runState(conn io.ReadWriteCloser) {
+	defer conn.Close()
+	if state != "router" {
+		fmt.Println("state is not supported by " + flag.Args()[0])
+		return
+	}
+	data, _ := ioutil.ReadAll(conn)
+	vals := util.Map{}
+	err := json.Unmarshal(data, &vals)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	switch state {
+	case "router":
+		fmt.Printf("[Channels]\n")
+		channels := vals.MapVal("channels")
+		for name := range channels {
+			fmt.Printf(" ->%v\n", name)
+			bond := channels.MapVal(name)
+			for idx := range bond {
+				val := bond.MapVal(idx)
+				fmt.Printf("  %v\t%v\t%v\n", strings.Replace(idx, "_", "", -1), val["connect"], val["used"])
+			}
+		}
+		fmt.Printf("\n\n[Table]\n")
+		table := vals.AryStrVal("table")
+		for _, t := range table {
+			fmt.Printf(" %v\n", t)
+		}
+		fmt.Printf("\n")
+	}
 }

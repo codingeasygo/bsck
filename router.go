@@ -5,11 +5,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/url"
 	"regexp"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/Centny/gwf/util"
 )
 
 const (
@@ -186,7 +189,19 @@ func (r *RawConn) Type() int {
 }
 
 func (r *RawConn) String() string {
-	return fmt.Sprintf("raw:%v", r.uri)
+	ts := strings.Split(r.uri, "->")
+	uri, err := url.Parse(ts[len(ts)-1])
+	if err != nil {
+		return fmt.Sprintf("raw{error:%v,info:%v}", err, r.Raw)
+	}
+	router := uri.Query().Get("router")
+	router = strings.SplitN(router, "?", 2)[0]
+	args := uri.Query()
+	args.Del("router")
+	args.Del("cols")
+	args.Del("rows")
+	uri.RawQuery = args.Encode()
+	return fmt.Sprintf("raw{uri:%v,router:%v,info:%v}", uri, router, r.Raw)
 }
 
 //Channel is an implementation of the Conn interface for channel network connections.
@@ -220,7 +235,7 @@ func (c *Channel) Type() int {
 }
 
 func (c *Channel) String() string {
-	return fmt.Sprintf("channel:%v,%v,%v", c.name, c.index, c.cid)
+	return fmt.Sprintf("channel{name:%v,index:%v,cid:%v,info:%v}", c.name, c.index, c.cid, c.ReadWriteCloser)
 }
 
 //DialRawF is a function type to dial raw connection.
@@ -288,6 +303,10 @@ func (t TableRouter) Next(conn Conn) (target Conn, rsid uint64) {
 		rsid = t[1].(uint64)
 	}
 	return
+}
+
+func (t TableRouter) String() string {
+	return fmt.Sprintf("%v %v <-> %v %v", t[0], t[1], t[2], t[3])
 }
 
 //RouterHandler is the interface that wraps the handler of Router.
@@ -412,14 +431,19 @@ func (r *Router) addTable(src Conn, srcSid uint64, dst Conn, dstSid uint64) {
 	return
 }
 
-func (r *Router) removeTable(conn Conn, sid uint64) {
+func (r *Router) removeTable(conn Conn, sid uint64) TableRouter {
 	r.tableLck.Lock()
+	defer r.tableLck.Unlock()
+	return r.removeTableNoLock(conn, sid)
+}
+
+func (r *Router) removeTableNoLock(conn Conn, sid uint64) TableRouter {
 	router := r.table[fmt.Sprintf("%v-%v", conn.ID(), sid)]
 	if router != nil {
 		delete(r.table, fmt.Sprintf("%v-%v", router[0].(Conn).ID(), router[1]))
 		delete(r.table, fmt.Sprintf("%v-%v", router[2].(Conn).ID(), router[3]))
 	}
-	r.tableLck.Unlock()
+	return router
 }
 
 func (r *Router) loopReadRaw(channel Conn, bufferSize uint32) {
@@ -482,7 +506,8 @@ func (r *Router) loopReadRaw(channel Conn, bufferSize uint32) {
 	//
 	r.tableLck.Lock()
 	if channel.Type() == ConnTypeRaw {
-		router := r.table[fmt.Sprintf("%v-%v", channel.ID(), channel.ID())]
+		// router := r.table[fmt.Sprintf("%v-%v", channel.ID(), channel.ID())]
+		router := r.removeTableNoLock(channel, channel.ID())
 		if router != nil {
 			target, rsid := router.Next(channel)
 			writeCmd(target, buf, CmdClosed, rsid, []byte(err.Error()))
@@ -498,6 +523,7 @@ func (r *Router) loopReadRaw(channel Conn, bufferSize uint32) {
 			} else {
 				writeCmd(target, buf, CmdClosed, rsid, []byte(err.Error()))
 			}
+			r.removeTableNoLock(target, rsid)
 		}
 	}
 	r.tableLck.Unlock()
@@ -678,13 +704,14 @@ func (r *Router) procClosed(channel Conn, buf []byte, length uint32) (err error)
 	message := string(buf[13:length])
 	sid := binary.BigEndian.Uint64(buf[5:])
 	DebugLog("Router(%v) the session(%v) is closed by %v", r.Name, sid, message)
-	r.tableLck.RLock()
-	router := r.table[fmt.Sprintf("%v-%v", channel.ID(), sid)]
-	r.tableLck.RUnlock()
+	// r.tableLck.RLock()
+	// router := r.table[fmt.Sprintf("%v-%v", channel.ID(), sid)]
+	router := r.removeTable(channel, sid)
+	// r.tableLck.RUnlock()
 	if router == nil {
 		return
 	}
-	r.removeTable(channel, sid)
+	// r.removeTable(channel, sid)
 	target, rsid := router.Next(channel)
 	if target.Type() == ConnTypeRaw {
 		target.Close()
@@ -786,5 +813,40 @@ func (r *Router) Close() (err error) {
 		bond.channelLck.Unlock()
 	}
 	r.channelLck.Unlock()
+	return
+}
+
+//State return the current state of router
+func (r *Router) State() (state util.Map) {
+	state = util.Map{}
+	//
+	channels := util.Map{}
+	r.channelLck.RLock()
+	for name, bond := range r.channel {
+		channel := util.Map{}
+		for idx, con := range bond.channels {
+			channel[fmt.Sprintf("_%v", idx)] = util.Map{
+				"connect": fmt.Sprintf("%v", con),
+				"used":    bond.used[idx],
+			}
+		}
+		channels[name] = channel
+	}
+	r.channelLck.RUnlock()
+	state["channels"] = channels
+	//
+	table := []string{}
+	r.tableLck.RLock()
+	added := map[string]bool{}
+	for _, t := range r.table {
+		key := fmt.Sprintf("%p", t)
+		if added[key] {
+			continue
+		}
+		added[key] = true
+		table = append(table, t.String())
+	}
+	r.tableLck.RUnlock()
+	state["table"] = table
 	return
 }

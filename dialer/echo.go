@@ -112,3 +112,7 @@ func (e *EchoReadWriteCloser) copyAndClose(src io.ReadWriteCloser, dst io.ReadWr
 	dst.Close()
 	src.Close()
 }
+
+func (e *EchoReadWriteCloser) String() string {
+	return "echo"
+}
