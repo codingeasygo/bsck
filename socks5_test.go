@@ -21,7 +21,7 @@ func TestPendingConn(t *testing.T) {
 }
 
 func proxyDial(t *testing.T, remote string, port uint16) {
-	conn, err := net.Dial("tcp", "localhost:1081")
+	conn, err := net.Dial("tcp", "localhost:2081")
 	if err != nil {
 		t.Error(err)
 		return
@@ -57,7 +57,7 @@ func proxyDial(t *testing.T, remote string, port uint16) {
 }
 
 func proxyDial2(t *testing.T, remote string, port uint16) {
-	conn, err := net.Dial("tcp", "localhost:1081")
+	conn, err := net.Dial("tcp", "localhost:2081")
 	if err != nil {
 		t.Error(err)
 		return
@@ -93,7 +93,7 @@ func proxyDial2(t *testing.T, remote string, port uint16) {
 }
 
 func proxyDialIP(t *testing.T, bys []byte, port uint16) {
-	conn, err := net.Dial("tcp", "localhost:1081")
+	conn, err := net.Dial("tcp", "localhost:2081")
 	if err != nil {
 		t.Error(err)
 		return
@@ -128,7 +128,7 @@ func proxyDialIP(t *testing.T, bys []byte, port uint16) {
 }
 
 func proxyDialIPv6(t *testing.T, bys []byte, port uint16) {
-	conn, err := net.Dial("tcp", "localhost:1081")
+	conn, err := net.Dial("tcp", "localhost:2081")
 	if err != nil {
 		t.Error(err)
 		return
@@ -188,7 +188,7 @@ func TestSocksProxy(t *testing.T) {
 		fmt.Println("dial to ", uri, err)
 		return
 	}
-	err := proxy.Start(":1081")
+	err := proxy.Start(":2081")
 	if err != nil {
 		t.Error(err)
 		return

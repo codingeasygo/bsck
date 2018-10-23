@@ -250,7 +250,8 @@ func TestProxy(t *testing.T) {
 		slaver3Echo.W <- 1
 		<-slaver2Echo.R
 		//close
-		slaver3.SelectChannel("master").Close()
+		c, _ := slaver3.SelectChannel("master")
+		c.Close()
 		<-slaver3Echo.R
 		<-slaver2Echo.R
 	}
@@ -606,10 +607,11 @@ func TestReconnect(t *testing.T) {
 		Token:  "abc",
 		Index:  0,
 	})
-	slaver.SelectChannel("master").Close()
+	c, _ := slaver.SelectChannel("master")
+	c.Close()
 	time.Sleep(100 * time.Millisecond)
-	if slaver.SelectChannel("master") == nil {
-		t.Error("error")
+	if _, err = slaver.SelectChannel("master"); err != nil {
+		t.Error(err)
 		return
 	}
 	master.Close()

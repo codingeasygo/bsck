@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"math"
 	"regexp"
 	"strings"
 	"sync"
@@ -197,6 +196,7 @@ type Channel struct {
 	cid                uint64
 	name               string
 	index              int
+	Heartbeat          int64
 }
 
 //ID is an implementation of Conn
@@ -370,6 +370,7 @@ func (r *Router) addChannel(channel Conn) {
 	bond.channelLck.Unlock()
 	r.channel[channel.Name()] = bond
 	r.channelLck.Unlock()
+	InfoLog("Router(%v) add channel(%v) success", r.Name, channel)
 }
 
 //UniqueSid will return new session id
@@ -379,30 +380,27 @@ func (r *Router) UniqueSid() (sid uint64) {
 }
 
 //SelectChannel will pick one channel by name.
-func (r *Router) SelectChannel(name string) (dst Conn) {
+func (r *Router) SelectChannel(name string) (dst Conn, err error) {
 	r.channelLck.RLock()
+	defer r.channelLck.RUnlock()
 	bond := r.channel[name]
-	r.channelLck.RUnlock()
-	if bond == nil {
+	if bond == nil || len(bond.channels) < 1 {
+		err = fmt.Errorf("channel not exist by name(%v)", name)
 		return
 	}
 	var index int
-	var min uint64 = math.MaxUint64
-	bond.channelLck.Lock()
+	var min uint64
 	for i, c := range bond.channels {
 		used := bond.used[i]
-		if used > min {
+		if dst != nil && used > min {
 			continue
 		}
 		dst = c
 		min = used
 		index = i
 	}
-	if dst != nil {
-		bond.used[index]++
-	}
-	bond.channelLck.Unlock()
-	return dst
+	bond.used[index]++
+	return
 }
 
 func (r *Router) addTable(src Conn, srcSid uint64, dst Conn, dstSid uint64) {
@@ -478,6 +476,7 @@ func (r *Router) loopReadRaw(channel Conn, bufferSize uint32) {
 		bond.channels[channel.Index()] = channel
 		delete(bond.channels, channel.Index())
 		bond.channelLck.Unlock()
+		InfoLog("Router(%v) remove channel(%v) success", r.Name, channel)
 	}
 	r.channelLck.Unlock()
 	//
@@ -519,6 +518,9 @@ func (r *Router) loopHeartbeat() {
 			bond.channelLck.RLock()
 			for _, channel := range bond.channels {
 				channel.Write(buf)
+				if c, ok := channel.(*Channel); ok {
+					c.Heartbeat = time.Now().Local().UnixNano() / 1e6
+				}
 			}
 			bond.channelLck.RUnlock()
 		}
@@ -604,9 +606,9 @@ func (r *Router) procDial(channel Conn, buf []byte, length uint32) (err error) {
 		return
 	}
 	next := parts[0]
-	dst := r.SelectChannel(next)
-	if dst == nil {
-		err = writeCmd(channel, buf, CmdDialBack, sid, []byte("not connected by "+next))
+	dst, err := r.SelectChannel(next)
+	if err != nil {
+		err = writeCmd(channel, buf, CmdDialBack, sid, []byte(err.Error()))
 		return
 	}
 	dstSid := atomic.AddUint64(&r.connectSequence, 1)
@@ -692,7 +694,10 @@ func (r *Router) procClosed(channel Conn, buf []byte, length uint32) (err error)
 	return
 }
 
-func (r *Router) procHeartbeat(channel Conn, buf []byte, length uint32) (err error) {
+func (r *Router) procHeartbeat(conn Conn, buf []byte, length uint32) (err error) {
+	if channel, ok := conn.(*Channel); ok {
+		channel.Heartbeat = time.Now().Local().UnixNano() / 1e6
+	}
 	return
 }
 
@@ -710,9 +715,8 @@ func (r *Router) DialConn(uri string, raw io.ReadWriteCloser) (sid uint64, conn 
 		err = fmt.Errorf("invalid uri(%v), it must like x->y", uri)
 		return
 	}
-	channel := r.SelectChannel(parts[0])
-	if channel == nil {
-		err = fmt.Errorf("channel is not exist by %v", parts[0])
+	channel, err := r.SelectChannel(parts[0])
+	if err != nil {
 		return
 	}
 	DebugLog("Router(%v) start dail to %v on channel(%v)", r.Name, uri, channel)
