@@ -544,9 +544,6 @@ func (r *Router) loopHeartbeat() {
 			bond.channelLck.RLock()
 			for _, channel := range bond.channels {
 				channel.Write(buf)
-				if c, ok := channel.(*Channel); ok {
-					c.Heartbeat = time.Now().Local().UnixNano() / 1e6
-				}
 			}
 			bond.channelLck.RUnlock()
 		}
@@ -687,14 +684,12 @@ func (r *Router) procChannelData(channel Conn, buf []byte, length uint32) (err e
 	r.tableLck.RLock()
 	router := r.table[fmt.Sprintf("%v-%v", channel.ID(), sid)]
 	r.tableLck.RUnlock()
-	if router == nil {
-		err = writeCmd(channel, buf, CmdClosed, sid, []byte("closed"))
-		return
+	if router != nil {
+		target, rsid := router.Next(channel)
+		binary.BigEndian.PutUint64(buf[5:], rsid)
+		_, err = target.Write(buf[:length])
 	}
-	target, rsid := router.Next(channel)
-	binary.BigEndian.PutUint64(buf[5:], rsid)
-	_, werr := target.Write(buf[:length])
-	if werr != nil {
+	if router == nil || err != nil {
 		err = writeCmd(channel, buf, CmdClosed, sid, []byte("closed"))
 	}
 	return
@@ -704,19 +699,14 @@ func (r *Router) procClosed(channel Conn, buf []byte, length uint32) (err error)
 	message := string(buf[13:length])
 	sid := binary.BigEndian.Uint64(buf[5:])
 	DebugLog("Router(%v) the session(%v) is closed by %v", r.Name, sid, message)
-	// r.tableLck.RLock()
-	// router := r.table[fmt.Sprintf("%v-%v", channel.ID(), sid)]
 	router := r.removeTable(channel, sid)
-	// r.tableLck.RUnlock()
-	if router == nil {
-		return
-	}
-	// r.removeTable(channel, sid)
-	target, rsid := router.Next(channel)
-	if target.Type() == ConnTypeRaw {
-		target.Close()
-	} else {
-		writeCmd(target, buf, CmdClosed, rsid, []byte(message))
+	if router != nil {
+		target, rsid := router.Next(channel)
+		if target.Type() == ConnTypeRaw {
+			target.Close()
+		} else {
+			writeCmd(target, buf, CmdClosed, rsid, []byte(message))
+		}
 	}
 	return
 }
@@ -825,10 +815,14 @@ func (r *Router) State() (state util.Map) {
 	for name, bond := range r.channel {
 		channel := util.Map{}
 		for idx, con := range bond.channels {
-			channel[fmt.Sprintf("_%v", idx)] = util.Map{
+			info := util.Map{
 				"connect": fmt.Sprintf("%v", con),
 				"used":    bond.used[idx],
 			}
+			if c, ok := con.(*Channel); ok {
+				info["heartbeat"] = c.Heartbeat
+			}
+			channel[fmt.Sprintf("_%v", idx)] = info
 		}
 		channels[name] = channel
 	}

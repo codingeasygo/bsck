@@ -282,3 +282,13 @@ func TestForwardUri(t *testing.T) {
 		return
 	}
 }
+
+func TestWaitReadWriteCloser(t *testing.T) {
+	cona, conb, _ := dialer.CreatePipedConn()
+	wrwc := NewWaitReadWriteCloser(conb)
+	fmt.Printf("%v\n", wrwc)
+	wrwc.ReadWriteCloser = nil
+	fmt.Printf("%v\n", wrwc)
+	cona.Close()
+
+}

@@ -11,6 +11,8 @@ case "$1" in
     cp -f bs-ssh.sh /usr/local/bin/bs-ssh
     cp -f bs-scp.sh /usr/local/bin/bs-scp
     cp -f bs-sftp.sh /usr/local/bin/bs-sftp
+    ln -sf /usr/local/bin/bsconsole /usr/local/bin/bs-ping
+    ln -sf /usr/local/bin/bsconsole /usr/local/bin/bs-state
     if [ ! -f /etc/systemd/system/bsrouter.service ];then
       cp -f bsrouter.service /etc/systemd/system/
     fi

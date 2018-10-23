@@ -19,7 +19,7 @@ func (s *StateData) State() util.Map {
 }
 
 func TestState(t *testing.T) {
-	dialer := NewRouterStateDialer("test", &StateData{})
+	dialer := NewStateDialer("test", &StateData{})
 	cona, conb, _ := CreatePipedConn()
 	_, err := dialer.Dial(0, "test", conb)
 	if err != nil {

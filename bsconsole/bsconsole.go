@@ -14,7 +14,9 @@ import (
 	"os"
 	"os/signal"
 	"os/user"
+	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -79,6 +81,13 @@ func main() {
 		fmt.Println(Version)
 		os.Exit(1)
 		return
+	}
+	_, fn := filepath.Split(os.Args[0])
+	switch fn {
+	case "bs-ping":
+		ping = true
+	case "bs-state":
+		state = "router"
 	}
 	if help {
 		fmt.Fprintf(os.Stderr, "Bond Socket Console Version %v\n", Version)
@@ -220,27 +229,34 @@ func main() {
 }
 
 func runPing(conn io.ReadWriteCloser, remote string, dialBeg time.Time) {
-	var i int
+	var line []byte
 	var err error
-	pingBeg := time.Now()
+	var c uint64
+	buf := make([]byte, 65)
 	reader := bufio.NewReader(conn)
-	for i = 0; i < 100; i++ {
-		_, err = fmt.Fprintf(conn, "data-%v\n", i)
+	for {
+		pingBeg := time.Now()
+		c++
+		binary.BigEndian.PutUint64(buf, c)
+		buf[64] = '\n'
+		_, err = conn.Write(buf)
 		if err != nil {
 			break
 		}
-		_, _, err = reader.ReadLine()
+		line, _, err = reader.ReadLine()
 		if err != nil {
 			break
 		}
+		pingUsed := time.Now().Sub(pingBeg)
+		fmt.Printf("%v Bytes from %v time=%v\n", len(line), remote, pingUsed)
+		time.Sleep(time.Second)
 	}
-	status := "OK"
 	if err != nil {
-		status = err.Error()
+		fmt.Printf("Ping to %v fail with %v", remote, err)
 	}
-	pingUsed := time.Now().Sub(pingBeg)
-	totalUsed := time.Now().Sub(dialBeg)
-	fmt.Printf("Ping to %v %v\n   Avg:\t\t%v\n   Count:\t\t%v\n   Used:\t%v\n\n", remote, status, pingUsed/time.Duration(i), i, totalUsed)
+	// pingUsed := time.Now().Sub(pingBeg)
+	// totalUsed := time.Now().Sub(dialBeg)
+	// fmt.Printf("Ping to %v %v\n   Avg:\t\t%v\n   Count:\t\t%v\n   Used:\t%v\n\n", remote, status, pingUsed/time.Duration(i), i, totalUsed)
 }
 
 func runWinConsole(conn io.ReadWriteCloser) {
@@ -357,7 +373,10 @@ func runState(conn io.ReadWriteCloser) {
 			bond := channels.MapVal(name)
 			for idx := range bond {
 				val := bond.MapVal(idx)
-				fmt.Printf("  %v\t%v\t%v\n", strings.Replace(idx, "_", "", -1), val["connect"], val["used"])
+				idxVal, _ := strconv.ParseInt(strings.Replace(idx, "_", "", -1), 10, 64)
+				heartbeat := val.IntValV("heartbeat", 0)
+				hs := time.Unix(0, heartbeat*1e6).Format("2006-01-02 15:04:05")
+				fmt.Printf("   %d % 4d   %v   %v\n", idxVal, int(val["used"].(float64)), hs, val["connect"])
 			}
 		}
 		fmt.Printf("\n\n[Table]\n")
