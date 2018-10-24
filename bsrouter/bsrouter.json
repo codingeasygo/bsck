@@ -1,15 +1,7 @@
 {
     "name": "r0",
-    "listen": ":2023",
     "cert": "",
     "key": "",
-    "web": {
-        "listen": "",
-        "suffix": "",
-        "auth": ""
-    },
-    "socks5": "",
-    "forwards": {},
     "channels": [],
     "dialer": {},
     "showlog": 0,

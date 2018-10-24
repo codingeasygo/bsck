@@ -53,31 +53,31 @@ func (c *CmdStdinWriter) Write(p []byte) (n int, err error) {
 
 //CmdDialer is an implementation of the Dialer interface for dial command
 type CmdDialer struct {
-	Replace     []byte
-	CloseTag    []byte
-	PS1         string
-	Dir         string
-	LC          string
-	Prefix      string
-	Env         []string
-	Reuse       int64
-	ReuseDelay  time.Duration
-	running     map[string]*ReusableRWC
-	runningLck  sync.RWMutex
-	loopRunning bool
-	conf        util.Map
+	Replace      []byte
+	CloseTag     []byte
+	PS1          string
+	Dir          string
+	LC           string
+	Prefix       string
+	Env          []string
+	ReuseTimeout int64
+	ReuseDelay   time.Duration
+	running      map[string]*ReusableRWC
+	runningLck   sync.RWMutex
+	loopRunning  bool
+	conf         util.Map
 }
 
 //NewCmdDialer will return new CmdDialer
 func NewCmdDialer() *CmdDialer {
 	cmd := &CmdDialer{
-		CloseTag:    nil,
-		running:     map[string]*ReusableRWC{},
-		runningLck:  sync.RWMutex{},
-		Reuse:       3600000,
-		ReuseDelay:  30 * time.Second,
-		loopRunning: true,
-		conf:        util.Map{},
+		CloseTag:     nil,
+		running:      map[string]*ReusableRWC{},
+		runningLck:   sync.RWMutex{},
+		ReuseTimeout: 3600000,
+		ReuseDelay:   30 * time.Second,
+		loopRunning:  true,
+		conf:         util.Map{},
 	}
 	if runtime.GOOS == "windows" {
 		// cmd.Replace = []byte("\r")
@@ -96,7 +96,7 @@ func (c *CmdDialer) loopReuse() {
 		c.runningLck.Lock()
 		now := util.Now()
 		for name, reused := range c.running {
-			if now-reused.Last >= c.Reuse {
+			if now-reused.Last >= c.ReuseTimeout {
 				reused.Destory()
 				delete(c.running, name)
 			}
@@ -117,10 +117,10 @@ func (c *CmdDialer) Bootstrap(options util.Map) error {
 		for k, v := range options.MapVal("Env") {
 			c.Env = append(c.Env, fmt.Sprintf("%v=%v", k, v))
 		}
-		c.Reuse = options.IntValV("reuse", 3600000)
+		c.ReuseTimeout = options.IntValV("reuse_timeout", 3600000)
 		c.ReuseDelay = time.Duration(options.IntValV("reuse_delay", 30000)) * time.Millisecond
 	}
-	if c.Reuse > 0 {
+	if c.ReuseTimeout > 0 {
 		go c.loopReuse()
 	}
 	return nil
@@ -201,7 +201,7 @@ func (c *CmdDialer) Dial(sid uint64, uri string, pipe io.ReadWriteCloser) (raw C
 	if err == nil {
 		reusable = NewReusableRWC(combined)
 		reusable.Name = reuse
-		reusable.Reused = len(reuse) > 0 && c.Reuse > 0
+		reusable.Reused = len(reuse) > 0 && c.ReuseTimeout > 0
 		reusable.OnPaused = c.onCmdPaused
 		raw = reusable
 		if pipe != nil {

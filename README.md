@@ -2,7 +2,6 @@ Bond Socket
 ===
 bond socket provider a server/client channel like ssh tunneling, it can forward port between multi node.
 
-
 ## Features
 * auto reconnect and keepalive betwenn client to server.
 * control forward by dynamic uri like `node1->node2->tcp://xxxx:xx`
@@ -30,23 +29,25 @@ bond socket provider a server/client channel like ssh tunneling, it can forward 
 ### Manual Install
 * install basic comamnd
 
-```.go
+```.sh
 go get github.com/sutils/bsck/bsrouter
 go get github.com/sutils/bsck/bsconsole
 ```
 
 * install other command
 
-```
+```.sh
 cp -f $GOPATH/src/github.com/sutils/bsck/bsconsole/bs-ssh.sh $GOPATH/bin/bs-ssh
 cp -f $GOPATH/src/github.com/sutils/bsck/bsconsole/bs-scp.sh $GOPATH/bin/bs-scp
 cp -f $GOPATH/src/github.com/sutils/bsck/bsconsole/bs-sftp.sh $GOPATH/bin/bs-sftp
 ln -sf $GOPATH/bin/bsconsole $GOPATH/bin/bs-ping
 ln -sf $GOPATH/bin/bsconsole $GOPATH/bin/bs-state
+ln -sf $GOPATH/bin/bsconsole $GOPATH/bin/bs-bash
+ln -sf $GOPATH/bin/bsconsole $GOPATH/bin/bs-sh
 ```
 
 ### Install from binary
-* download binary from release
+* download binary from [releases](releases)
 * uncompress to `xx`
 * `cd xx/bsrouter`
 * `./bsrouter-install.sh -i -c` for client or `./bsrouter-install.sh -i -s` for service
@@ -54,9 +55,11 @@ ln -sf $GOPATH/bin/bsconsole $GOPATH/bin/bs-state
 ## Command Reference
 * `bsrouter` start bond socket server/client/slaver by configure, it will auto scan configure ordered by `args`,`./.bsrouter.json"`,`./bsrouter.json`,`HOME/.bsrouter/bsrouter.json`,`HOME/.bsrouter.json`,`/etc/bsrouter/bsrouter.json`,`/etc/bsrouer.json`
 * `bsconsole` the node agent command, it will auto scan configure ordered like `bsrouter`
-  * `bsconsole <node name>` connect to node bash
+  * `bsconsole 'node1->tcp://cmd?exec=bash'` connect to node bash
   * `bsconsole 'node1->tcp://cmd?exec=xxx'` start xxx command on node1
   * `bsconsole -win32 'node1->tcp://cmd?exec=cmd'` start window cmd on node1
+* `bs-bash <node router>` connect to node bash, equal to `bsconsole 'node1->tcp://cmd?exec=bash'`
+* `bs-sh <node router>` connect to node sh, equal to `bsconsole 'node1->tcp://cmd?exec=sh'`
 * `bs-ping <node router>` ping to node
   * `bs-ping node1` ping to node1
   * `bs-ping node1->nodex` ping to nodex by router `node1->nodex`
@@ -230,6 +233,7 @@ bsconsole using config /xxx/.bsrouter/bsrouter.json
 
 ### configure port forward permanent
 * edit `/xx/.bsrouter/bsrouter.json` and add `forwards` configure.
+
 ```.json
 {
     "name": "client1",
@@ -250,12 +254,13 @@ bsconsole using config /xxx/.bsrouter/bsrouter.json
         }
     ],
     "forwards": {
-        "ws://test1": "server1->tcp://host1:22",
-        "tcp://test1-1:10022": "server1->slaver1->tcp://host1:22",
-        "vnc://test2": "server1->slaver1->tcp://host2:5900",
-        "tcp://test2-1:15900": "server1->slaver1->tcp://host2:5900",
-        "rdp://test3": "server1->slaver1->tcp://host3:3389"
-        "tcp://test3-1:13389": "server1->slaver1->tcp://host3:3389"
+        "test1~ws://": "server1->tcp://host1:22",
+        "test1-1~tcp://localhost:10022": "server1->slaver1->tcp://host1:22",
+        "test2~vnc://localhost": "server1->slaver1->tcp://host2:5900",
+        "test2-1~tcp://localhost:15900": "server1->slaver1->tcp://host2:5900",
+        "test3~rdp://localhost": "server1->slaver1->tcp://host3:3389"
+        "test3-1~tcp://localhost:13389": "server1->slaver1->tcp://host3:3389"
+        "test4~ws://": "server1->slaver1->tcp://cmd?exec=ping www.google.com"
     },
     "rdp_dir": "/tmp/bsrouter/",
     "vnc_dir": "/tmp/bsrouter/",
@@ -270,13 +275,194 @@ bsconsole using config /xxx/.bsrouter/bsrouter.json
   * connect host2 by vnc client: open vnc client then open `test2.vnc` file on `/tmp/bsrouter/`
   * connect host2 by vnc client: open vnc client then using localhost:15900 to connect
   * connect host3 by rdp client: open rdp client then open `test3.rdp` file on `/tmp/bsrouter/`
-  * connect host2 by rdp client: open rdp client then using localhost:13389 to connect
+  * connect host3 by rdp client: open rdp client then using localhost:13389 to connect
+  * `bsconsole test4` execute ping on slaver1
 
 * more for forward configure, see [Forward Reference]($forward-reference)
 
+### configure balance socks5 proxy
+* edit `/xx/.bsrouter/bsrouter.json` and add `proxy` configure.
+
+```.json
+{
+    "name": "client1",
+    "cert": "/xx/.bsrouter/bsrouter.pem",
+    "key": "/xx/.bsrouter/bsrouter.key",
+    "web": {
+        "auth": "",
+        "listen": ":12024",
+        "suffix": ""
+    },
+    "socks5": ":11081",
+    "channels": [
+        {
+            "enable": true,
+            "token": "2222",
+            "local": "",
+            "remote": "xxx:12023",
+            "index": 0
+        }
+    ],
+    "proxy": {
+        "id": "proxy",
+        "type": "balance",
+        "matcher": "^.*://.*$",
+        "dialers": [
+            {
+                "id": "r1",
+                "type": "router",
+                "router": "server1->${URI}"
+            },
+            {
+                "id": "r2",
+                "type": "router",
+                "router": "server1->slaver1->${URI}"
+            },
+            ,
+            {
+                "id": "r3",
+                "type": "socks",
+                "address": "xxx:xxx"
+            }
+        ],
+        "filter": [
+            {
+                "matcher": "^.*x1.*$",
+                "access": 1
+            },
+            {
+                "matcher": "^.*x2.*$",
+                "access": 1
+            },
+            {
+                "matcher": "^.*$",
+                "access": 0
+            }
+        ],
+        "policy": [
+            {
+                "matcher": "^.*x1.*$",
+                "limit": [
+                    3000,
+                    10
+                ]
+            },
+            {
+                "matcher": "^.*x2.*$",
+                "limit": [
+                    3000,
+                    10
+                ]
+            }
+        ]
+    },
+    "showlog": 0,
+    "logflags": 16
+}
+```
+
+* in this case, havin two proxy dialer in two router `server`,`slaver1` and one upstream proxy, only host contain x1,x2 can connect, and limit x1,x2 connect count by 10 time per 3000ms. this case is always used on crawler.
 
 ## Dialer Reference
+### `cmd`
+```.json
+{
+    "dialer": {
+        "cmd": {
+            "PS1": "bsrouter",
+            "Dir": "/tmp",
+            "Env":{
+                "a": 1,
+                "b": 2
+            }
+        }
+    }
+}
+```
+* `PS1` the shell ps1
+* `Dir` the start directroy
+* `LC` the i/o encoding.
+* `Env` the enviroment values
+* `reuse_timeout` the reuse session timeout.
+
+### `echo`
+
+```.json
+{
+    "dialer": {
+        "echo": {}
+    }
+}
+```
+
+### `socks`
+
+```.json
+{
+    "dialer": {
+        "socks": {
+            "id": "s1",
+            "address": "xxx:xx",
+            "matcher": "^.*$"
+        }
+    }
+}
+```
+
+* `id` the dialer id (required)
+* `address` the socks5 server address (required)
+* `matcher` match uri to access to connect. (optional)
+
+### `web`
+
+```.json
+{
+    "dialer": {
+        "web": {}
+    }
+}
+```
+
+### `tcp`
+
+```.json
+{
+    "dialer": {
+        "tcp": {
+            "bind": "xxxx:xx"
+        }
+    }
+}
+```
+
+* `bind` bind to local address before connect to remote.
 
 
 ## Forward Reference
 
+### remote uri
+the remote uri scheme is `node1->node1->..->nodex->protocol://host:port?arg=val`
+
+supported protocol
+
+* `tcp://host:port?arg=val` normal tcp dialer, the arguments
+  * `bind` bind to local address before connect to remote (optional)
+* `tcp://cmd?arg=val` execute command on node
+  * `exec` the command and command argument to exec (required)
+  * `LC` the i/o encoding
+  * `reuse` enable/disable reuse session, 1 is enable, 0 is disable.
+* `tcp://echo` start echo server
+* `http://web` start web server on node
+  * `dir` the webdav work directory.
+
+### local uri
+the local uri scheme is `alias~protocol://user:password@host:port`, the alias can be used on `bsconsole`,`bs-sftp`,`bs-scp`,`bs-ssh`
+
+supported protocol
+
+* `alias~tcp://host:port` listen tcp by host:port
+* `alias~socks://host:port` listen socks5  by host:port,
+* `alias~rdp://user@host:port` listen tcp  by host:port, and generate rdp file on `rdp_dir` by alias.rdp, password is not supported by rdp file
+* `alias~vnc://:passwrod@host:port` listen tcp  by host:port, and generate rdp file on `vnc_dir` by alias.vnc, user is not needed, password is encrypted
+* `alias~web://` foward web by `http://localhost:port/dav/alias` to uri when `web` configure is enabled.
+* `alias~ws://` foward websocekt by `ws://localhost:port/ws/alias` to uri when `web` configure is enabled.

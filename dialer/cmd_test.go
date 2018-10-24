@@ -16,8 +16,8 @@ func TestCmdDialer(t *testing.T) {
 	cmd.PS1 = "CmdDialer"
 	cmd.Prefix = `echo testing`
 	cmd.Bootstrap(util.Map{
-		"reuse":       100,
-		"reuse_delay": 50,
+		"reuse_timeout": 100,
+		"reuse_delay":   50,
 		"Env": util.Map{
 			"a": "val",
 		},

@@ -184,12 +184,17 @@ func (f *Forward) procDialTLS(network, addr string, router string) (raw net.Conn
 	return
 }
 
+//AddForward by local uri and remote uri
 func (f *Forward) AddForward(loc, uri string) (err error) {
 	f.lck.Lock()
 	defer f.lck.Unlock()
 	forward := ForwardUri([]string{loc, uri})
 	local, _, err := forward.URL()
 	if err != nil {
+		return
+	}
+	if f.webMapping[local.Host] != nil || f.wsMapping[local.Host] != nil {
+		err = fmt.Errorf("alias(%v) is exist", local.Host)
 		return
 	}
 	switch local.Scheme {
@@ -207,25 +212,12 @@ func (f *Forward) AddForward(loc, uri string) (err error) {
 	return
 }
 
-func (f *Forward) RemoveForward(local string) (err error) {
-	rurl, err := url.Parse(local)
-	if err != nil {
-		return
-	}
+//RemoveForward by alias name
+func (f *Forward) RemoveForward(name string) (err error) {
 	f.lck.Lock()
 	defer f.lck.Unlock()
-	switch rurl.Scheme {
-	case "web":
-		delete(f.webMapping, rurl.Host)
-		InfoLog("Forward remove web forward by %v", local)
-	case "ws":
-		fallthrough
-	case "wss":
-		delete(f.wsMapping, rurl.Host)
-		InfoLog("Forward remove ws forward by %v", local)
-	default:
-		err = fmt.Errorf("scheme %v is not suppored", rurl.Scheme)
-	}
+	delete(f.webMapping, name)
+	delete(f.wsMapping, name)
 	return
 }
 

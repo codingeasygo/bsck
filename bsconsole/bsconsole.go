@@ -51,6 +51,7 @@ var proxy bool
 var ping bool
 var state string
 var help bool
+var bash string
 
 func appendSize(uri string) string {
 	if proxy {
@@ -74,6 +75,7 @@ func main() {
 	flag.BoolVar(&help, "help", false, "show help")
 	flag.BoolVar(&help, "h", false, "show help")
 	flag.StringVar(&state, "state", "", "state mode")
+	flag.StringVar(&bash, "bash", "", "bash mode")
 	flag.BoolVar(&showVersion, "version", false, "show version")
 	flag.BoolVar(&showVersion, "v", false, "show version")
 	flag.Parse()
@@ -88,6 +90,10 @@ func main() {
 		ping = true
 	case "bs-state":
 		state = "router"
+	case "bs-bash":
+		bash = "bash"
+	case "bs-sh":
+		bash = "sh"
 	}
 	if help {
 		fmt.Fprintf(os.Stderr, "Bond Socket Console Version %v\n", Version)
@@ -147,8 +153,8 @@ func main() {
 				fullURI += "state://" + state
 			}
 		}
-		if len(state) < 1 && !ping && !proxy && !win32 && !strings.Contains(fullURI, "://") {
-			fullURI += "->tcp://cmd?exec=bash"
+		if len(bash) > 0 {
+			fullURI += "->tcp://cmd?exec=" + bash
 		}
 		remote = fullURI
 	}

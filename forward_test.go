@@ -148,10 +148,10 @@ func TestForward(t *testing.T) {
 		}
 		fmt.Printf("xxxx->:\n%v\n\n\n\n", data)
 		//
-		forward.RemoveForward("web://loctest0")
-		forward.RemoveForward("web://loctest1")
-		forward.RemoveForward("web://loctest2")
-		forward.RemoveForward("web://loctest3")
+		forward.RemoveForward("loctest0")
+		forward.RemoveForward("loctest1")
+		forward.RemoveForward("loctest2")
+		forward.RemoveForward("loctest3")
 		//
 	}
 	{ //test sub forward
@@ -169,7 +169,7 @@ func TestForward(t *testing.T) {
 			t.Error(err)
 			return
 		}
-		err = forward.AddForward("web://t1", "http://web?dir=./")
+		err = forward.AddForward("web://t2", "http://web?dir=./")
 		if err != nil {
 			t.Error(err)
 			return
@@ -204,7 +204,7 @@ func TestForward(t *testing.T) {
 		fmt.Println("->", readed, string(buf[:readed]), err)
 		wsconn2.Close()
 		//
-		data, err := hget("%v/dav/t1/build.sh", ts.URL)
+		data, err := hget("%v/dav/t2/build.sh", ts.URL)
 		if err != nil {
 			t.Errorf("%v-%v", err, data)
 			return
@@ -232,7 +232,9 @@ func TestForward(t *testing.T) {
 		}
 		fmt.Printf("res->:\n%v\n\n\n\n", err)
 		//
-		forward.RemoveForward("ws://t0")
+		forward.RemoveForward("t0")
+		forward.RemoveForward("t1")
+		forward.RemoveForward("t2")
 	}
 
 }
@@ -240,8 +242,14 @@ func TestForward(t *testing.T) {
 func TestForwadError(t *testing.T) {
 	// test error
 	forward := NewForward()
+	forward.AddForward("ws://t0", "tcp://xx")
+	err := forward.AddForward("ws://t0", "tcp://xx")
+	if err == nil {
+		t.Error(err)
+		return
+	}
 	//
-	err := forward.AddForward("https://ech%EX%BU%XD%E6%96%87?xx=1", "https://echo?xx=%EX%BU%AD%E6%96%87")
+	err = forward.AddForward("https://ech%EX%BU%XD%E6%96%87?xx=1", "https://echo?xx=%EX%BU%AD%E6%96%87")
 	if err == nil {
 		t.Error(err)
 		return
@@ -249,20 +257,6 @@ func TestForwadError(t *testing.T) {
 	fmt.Printf("Err:%v\n", err)
 	//
 	err = forward.AddForward("https://echo?xx=%EX%BU%AD%E6%96%87", "https://echo?xx=%EX%BU%AD%E6%96%87")
-	if err == nil {
-		t.Error(err)
-		return
-	}
-	fmt.Printf("Err:%v\n", err)
-	//
-	err = forward.RemoveForward("https://ech%EX%BU%XD%E6%96%87?xx=1")
-	if err == nil {
-		t.Error(err)
-		return
-	}
-	fmt.Printf("Err:%v\n", err)
-	//
-	err = forward.RemoveForward("https://xxx?xx=1")
 	if err == nil {
 		t.Error(err)
 		return

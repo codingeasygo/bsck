@@ -269,97 +269,51 @@ func main() {
 	})
 	var confLck = sync.RWMutex{}
 	var addFoward = func(loc, uri string) (err error) {
-		target, err := url.Parse(loc)
+		locParts := strings.SplitN(loc, "~", 2)
+		if len(locParts) < 2 {
+			err = fmt.Errorf("local uri must be alias~*://*, but %v", loc)
+			return
+		}
+		target, err := url.Parse(locParts[1])
 		if err != nil {
 			return
 		}
 		var rdp, vnc bool
 		var listener net.Listener
-		parts := strings.SplitAfterN(target.Host, ":", 2)
+		hostParts := strings.SplitAfterN(target.Host, ":", 2)
+		if len(hostParts) < 2 {
+			target.Host += ":0"
+		}
 		switch target.Scheme {
 		case "socks":
-			if len(parts) > 1 {
-				target.Host = ":" + parts[1]
-			} else {
-				target.Host = ":0"
-			}
 			target.Scheme = "socks"
-			listener, err = node.StartForward(parts[0], target, uri)
-		case "locsocks":
-			if len(parts) > 1 {
-				target.Host = "localhost:" + parts[1]
-			} else {
-				target.Host = "localhost:0"
-			}
-			target.Scheme = "socks"
-			listener, err = node.StartForward(parts[0], target, uri)
+			listener, err = node.StartForward(locParts[0], target, uri)
 		case "tcp":
-			if len(parts) > 1 {
-				target.Host = ":" + parts[1]
-			} else {
-				target.Host = ":0"
-			}
 			target.Scheme = "tcp"
-			listener, err = node.StartForward(parts[0], target, uri)
-		case "loctcp":
-			if len(parts) > 1 {
-				target.Host = "localhost:" + parts[1]
-			} else {
-				target.Host = "localhost:0"
-			}
-			target.Scheme = "tcp"
-			listener, err = node.StartForward(parts[0], target, uri)
+			listener, err = node.StartForward(locParts[0], target, uri)
 		case "rdp":
 			rdp = true
-			if len(parts) > 1 {
-				target.Host = ":" + parts[1]
-			} else {
-				target.Host = ":0"
-			}
 			target.Scheme = "tcp"
-			listener, err = node.StartForward(parts[0], target, uri)
-		case "locrdp":
-			rdp = true
-			if len(parts) > 1 {
-				target.Host = "localhost:" + parts[1]
-			} else {
-				target.Host = "localhost:0"
-			}
-			target.Scheme = "tcp"
-			listener, err = node.StartForward(parts[0], target, uri)
+			listener, err = node.StartForward(locParts[0], target, uri)
 		case "vnc":
 			vnc = true
-			if len(parts) > 1 {
-				target.Host = ":" + parts[1]
-			} else {
-				target.Host = ":0"
-			}
 			target.Scheme = "tcp"
-			listener, err = node.StartForward(parts[0], target, uri)
-		case "locvnc":
-			vnc = true
-			if len(parts) > 1 {
-				target.Host = "localhost:" + parts[1]
-			} else {
-				target.Host = "localhost:0"
-			}
-			target.Scheme = "tcp"
-			listener, err = node.StartForward(parts[0], target, uri)
-		case "unix":
-			if len(parts) > 1 {
-				target.Host = parts[1]
-				listener, err = node.StartForward(parts[0], target, uri)
-			} else {
-				err = fmt.Errorf("the unix file is required")
-			}
+			listener, err = node.StartForward(locParts[0], target, uri)
+		case "web":
+			fallthrough
+		case "ws":
+			fallthrough
+		case "wss":
+			target.Host = locParts[0]
+			err = forward.AddForward(target.String(), uri)
 		default:
-			err = forward.AddForward(loc, uri)
+			err = fmt.Errorf("not supported scheme %v", target.Scheme)
 		}
 		if err == nil && rdp && len(config.RDPDir) > 0 {
 			confLck.Lock()
 			fileData := fmt.Sprintf(RDPTmpl, listener.Addr(), target.User.Username())
 			os.MkdirAll(config.RDPDir, os.ModePerm)
-			savepath := filepath.Join(config.RDPDir, parts[0]+".rdp")
+			savepath := filepath.Join(config.RDPDir, locParts[0]+".rdp")
 			err := ioutil.WriteFile(savepath, []byte(fileData), os.ModePerm)
 			confLck.Unlock()
 			if err != nil {
@@ -371,9 +325,9 @@ func main() {
 		if err == nil && vnc && len(config.VNCDir) > 0 {
 			confLck.Lock()
 			password, _ := target.User.Password()
-			fileData := fmt.Sprintf(VNCTmpl, parts[0], listener.Addr(), password)
+			fileData := fmt.Sprintf(VNCTmpl, locParts[0], listener.Addr(), password)
 			os.MkdirAll(config.VNCDir, os.ModePerm)
-			savepath := filepath.Join(config.VNCDir, parts[0]+".vnc")
+			savepath := filepath.Join(config.VNCDir, locParts[0]+".vnc")
 			err := ioutil.WriteFile(savepath, []byte(fileData), os.ModePerm)
 			confLck.Unlock()
 			if err != nil {
@@ -385,45 +339,33 @@ func main() {
 		return
 	}
 	var removeFoward = func(loc string) (err error) {
-		target, err := url.Parse(loc)
+		locParts := strings.SplitN(loc, "~", 2)
+		if len(locParts) < 2 {
+			err = fmt.Errorf("local uri must be alias~*://*, but %v", loc)
+			return
+		}
+		target, err := url.Parse(locParts[1])
 		if err != nil {
 			return
 		}
 		var rdp, vnc bool
-		parts := strings.SplitAfterN(target.Host, ":", 2)
 		switch target.Scheme {
 		case "socks":
-			err = node.StopForward(parts[0])
-		case "locsocks":
-			err = node.StopForward(parts[0])
+			err = node.StopForward(locParts[0])
 		case "tcp":
-			err = node.StopForward(parts[0])
-		case "loctcp":
-			err = node.StopForward(parts[0])
+			err = node.StopForward(locParts[0])
 		case "rdp":
 			rdp = true
-			err = node.StopForward(parts[0])
-		case "locrdp":
-			rdp = true
-			err = node.StopForward(parts[0])
+			err = node.StopForward(locParts[0])
 		case "vnc":
 			vnc = true
-			err = node.StopForward(parts[0])
-		case "locvnc":
-			vnc = true
-			err = node.StopForward(parts[0])
-		case "unix":
-			if len(parts) > 1 {
-				err = node.StopForward(parts[0])
-			} else {
-				err = fmt.Errorf("the unix file is required")
-			}
+			err = node.StopForward(locParts[0])
 		default:
-			err = forward.RemoveForward(loc)
+			err = forward.RemoveForward(locParts[0])
 		}
 		if rdp && len(config.RDPDir) > 0 {
 			confLck.Lock()
-			savepath := filepath.Join(config.RDPDir, parts[0]+".rdp")
+			savepath := filepath.Join(config.RDPDir, locParts[0]+".rdp")
 			err := os.Remove(savepath)
 			confLck.Unlock()
 			if err != nil {
@@ -434,7 +376,7 @@ func main() {
 		}
 		if vnc && len(config.VNCDir) > 0 {
 			confLck.Lock()
-			savepath := filepath.Join(config.VNCDir, parts[0]+".vnc")
+			savepath := filepath.Join(config.VNCDir, locParts[0]+".vnc")
 			err := os.Remove(savepath)
 			confLck.Unlock()
 			if err != nil {

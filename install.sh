@@ -12,5 +12,7 @@ Darwin)
     ln -sf `pwd`/bsconsole/bs-ssh.sh $GOPATH/bin/bs-ssh
     ln -sf $GOPATH/bin/bsconsole $GOPATH/bin/bs-ping
     ln -sf $GOPATH/bin/bsconsole $GOPATH/bin/bs-state
+    ln -sf $GOPATH/bin/bsconsole $GOPATH/bin/bs-bash
+    ln -sf $GOPATH/bin/bsconsole $GOPATH/bin/bs-sh
 ;;
 esac
