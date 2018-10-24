@@ -89,6 +89,13 @@ class Bsrouter {
             return {};
         }
     }
+    protected saveConf(conf: any) {
+        let dir = path.dirname(this.workingFile);
+        if (!fs.existsSync(dir)) {
+            fs.mkdirSync(dir)
+        }
+        fs.writeFileSync(this.workingFile, JSON.stringify(conf));
+    }
     public loadBasic(): any {
         var conf = this.loadConf();
         if (conf) {
@@ -102,19 +109,23 @@ class Bsrouter {
         delete basic.channels;
         var old = this.loadConf();
         Object.assign(old, basic);
-        fs.writeFileSync(this.workingFile, JSON.stringify(old));
+        this.saveConf(old);
         return "OK"
     }
     public loadForwards(): any {
-        return this.loadConf().forwards;
+        let fs = this.loadConf().forwards;
+        if (!fs) {
+            fs = {};
+        }
+        return fs;
     }
     public addForward(key: string, router: string) {
         var old = this.loadConf();
         if (!old.forwards) {
-            old.forwards = {}
+            old.forwards = {};
         }
-        old.forwards[key] = router
-        fs.writeFileSync(this.workingFile, JSON.stringify(old));
+        old.forwards[key] = router;
+        this.saveConf(old);
         return "OK"
     }
     public removeForward(key: string) {
@@ -123,28 +134,32 @@ class Bsrouter {
             old.forwards = {}
         }
         delete old.forwards[key]
-        fs.writeFileSync(this.workingFile, JSON.stringify(old));
+        this.saveConf(old);
         return "OK"
     }
     public loadChannels(): any[] {
-        return this.loadConf().channels;
+        let cs = this.loadConf().channels;
+        if (!cs) {
+            cs = [];
+        }
+        return cs;
     }
     public addChannel(c: any) {
         var old = this.loadConf();
         old.channels.push(c)
-        fs.writeFileSync(this.workingFile, JSON.stringify(old));
+        this.saveConf(old);
         return "OK"
     }
     public removeChannel(i: number) {
         var old = this.loadConf();
         old.channels.splice(i, 1);
-        fs.writeFileSync(this.workingFile, JSON.stringify(old));
+        this.saveConf(old);
         return "OK"
     }
     public enableChannel(i: number, enabled: any) {
         var old = this.loadConf();
         old.channels[i].enable = enabled && true;
-        fs.writeFileSync(this.workingFile, JSON.stringify(old));
+        this.saveConf(old);
         return "OK"
     }
 }

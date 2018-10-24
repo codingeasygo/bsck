@@ -26,11 +26,23 @@ export class ForwardsComponent implements OnInit {
     let fs = this.srv.loadForwards()
     let forwards = [];
     for (let k in fs) {
-      let u = url.parse(k);
+      let parts = k.split("~");
+      if (parts.length < 2) {
+        continue;
+      }
+      let u = url.parse(parts[1]);
       let f: any = {};
       f.protocol = u.protocol.replace(":", "");
       f.port = u.port;
-      f.name = u.hostname;
+      f.host = u.hostname;
+      f.address = "";
+      if (u.hostname) {
+        f.address = u.hostname
+      }
+      if (u.port) {
+        f.address += ":" + u.port;
+      }
+      f.name = parts[0];
       if (u.auth) {
         let auth = u.auth.split(":", 2)
         f.username = auth[0]
@@ -65,6 +77,7 @@ export class ForwardsComponent implements OnInit {
     }
     this.showError = false;
     let key = "";
+    key += this.forward.name + "~";
     key += this.forward.protocol + "://";
     if (this.forward.username) {
       key += this.forward.username;
@@ -73,11 +86,12 @@ export class ForwardsComponent implements OnInit {
       key += ":" + this.forward.password;
     }
     if (this.forward.username || this.forward.password) {
-      key += "@"
+      key += "@";
     }
-    key += this.forward.name;
-    if (this.forward.port) {
-      key += ":" + this.forward.port;
+    if (this.forward.address) {
+      key += this.forward.address;
+    } else if (this.forward.protocol != "ws" && this.forward.protocol != "web") {
+      key += "localhost";
     }
     this.srv.addForward(key, this.forward.router);
     this.reload();

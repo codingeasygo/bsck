@@ -23,7 +23,9 @@ export class BasicComponent implements OnInit {
   }
   reload() {
     this.conf = this.srv.loadBasic()
-    this.conf.showlog = true && this.conf.showlog;
+    if (!this.conf.web) {
+      this.conf.web = {};
+    }
     console.log("load config ", this.conf);
   }
   save() {
