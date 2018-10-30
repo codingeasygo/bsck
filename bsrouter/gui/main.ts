@@ -208,20 +208,26 @@ function createWindow() {
     mainWindow.loadFile(`dist/view/index.html`)
     function callOpen(f: string) {
         try {
-            let conf = bsrouter.loadConf();
-            var dir = conf.vnc_dir;
-            if (!dir) {
-                dir = os.homedir() + "/Desktop";
+            let parts = f.split("~");
+            if (parts.length < 2) {
+                return "invalid forward"
             }
-            let u = url.parse(f);
+            let conf = bsrouter.loadConf();
+            let u = url.parse(parts[1]);
             switch (u.protocol) {
                 case "vnc:":
-                case "locvnc:":
-                    spawn("open", [dir + "/" + u.hostname + ".vnc"])
+                    var dir = conf.vnc_dir;
+                    if (!dir) {
+                        dir = os.homedir() + "/Desktop";
+                    }
+                    spawn("open", [dir + "/" + parts[0] + ".vnc"])
                     break
                 case "rdp:":
-                case "locrdp:":
-                    spawn("open", [dir + "/" + u.hostname + ".rdp"])
+                    var dir = conf.rdp_dir;
+                    if (!dir) {
+                        dir = os.homedir() + "/Desktop";
+                    }
+                    spawn("open", [dir + "/" + parts[0] + ".rdp"])
                     break
             }
             return "OK"

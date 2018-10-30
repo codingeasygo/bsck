@@ -1,7 +1,7 @@
 import { async, ComponentFixture, TestBed } from '@angular/core/testing';
 import { ChannelsComponent } from './channels.component';
 import { FormsModule } from '@angular/forms';
-import { BrowserModule } from '@angular/platform-browser';
+import { BrowserModule, By } from '@angular/platform-browser';
 import { NgSelectModule } from '@ng-select/ng-select';
 import { AngularDraggableModule } from 'angular2-draggable';
 import { MockIpcRenderer } from '../bsrouter.testdata';
@@ -55,5 +55,11 @@ describe('ChannelsComponent', () => {
     component.add()
     expect(component.showError).toBeFalsy()
     component.remove(component.allChannels.length - 1)
+  });
+
+  it('should enbable success', () => {
+    let cbs = fixture.debugElement.queryAll(By.css("input[type='checkbox']"));
+    cbs[0].nativeElement.click();
+    fixture.detectChanges();
   });
 });

@@ -13,7 +13,6 @@ echo "Installing Dependence"
 echo "Running Test"
 pkgs="\
  github.com/sutils/bsck\
- github.com/sutils/bsck/dialer\
 "
 
 echo "mode: set" > a.out

@@ -98,6 +98,9 @@ export class ForwardsComponent implements OnInit {
     this.forward = { protocol: "ws" };
   }
   open(f) {
-    this.srv.openForward(f.k)
+    let res = this.srv.openForward(f.k);
+    if (res != "OK") {
+      alert(res);
+    }
   }
 }

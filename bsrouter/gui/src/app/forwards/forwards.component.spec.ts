@@ -53,19 +53,31 @@ describe('ForwardsComponent', () => {
     component.forward.router = "xx"
     component.add()
     expect(component.showError).toBeFalsy()
+    //
     component.forward.protocol = "ws"
     component.forward.name = "xx2"
     component.forward.router = "xx"
     component.forward.username = "u1"
     component.forward.password = "u1"
-    component.forward.port = "80"
+    component.forward.address = "localhost:80"
     component.add()
     expect(component.showError).toBeFalsy()
-    component.remove("ws://xx1")
+    //
+    component.forward.protocol = "tcp"
+    component.forward.name = "xx2"
+    component.forward.router = "xx"
+    component.forward.username = "u1"
+    component.forward.password = "u1"
+    component.add()
+    expect(component.showError).toBeFalsy()
+    //
+    component.remove("xx1~ws://")
   });
 
   it('should open forward', () => {
-    component.open({ k: "ws://xx1" })
+    component.open({ k: "xx1~ws://" })
+    component.open({ k: "xx" })
+    component.open({ k: "error" })
   });
 
 });
