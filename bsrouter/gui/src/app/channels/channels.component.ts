@@ -27,6 +27,9 @@ export class ChannelsComponent implements OnInit {
     this.srv.removeChannel(i);
     this.reload();
   }
+  enable(e, i, c) {
+    this.srv.enableChannel(i, e.target.checked);
+  }
   add() {
     if (!this.channel.remote || !this.channel.token || this.channel.index == undefined || this.channel.index < 0) {
       this.showError = true

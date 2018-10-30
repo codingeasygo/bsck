@@ -36,6 +36,13 @@ func (b *BufferConn) Close() (err error) {
 	return
 }
 
+func (b *BufferConn) String() string {
+	if conn, ok := b.Raw.(net.Conn); ok {
+		return conn.RemoteAddr().String()
+	}
+	return fmt.Sprintf("%v", b.Raw)
+}
+
 //ForwardEntry is the forward entry
 type ForwardEntry []interface{}
 
@@ -58,7 +65,7 @@ func NewProxy(name string) (proxy *Proxy) {
 		Router:         NewRouter(name),
 		forwards:       map[string]ForwardEntry{},
 		forwardsLck:    sync.RWMutex{},
-		Handler:        NewTCPDialer(),
+		Handler:        nil,
 		Running:        true,
 		ReconnectDelay: 3 * time.Second,
 	}

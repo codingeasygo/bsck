@@ -14,23 +14,30 @@ import (
 	"os"
 	"os/signal"
 	"os/user"
+	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/Centny/gwf/util"
 	"github.com/sutils/readkey"
 	"golang.org/x/net/websocket"
 )
 
-const Version = "1.2.3"
+//Version is bsrouter version
+const Version = "1.4.2"
 
+//CharTerm is console stop command
 var CharTerm = []byte{3}
 
+//Web is pojo for web configure
 type Web struct {
 	Listen string `json:"listen"`
 }
 
+//Web is pojo for configure
 type Config struct {
 	Name   string `json:"name"`
 	Listen string `json:"listen"`
@@ -42,6 +49,9 @@ var server string
 var win32 bool
 var proxy bool
 var ping bool
+var state string
+var help bool
+var bash string
 
 func appendSize(uri string) string {
 	if proxy {
@@ -57,25 +67,48 @@ func appendSize(uri string) string {
 }
 
 func main() {
-	flag.StringVar(&server, "s", "", "")
+	var showVersion bool
+	flag.StringVar(&server, "srv", "", "")
 	flag.BoolVar(&win32, "win32", false, "win32 command")
 	flag.BoolVar(&proxy, "proxy", false, "proxy mode")
 	flag.BoolVar(&ping, "ping", false, "ping mode")
+	flag.BoolVar(&help, "help", false, "show help")
+	flag.BoolVar(&help, "h", false, "show help")
+	flag.StringVar(&state, "state", "", "state mode")
+	flag.StringVar(&bash, "bash", "", "bash mode")
+	flag.BoolVar(&showVersion, "version", false, "show version")
+	flag.BoolVar(&showVersion, "v", false, "show version")
 	flag.Parse()
-	if len(flag.Args()) < 1 {
+	if showVersion {
+		fmt.Println(Version)
+		os.Exit(1)
+		return
+	}
+	_, fn := filepath.Split(os.Args[0])
+	switch fn {
+	case "bs-ping":
+		ping = true
+	case "bs-state":
+		state = "router"
+	case "bs-bash":
+		bash = "bash"
+	case "bs-sh":
+		bash = "sh"
+	}
+	if help {
 		fmt.Fprintf(os.Stderr, "Bond Socket Console Version %v\n", Version)
-		fmt.Fprintf(os.Stderr, "Usage:  %v [option] <forward uri>\n", "bsrouter")
-		fmt.Fprintf(os.Stderr, "        %v 'x->y->tcp://127.0.0.1:80'\n", "bsrouter")
+		fmt.Fprintf(os.Stderr, "Usage:  %v [option] <forward uri>\n", "bsconsole")
+		fmt.Fprintf(os.Stderr, "        %v 'x->y->tcp://127.0.0.1:80'\n", "bsconsole")
 		fmt.Fprintf(os.Stderr, "bsrouter options:\n")
-		fmt.Fprintf(os.Stderr, "        s\n")
+		fmt.Fprintf(os.Stderr, "        srv\n")
 		fmt.Fprintf(os.Stderr, "             the remote bsrouter listen address, eg: ws://127.0.0.1:1082, tcp://127.0.0.1:2023\n")
 		os.Exit(1)
 		return
 	}
-	var uri, remote string
-	if regexp.MustCompile("^[A-Za-z0-9]*://.*$").MatchString(flag.Arg(0)) {
+	var fullURI, remote string
+	if regexp.MustCompile("^(ws|wss|socks5)://.*$").MatchString(flag.Arg(0)) {
 		server = flag.Arg(0)
-		uri = ""
+		fullURI = ""
 		remote = flag.Arg(0)
 	} else if len(server) < 1 {
 		var err error
@@ -107,11 +140,23 @@ func main() {
 			fmt.Fprintf(os.Stderr, "not client access listen on config %v\n", path)
 			os.Exit(1)
 		}
-		uri = flag.Args()[0]
-		if ping {
-			uri += "->tcp://echo"
+		if len(flag.Args()) > 0 {
+			fullURI = flag.Args()[0]
 		}
-		remote = flag.Args()[0]
+		if ping && !strings.Contains(fullURI, "tcp://echo") {
+			fullURI += "->tcp://echo"
+		}
+		if len(state) > 0 {
+			if len(fullURI) > 0 {
+				fullURI += "->state://" + state
+			} else {
+				fullURI += "state://" + state
+			}
+		}
+		if len(bash) > 0 {
+			fullURI += "->tcp://cmd?exec=" + bash
+		}
+		remote = fullURI
 	}
 	//
 	dialBeg := time.Now()
@@ -126,21 +171,24 @@ func main() {
 	case "ws":
 		fallthrough
 	case "wss":
-		fullURI := server
-		if len(uri) > 0 {
-			if strings.Contains(uri, "->") {
-				uri = appendSize(uri)
-				fullURI += "/?router=" + url.QueryEscape(uri)
+		targetURI := server
+		if len(fullURI) > 0 {
+			if !strings.Contains(fullURI, "->") && !strings.Contains(fullURI, "://") {
+				//for alias forward
+				targetURI += "/" + fullURI
+				targetURI = appendSize(targetURI)
 			} else {
-				fullURI += "/" + uri
+				//for full forward
 				fullURI = appendSize(fullURI)
+				targetURI += "/?router=" + url.QueryEscape(fullURI)
 			}
 		} else {
-			fullURI = appendSize(fullURI)
+			//for command full uri.
+			targetURI = appendSize(targetURI)
 		}
-		conn, err = websocket.Dial(fullURI, "", "https://"+rurl.Host)
+		conn, err = websocket.Dial(targetURI, "", rurl.Scheme+"://"+rurl.Host)
 	case "socks5":
-		uri = appendSize(uri)
+		fullURI = appendSize(fullURI)
 		conn, err = net.Dial("tcp", rurl.Host)
 		if err == nil {
 			buf := make([]byte, 1024*64)
@@ -151,9 +199,9 @@ func main() {
 			}
 			_, err = conn.Read(buf)
 			buf[0], buf[1], buf[2], buf[3] = 0x05, 0x01, 0x00, 0x13
-			buf[4] = byte(len(uri))
-			copy(buf[5:], []byte(uri))
-			binary.BigEndian.PutUint16(buf[5+len(uri):], 0)
+			buf[4] = byte(len(fullURI))
+			copy(buf[5:], []byte(fullURI))
+			binary.BigEndian.PutUint16(buf[5+len(fullURI):], 0)
 			_, err = conn.Write(buf[:buf[4]+7])
 			if err != nil {
 				return
@@ -179,33 +227,42 @@ func main() {
 		runWinConsole(conn)
 	} else if proxy {
 		runProxy(conn)
+	} else if len(state) > 0 {
+		runState(conn)
 	} else {
 		runUnixConsole(conn)
 	}
 }
 
 func runPing(conn io.ReadWriteCloser, remote string, dialBeg time.Time) {
-	var i int
+	var line []byte
 	var err error
-	pingBeg := time.Now()
+	var c uint64
+	buf := make([]byte, 65)
 	reader := bufio.NewReader(conn)
-	for i = 1; i < 101; i++ {
-		_, err = fmt.Fprintf(conn, "data-%v\n", i)
+	for {
+		pingBeg := time.Now()
+		c++
+		binary.BigEndian.PutUint64(buf, c)
+		buf[64] = '\n'
+		_, err = conn.Write(buf)
 		if err != nil {
 			break
 		}
-		_, _, err = reader.ReadLine()
+		line, _, err = reader.ReadLine()
 		if err != nil {
 			break
 		}
+		pingUsed := time.Now().Sub(pingBeg)
+		fmt.Printf("%v Bytes from %v time=%v\n", len(line), remote, pingUsed)
+		time.Sleep(time.Second)
 	}
-	status := "OK"
 	if err != nil {
-		status = err.Error()
+		fmt.Printf("Ping to %v fail with %v", remote, err)
 	}
-	pingUsed := time.Now().Sub(pingBeg)
-	totalUsed := time.Now().Sub(dialBeg)
-	fmt.Printf("Ping to %v %v\n   Avg:\t\t%v\n   Count:\t\t%v\n   Used:\t%v\n\n", remote, status, pingUsed/time.Duration(i), i, totalUsed)
+	// pingUsed := time.Now().Sub(pingBeg)
+	// totalUsed := time.Now().Sub(dialBeg)
+	// fmt.Printf("Ping to %v %v\n   Avg:\t\t%v\n   Count:\t\t%v\n   Used:\t%v\n\n", remote, status, pingUsed/time.Duration(i), i, totalUsed)
 }
 
 func runWinConsole(conn io.ReadWriteCloser) {
@@ -298,4 +355,41 @@ func runProxy(conn io.ReadWriteCloser) {
 	go io.Copy(os.Stdout, conn)
 	io.Copy(conn, os.Stdin)
 	conn.Close()
+}
+
+func runState(conn io.ReadWriteCloser) {
+	defer conn.Close()
+	if state != "router" {
+		fmt.Println("state is not supported by " + flag.Args()[0])
+		return
+	}
+	data, _ := ioutil.ReadAll(conn)
+	vals := util.Map{}
+	err := json.Unmarshal(data, &vals)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	switch state {
+	case "router":
+		fmt.Printf("[Channels]\n")
+		channels := vals.MapVal("channels")
+		for name := range channels {
+			fmt.Printf(" ->%v\n", name)
+			bond := channels.MapVal(name)
+			for idx := range bond {
+				val := bond.MapVal(idx)
+				idxVal, _ := strconv.ParseInt(strings.Replace(idx, "_", "", -1), 10, 64)
+				heartbeat := val.IntValV("heartbeat", 0)
+				hs := time.Unix(0, heartbeat*1e6).Format("2006-01-02 15:04:05")
+				fmt.Printf("   %d % 4d   %v   %v\n", idxVal, int(val["used"].(float64)), hs, val["connect"])
+			}
+		}
+		fmt.Printf("\n\n[Table]\n")
+		table := vals.AryStrVal("table")
+		for _, t := range table {
+			fmt.Printf(" %v\n", t)
+		}
+		fmt.Printf("\n")
+	}
 }

@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sutils/dialer"
+	"github.com/sutils/bsck/dialer"
 )
 
 func TestPendingConn(t *testing.T) {
@@ -21,7 +21,7 @@ func TestPendingConn(t *testing.T) {
 }
 
 func proxyDial(t *testing.T, remote string, port uint16) {
-	conn, err := net.Dial("tcp", "localhost:1081")
+	conn, err := net.Dial("tcp", "localhost:2081")
 	if err != nil {
 		t.Error(err)
 		return
@@ -57,7 +57,7 @@ func proxyDial(t *testing.T, remote string, port uint16) {
 }
 
 func proxyDial2(t *testing.T, remote string, port uint16) {
-	conn, err := net.Dial("tcp", "localhost:1081")
+	conn, err := net.Dial("tcp", "localhost:2081")
 	if err != nil {
 		t.Error(err)
 		return
@@ -93,7 +93,7 @@ func proxyDial2(t *testing.T, remote string, port uint16) {
 }
 
 func proxyDialIP(t *testing.T, bys []byte, port uint16) {
-	conn, err := net.Dial("tcp", "localhost:1081")
+	conn, err := net.Dial("tcp", "localhost:2081")
 	if err != nil {
 		t.Error(err)
 		return
@@ -128,7 +128,7 @@ func proxyDialIP(t *testing.T, bys []byte, port uint16) {
 }
 
 func proxyDialIPv6(t *testing.T, bys []byte, port uint16) {
-	conn, err := net.Dial("tcp", "localhost:1081")
+	conn, err := net.Dial("tcp", "localhost:2081")
 	if err != nil {
 		t.Error(err)
 		return
@@ -162,19 +162,33 @@ func proxyDialIPv6(t *testing.T, bys []byte, port uint16) {
 	fmt.Printf("->%v\n", buf[0:readed])
 }
 
+type CodableErr struct {
+	Err error
+}
+
+func (c *CodableErr) Error() string {
+	return c.Err.Error()
+}
+
+func (c *CodableErr) Code() byte {
+	return 0x01
+}
+
 func TestSocksProxy(t *testing.T) {
 	proxy := NewSocksProxy()
-	proxy.Dialer = func(uri string, raw io.ReadWriteCloser) (sid uint64, err error) {
+	proxy.Dialer = func(utype int, uri string, raw io.ReadWriteCloser) (sid uint64, err error) {
 		conn, err := net.Dial("tcp", uri)
 		if err == nil {
 			go io.Copy(conn, raw)
 			go io.Copy(raw, conn)
 			time.Sleep(100 * time.Millisecond)
+		} else {
+			err = &CodableErr{Err: err}
 		}
 		fmt.Println("dial to ", uri, err)
 		return
 	}
-	err := proxy.Start(":1081")
+	err := proxy.Start(":2081")
 	if err != nil {
 		t.Error(err)
 		return

@@ -45,7 +45,7 @@ class Bsrouter {
         });
         this.runner.on('exit', (code) => {
             if (this.handler) {
-                this.handler.onLog(`child process exited with code ${code}`);
+                this.handler.onLog(`child process exited with code ${code}` + "\n");
             }
             this.status = "Stopped";
             this.handler.onStatus(this.status);
@@ -55,7 +55,7 @@ class Bsrouter {
         });
         this.runner.on('error', (e) => {
             if (this.handler) {
-                this.handler.onLog(`child process error with ${e}`);
+                this.handler.onLog(`child process error with ${e}` + "\n");
             }
             this.status = "Error"
             this.handler.onStatus(this.status);
@@ -89,6 +89,13 @@ class Bsrouter {
             return {};
         }
     }
+    protected saveConf(conf: any) {
+        let dir = path.dirname(this.workingFile);
+        if (!fs.existsSync(dir)) {
+            fs.mkdirSync(dir)
+        }
+        fs.writeFileSync(this.workingFile, JSON.stringify(conf));
+    }
     public loadBasic(): any {
         var conf = this.loadConf();
         if (conf) {
@@ -102,19 +109,23 @@ class Bsrouter {
         delete basic.channels;
         var old = this.loadConf();
         Object.assign(old, basic);
-        fs.writeFileSync(this.workingFile, JSON.stringify(old));
+        this.saveConf(old);
         return "OK"
     }
     public loadForwards(): any {
-        return this.loadConf().forwards;
+        let fs = this.loadConf().forwards;
+        if (!fs) {
+            fs = {};
+        }
+        return fs;
     }
     public addForward(key: string, router: string) {
         var old = this.loadConf();
         if (!old.forwards) {
-            old.forwards = {}
+            old.forwards = {};
         }
-        old.forwards[key] = router
-        fs.writeFileSync(this.workingFile, JSON.stringify(old));
+        old.forwards[key] = router;
+        this.saveConf(old);
         return "OK"
     }
     public removeForward(key: string) {
@@ -123,22 +134,32 @@ class Bsrouter {
             old.forwards = {}
         }
         delete old.forwards[key]
-        fs.writeFileSync(this.workingFile, JSON.stringify(old));
+        this.saveConf(old);
         return "OK"
     }
     public loadChannels(): any[] {
-        return this.loadConf().channels;
+        let cs = this.loadConf().channels;
+        if (!cs) {
+            cs = [];
+        }
+        return cs;
     }
     public addChannel(c: any) {
         var old = this.loadConf();
         old.channels.push(c)
-        fs.writeFileSync(this.workingFile, JSON.stringify(old));
+        this.saveConf(old);
         return "OK"
     }
     public removeChannel(i: number) {
         var old = this.loadConf();
         old.channels.splice(i, 1);
-        fs.writeFileSync(this.workingFile, JSON.stringify(old));
+        this.saveConf(old);
+        return "OK"
+    }
+    public enableChannel(i: number, enabled: any) {
+        var old = this.loadConf();
+        old.channels[i].enable = enabled && true;
+        this.saveConf(old);
         return "OK"
     }
 }
@@ -187,20 +208,26 @@ function createWindow() {
     mainWindow.loadFile(`dist/view/index.html`)
     function callOpen(f: string) {
         try {
-            let conf = bsrouter.loadConf();
-            var dir = conf.vnc_dir;
-            if (!dir) {
-                dir = os.homedir() + "/Desktop";
+            let parts = f.split("~");
+            if (parts.length < 2) {
+                return "invalid forward"
             }
-            let u = url.parse(f);
+            let conf = bsrouter.loadConf();
+            let u = url.parse(parts[1]);
             switch (u.protocol) {
                 case "vnc:":
-                case "locvnc:":
-                    spawn("open", [dir + "/" + u.hostname + ".vnc"])
+                    var dir = conf.vnc_dir;
+                    if (!dir) {
+                        dir = os.homedir() + "/Desktop";
+                    }
+                    spawn("open", [dir + "/" + parts[0] + ".vnc"])
                     break
                 case "rdp:":
-                case "locrdp:":
-                    spawn("open", [dir + "/" + u.hostname + ".rdp"])
+                    var dir = conf.rdp_dir;
+                    if (!dir) {
+                        dir = os.homedir() + "/Desktop";
+                    }
+                    spawn("open", [dir + "/" + parts[0] + ".rdp"])
                     break
             }
             return "OK"
@@ -274,6 +301,7 @@ function createWindow() {
     }
     bsrouter.handler = {
         onLog: (m) => {
+            // Log.info("%s", m.replace("\n", ""));
             mainWindow.webContents.send("log", m)
         },
         onStatus: (s) => {
@@ -324,6 +352,9 @@ function createWindow() {
     })
     ipcMain.on("removeChannel", (e, args) => {
         e.returnValue = bsrouter.removeChannel(args)
+    })
+    ipcMain.on("enableChannel", (e, args) => {
+        e.returnValue = bsrouter.enableChannel(args.index, args.enabled)
     })
     reloadMenu()
     const template: MenuItemConstructorOptions[] = [

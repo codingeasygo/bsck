@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/Centny/gwf/util"
@@ -38,27 +39,19 @@ func hget(format string, args ...interface{}) (data string, err error) {
 
 func TestForward(t *testing.T) {
 	dialerPool := dialer.NewPool()
-	dialerPool.AddDialer(util.Map{},
-		dialer.NewCmdDialer(), dialer.NewEchoDialer(),
-		dialer.NewWebDialer(), dialer.NewTCPDialer())
+	dialerPool.Bootstrap(util.Map{
+		"standard": 1,
+	})
 	//
-
+	var sidSequence uint64
 	forward := NewForward()
 	forward.WebSuffix = ".loc"
 	forward.Dialer = func(uri string, raw io.ReadWriteCloser) (sid uint64, err error) {
-		conn, err := dialerPool.Dial(0, uri)
-		if err == nil {
-			go func() {
-				io.Copy(conn, raw)
-				conn.Close()
-				raw.Close()
-			}()
-			go func() {
-				io.Copy(raw, conn)
-				conn.Close()
-				raw.Close()
-			}()
-			// time.Sleep(100 * time.Millisecond)
+		if strings.Contains(uri, "error") {
+			err = fmt.Errorf("test error")
+		} else {
+			sid = atomic.AddUint64(&sidSequence, 1)
+			_, err = dialerPool.Dial(sid, uri, raw)
 		}
 		fmt.Println("dial to ", uri, err)
 		return
@@ -80,6 +73,11 @@ func TestForward(t *testing.T) {
 			return
 		}
 		err = forward.AddForward("web://loctest3", "https://127.0.0.1:80")
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		err = forward.AddForward("web://loctest4", "https://error")
 		if err != nil {
 			t.Error(err)
 			return
@@ -111,7 +109,7 @@ func TestForward(t *testing.T) {
 			t.Errorf("%v-%v", err, data)
 			return
 		}
-		fmt.Printf("data->:\n%v\n\n\n\n", data)
+		fmt.Printf("loctest0->:\n%v\n\n\n\n", data)
 		//
 		forward.WebAuth = "test:123"
 		data, err = hget("%v/web/loctest1", ts.URL)
@@ -119,7 +117,7 @@ func TestForward(t *testing.T) {
 			t.Errorf("%v-%v", err, data)
 			return
 		}
-		fmt.Printf("data->:\n%v\n\n\n\n", data)
+		fmt.Printf("loctest1->:\n%v\n\n\n\n", data)
 		forward.WebAuth = ""
 		//
 		data, err = hget("%v/web/loctest2", ts.URL)
@@ -127,17 +125,33 @@ func TestForward(t *testing.T) {
 			t.Errorf("%v-%v", err, data)
 			return
 		}
-		fmt.Printf("data->:\n%v\n\n\n\n", data)
+		fmt.Printf("loctest2->:\n%v\n\n\n\n", len(data))
+		//
+		data, err = hget("%v/web/loctest3", ts.URL)
+		if err == nil {
+			t.Errorf("%v-%v", err, data)
+			return
+		}
+		fmt.Printf("loctest3->:\n%v\n\n\n\n", data)
+		//
+		data, err = hget("%v/web/loctest4", ts.URL)
+		if err == nil {
+			t.Errorf("%v-%v", err, data)
+			return
+		}
+		fmt.Printf("loctest4->:\n%v\n\n\n\n", data)
 		//
 		data, err = hget("%v/web/xxxx", ts.URL)
 		if err == nil {
 			t.Errorf("%v-%v", err, data)
 			return
 		}
-		fmt.Printf("data->:\n%v\n\n\n\n", data)
+		fmt.Printf("xxxx->:\n%v\n\n\n\n", data)
 		//
-		forward.RemoveForward("web://loctest0")
-		forward.RemoveForward("web://loctest1")
+		forward.RemoveForward("loctest0")
+		forward.RemoveForward("loctest1")
+		forward.RemoveForward("loctest2")
+		forward.RemoveForward("loctest3")
 		//
 	}
 	{ //test sub forward
@@ -150,7 +164,12 @@ func TestForward(t *testing.T) {
 			t.Error("error")
 			return
 		}
-		err = forward.AddForward("web://t1", "http://web?dir=./")
+		err = forward.AddForward("ws://t1", "tcp://error")
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		err = forward.AddForward("web://t2", "http://web?dir=./")
 		if err != nil {
 			t.Error(err)
 			return
@@ -171,6 +190,9 @@ func TestForward(t *testing.T) {
 		fmt.Println("->", readed, string(buf[:readed]), err)
 		wsconn.Close()
 		//
+		//for run error test.
+		websocket.Dial("ws://"+tsURL.Host+"/ws/t1", "", ts.URL)
+		//
 		//
 		wsconn2, err := websocket.Dial("ws://"+tsURL.Host+"/ws/?router="+url.QueryEscape("tcp://echo?x=a"), "", ts.URL)
 		if err != nil {
@@ -182,7 +204,7 @@ func TestForward(t *testing.T) {
 		fmt.Println("->", readed, string(buf[:readed]), err)
 		wsconn2.Close()
 		//
-		data, err := hget("%v/dav/t1/build.sh", ts.URL)
+		data, err := hget("%v/dav/t2/build.sh", ts.URL)
 		if err != nil {
 			t.Errorf("%v-%v", err, data)
 			return
@@ -210,7 +232,9 @@ func TestForward(t *testing.T) {
 		}
 		fmt.Printf("res->:\n%v\n\n\n\n", err)
 		//
-		forward.RemoveForward("ws://t0")
+		forward.RemoveForward("t0")
+		forward.RemoveForward("t1")
+		forward.RemoveForward("t2")
 	}
 
 }
@@ -218,8 +242,14 @@ func TestForward(t *testing.T) {
 func TestForwadError(t *testing.T) {
 	// test error
 	forward := NewForward()
+	forward.AddForward("ws://t0", "tcp://xx")
+	err := forward.AddForward("ws://t0", "tcp://xx")
+	if err == nil {
+		t.Error(err)
+		return
+	}
 	//
-	err := forward.AddForward("https://ech%EX%BU%XD%E6%96%87?xx=1", "https://echo?xx=%EX%BU%AD%E6%96%87")
+	err = forward.AddForward("https://ech%EX%BU%XD%E6%96%87?xx=1", "https://echo?xx=%EX%BU%AD%E6%96%87")
 	if err == nil {
 		t.Error(err)
 		return
@@ -227,20 +257,6 @@ func TestForwadError(t *testing.T) {
 	fmt.Printf("Err:%v\n", err)
 	//
 	err = forward.AddForward("https://echo?xx=%EX%BU%AD%E6%96%87", "https://echo?xx=%EX%BU%AD%E6%96%87")
-	if err == nil {
-		t.Error(err)
-		return
-	}
-	fmt.Printf("Err:%v\n", err)
-	//
-	err = forward.RemoveForward("https://ech%EX%BU%XD%E6%96%87?xx=1")
-	if err == nil {
-		t.Error(err)
-		return
-	}
-	fmt.Printf("Err:%v\n", err)
-	//
-	err = forward.RemoveForward("https://xxx?xx=1")
 	if err == nil {
 		t.Error(err)
 		return
@@ -259,4 +275,14 @@ func TestForwardUri(t *testing.T) {
 		t.Error(err)
 		return
 	}
+}
+
+func TestWaitReadWriteCloser(t *testing.T) {
+	cona, conb, _ := dialer.CreatePipedConn()
+	wrwc := NewWaitReadWriteCloser(conb)
+	fmt.Printf("%v\n", wrwc)
+	wrwc.ReadWriteCloser = nil
+	fmt.Printf("%v\n", wrwc)
+	cona.Close()
+
 }

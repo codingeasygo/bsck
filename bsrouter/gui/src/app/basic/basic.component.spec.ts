@@ -37,12 +37,37 @@ describe('BasicComponent', () => {
   it('should save success', async () => {
     global.ipcRenderer.fail = false
     fixture.debugElement.nativeElement.querySelector(".app-basic-save .btn-info").click()
+    fixture.detectChanges();
+    expect(component.message).toBe("saved");
     await sleep(150)
+    expect(component.message).toBe("");
   });
+
+  it('should save success showlog', async () => {
+    global.ipcRenderer.fail = false
+    fixture.debugElement.nativeElement.querySelector("input[type='checkbox']").click()
+    fixture.detectChanges();
+    fixture.debugElement.nativeElement.querySelector(".app-basic-save .btn-info").click()
+    fixture.detectChanges();
+    expect(component.message).toBe("saved");
+    await sleep(150)
+    expect(component.message).toBe("");
+  });
+
 
   it('should save fail', async () => {
     global.ipcRenderer.fail = true
     fixture.debugElement.nativeElement.querySelector(".app-basic-save .btn-info").click()
+    fixture.detectChanges();
+    expect(component.message).not.toBe("saved");
     await sleep(150)
+    expect(component.message).toBe("");
+  });
+
+  it('should load web not exist fail', async () => {
+    global.ipcRenderer.fail = true
+    global.ipcRenderer.notWeb = true
+    component.reload();
+    expect(component.conf.web != null).toBe(true)
   });
 });

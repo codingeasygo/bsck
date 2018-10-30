@@ -2,6 +2,7 @@
 
 export class MockIpcRenderer {
     public fail: boolean = false;
+    public notWeb: boolean = false;
     conf = {
         "name": "cny",
         "listen": ":2023",
@@ -14,14 +15,15 @@ export class MockIpcRenderer {
         },
         "socks5": ":1081",
         "forwards": {
-            "ws://dev": "MkDev->tcp://cmd?exec=/bin/bash",
-            "ws://dev-network": "MkDev->tcp://192.168.1.131:22",
-            "rdp://mk@dev-win-x86": "MkDev->tcp://10.211.1.103:3389",
-            "vnc://:17544784f035a496@CzyVnc1": "MkIdc->UmsCzy->tcp://192.168.33.102:5900",
-            "vnc://:17544784f035a496@CzyVnc2": "MkIdc->UmsCzy->tcp://192.168.33.104:5900",
-            "tcp://IdcExsi@:10443": "MkIdc->tcp://192.168.2.132:443",
-            "rdp://gjp@idc-win-gjp": "MkIdc->tcp://192.168.2.131:3389",
-            "tcp://UmsDb:13306": "MkIdc->tcp://192.168.2.152:3306"
+            "dev~ws://": "MkDev->tcp://cmd?exec=/bin/bash",
+            "dev-network~ws://": "MkDev->tcp://192.168.1.131:22",
+            "dev-win-x86~rdp://mk@localhost": "MkDev->tcp://10.211.1.103:3389",
+            "CzyVnc1~vnc://:17544784f035a496@localhost": "MkIdc->UmsCzy->tcp://192.168.33.102:5900",
+            "CzyVnc2~vnc://:17544784f035a496@localhost": "MkIdc->UmsCzy->tcp://192.168.33.104:5900",
+            "test2~tcp://IdcExsi@localhost:10443": "MkIdc->tcp://192.168.2.132:443",
+            "idc-win-gjp~rdp://gjp@localhost": "MkIdc->tcp://192.168.2.131:3389",
+            "test3~tcp://UmsDb@localhost:13306": "MkIdc->tcp://192.168.2.152:3306",
+            "tcp://xxx@localhost:13306": "MkIdc->tcp://192.168.2.152:3306"
         },
         "channels": [
             {
@@ -67,6 +69,9 @@ export class MockIpcRenderer {
                 Object.assign(basic, this.conf);
                 delete basic.forwards;
                 delete basic.channels;
+                if (this.notWeb) {
+                    delete basic.web;
+                }
                 return basic;
             case "saveBasic":
                 if (this.fail) {
@@ -83,6 +88,9 @@ export class MockIpcRenderer {
                 delete this.conf.forwards[args.key]
                 return "OK"
             case "openForward":
+                if (args.indexOf("error") >= 0) {
+                    return "ERROR"
+                }
                 return "OK"
             case "loadChannels":
                 return this.conf.channels;
@@ -91,6 +99,9 @@ export class MockIpcRenderer {
                 return "OK"
             case "removeChannel":
                 this.conf.channels.splice(args, 1)
+                return "OK"
+            case "enableChannel":
+                this.conf.channels[args.index] = args.enabled;
                 return "OK"
 
         }
