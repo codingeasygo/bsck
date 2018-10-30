@@ -10,7 +10,8 @@
     "lint": "ng lint",
     "e2e": "ng e2e",
     "testSpider": "tsc && electron dist/spider/spider.saiguo.test.js",
-    "pack-win": "npm run build && electron-packager ./ bsrouter --platform=win32 --arch=ia32 --out ./out --overwrite --ignore=\"^\\/(pkg.sh|e2e|spider|coverage|src|.vscode|angular.json|package-lock.json|tsconfig.json|tslint.json|main.ts|.editorconfig)\" --ignore=\"(.idea|docs|.gitignore|LICENSE|README.md|.DS_Store|bower.json)\" --download.mirror=https://npm.taobao.org/mirrors/electron/",
+    "pack-win": "npm run build && electron-packager ./ BSRouter --platform=win32 --arch=ia32 --out ./out --overwrite --ignore=\"^\\/(pkg.sh|e2e|spider|coverage|src|.vscode|angular.json|package-lock.json|tsconfig.json|tslint.json|main.ts|.editorconfig)\" --ignore=\"(.idea|docs|.gitignore|LICENSE|README.md|.DS_Store|bower.json)\" --download.mirror=https://npm.taobao.org/mirrors/electron/",
+    "pack-linux": "npm run build && electron-packager ./ BSRouter --platform=linux --out ./out --overwrite --ignore=\"^\\/(pkg.sh|e2e|spider|coverage|src|.vscode|angular.json|package-lock.json|tsconfig.json|tslint.json|main.ts|.editorconfig)\" --ignore=\"(.idea|docs|.gitignore|LICENSE|README.md|.DS_Store|bower.json)\" --download.mirror=https://npm.taobao.org/mirrors/electron/",
     "pack-osx": "npm run build && electron-packager ./ BSRouter --platform=darwin --out ./out --icon=icon.icns --overwrite --ignore=\"^\\/(pkg.sh|e2e|spider|coverage|src|.vscode|angular.json|package-lock.json|tsconfig.json|tslint.json|main.ts|.editorconfig)\" --ignore=\"(.idea|docs|.gitignore|LICENSE|README.md|.DS_Store|bower.json)\" --download.mirror=https://npm.taobao.org/mirrors/electron/"
   },
   "nyc": {
