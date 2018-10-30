@@ -1,6 +1,6 @@
 .logview{
     height: 428px;
-    overflow: scroll;
+    overflow: auto;
     margin-left: 3px;
     margin-right: 3px;
 }
