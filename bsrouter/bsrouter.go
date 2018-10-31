@@ -193,6 +193,12 @@ func main() {
 	socks5 := bsck.NewSocksProxy()
 	forward := bsck.NewForward()
 	node := bsck.NewProxy(config.Name)
+	if !filepath.IsAbs(config.Cert) {
+		config.Cert = filepath.Join(filepath.Dir(configPath), config.Cert)
+	}
+	if !filepath.IsAbs(config.Key) {
+		config.Key = filepath.Join(filepath.Dir(configPath), config.Key)
+	}
 	node.Cert, node.Key = config.Cert, config.Key
 	if config.Reconnect > 0 {
 		node.ReconnectDelay = time.Duration(config.Reconnect) * time.Millisecond
