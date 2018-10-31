@@ -466,3 +466,15 @@ supported protocol
 * `alias~vnc://:passwrod@host:port` listen tcp  by host:port, and generate rdp file on `vnc_dir` by alias.vnc, user is not needed, password is encrypted
 * `alias~web://` foward web by `http://localhost:port/dav/alias` to uri when `web` configure is enabled.
 * `alias~ws://` foward websocekt by `ws://localhost:port/ws/alias` to uri when `web` configure is enabled.
+
+## GUI Reference
+
+* generate ssl cert by
+
+```.sh
+openssl req -new -nodes -x509 -out "./bsrouter.pem" -keyout "./bsrouter.key" -days 3650 -subj "/C=CN/ST=NRW/L=Earth/O=Random Company/OU=IT/CN=xxx/emailAddress=cert@xxxx"
+```
+
+* copy `bsrouter.pem`,`bsrouter.key` to `~/.bsrouter/`
+
+* open GUI program and edit `basic`,`channels`,`forwards`
