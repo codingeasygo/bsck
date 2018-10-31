@@ -557,6 +557,7 @@ func (r *Router) procLogin(conn Conn, buf []byte, length uint32) (err error) {
 	if !ok {
 		ErrorLog("Router(%v) proc login error with connection is not channel", r.Name)
 		err = fmt.Errorf("connection is not channel")
+		conn.Close()
 		return
 	}
 	var option AuthOption
@@ -564,11 +565,13 @@ func (r *Router) procLogin(conn Conn, buf []byte, length uint32) (err error) {
 	if err != nil {
 		ErrorLog("Router(%v) unmarshal login option fail with %v", r.Name, err)
 		err = writeCmd(conn, buf, CmdLoginBack, 0, []byte("parse login opiton fail with "+err.Error()))
+		conn.Close()
 		return
 	}
 	if len(option.Name) < 1 || len(option.Token) < 1 {
 		ErrorLog("Router(%v) login option fail with name/token is required", r.Name)
 		err = writeCmd(conn, buf, CmdLoginBack, 0, []byte("name/token is requried"))
+		conn.Close()
 		return
 	}
 	r.aclLck.RLock()
@@ -587,13 +590,14 @@ func (r *Router) procLogin(conn Conn, buf []byte, length uint32) (err error) {
 	if len(token) < 1 || token != option.Token {
 		WarnLog("Router(%v) login fail with auth fail", r.Name)
 		err = writeCmd(conn, buf, CmdLoginBack, 0, []byte("access denied "))
+		conn.Close()
 		return
 	}
 	channel.name = option.Name
 	channel.index = option.Index
 	r.addChannel(channel)
 	writeCmd(channel, buf, CmdLoginBack, 0, []byte("OK:"+r.Name))
-	InfoLog("Router(%v) the channel(%v,%v) is login success", r.Name, option.Name, option.Index)
+	InfoLog("Router(%v) the channel(%v,%v) is login success on %v", r.Name, option.Name, option.Index, channel)
 	return
 }
 
