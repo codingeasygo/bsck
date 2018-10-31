@@ -10,7 +10,7 @@ bond socket provider a server/client channel like ssh tunneling, it can forward 
   * case2: `browser -> bsck client -> bsck server -> web server` for browser to inner web server.
 * provider bash access on each node.
 * provider webdav access on each node.
-* provider remove execute command on each node.
+* provider remote execute command on each node.
 * provider balanced socks5 server that using node in bsck router as proxy server or multi upstream socks5 server.
 * provider gui to edit forward/channel configure.
 
