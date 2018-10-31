@@ -4,9 +4,8 @@ pkg_ver=1.4.2
 pkg_osx(){
     rm -rf dist/
     rm -rf out/BSRouter-darwin-x64-$pkg_ver
-    export GOOS=darwin
-    export GOARCH=amd64
-    go build -o dist/bsrouter github.com/sutils/bsck/bsrouter
+    rm -rf bsrouter
+    7z x ../build/bsrouter-$pkg_ver-Darwin.zip
     npm run pack-osx
     cd out
     plutil -insert LSUIElement -bool true BSRouter-darwin-x64/BSRouter.app/Contents/Info.plist
@@ -17,9 +16,8 @@ pkg_osx(){
 pkg_linux(){
     rm -rf dist/
     rm -rf out/BSRouter-linux-x64-$pkg_ver
-    export GOOS=linux
-    export GOARCH=amd64
-    go build -o dist/bsrouter github.com/sutils/bsck/bsrouter
+    rm -rf bsrouter
+    7z x ../build/bsrouter-$pkg_ver-Linux.zip
     npm run pack-linux
     cd out
     mv BSRouter-linux-x64 BSRouter-linux-x64-$pkg_ver
@@ -29,7 +27,8 @@ pkg_linux(){
 pkg_win(){
     rm -rf dist/
     rm -rf out/BSRouter-win32-ia32-$pkg_ver
-    7z e ../build/bsrouter-1.4.2-Win-386.zip
+    rm -rf bsrouter
+    7z x ../build/bsrouter-$pkg_ver-Win-386.zip
     npm run pack-win
     cd out
     mv BSRouter-win32-ia32 BSRouter-win32-ia32-$pkg_ver

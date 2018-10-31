@@ -18,7 +18,7 @@ installServer(){
   fi
   mkdir -p /etc/bsrouter
   if [ ! -f /etc/bsrouter/bsrouter.json ];then
-    cp -f bsrouter.json /etc/bsrouter
+    cp -f default-bsrouter.json /etc/bsrouter/bsrouter.json
   fi
   systemctl enable bsrouter.service
 }

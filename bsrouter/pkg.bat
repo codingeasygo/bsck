@@ -14,7 +14,7 @@ xcopy bsrouter-conf.bat build\%srv_name%
 xcopy bsrouter-install.bat build\%srv_name%
 xcopy bsrouter-uninstall.bat build\%srv_name%
 xcopy create-cert.bat build\%srv_name%
-xcopy bsrouter.json /F build\%srv_name%
+xcopy default-bsrouter.json /F build\%srv_name%
 
 if NOT %ERRORLEVEL% EQU 0 goto :efail
 

@@ -22,7 +22,7 @@ go build -o $srv_out/bsconsole github.com/sutils/bsck/bsconsole
 cp -f bsrouter-install.sh $srv_out
 cp -f bsrouter.service $srv_out
 cp -f create-cert.sh $srv_out
-cp -f bsrouter.json $srv_out
+cp -f default-bsrouter.json $srv_out
 cp -f ../bsconsole/bs-*.sh $srv_out
 
 ###

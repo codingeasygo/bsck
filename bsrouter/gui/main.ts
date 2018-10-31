@@ -24,7 +24,7 @@ class Bsrouter {
             return "Running";
         }
         Log.info("bsrouter is starting")
-        this.runner = spawn(__dirname + '/bsrouter');
+        this.runner = spawn(__dirname + '/../bsrouter/bsrouter');
         this.runner.stdout.on('data', (data) => {
             if (this.handler) {
                 this.handler.onLog(data.toString());
@@ -208,6 +208,18 @@ function createWindow() {
     mainWindow.loadFile(`dist/view/index.html`)
     function callOpen(f: string) {
         try {
+            var openCmd = "";
+            switch (process.platform) {
+                case "win32":
+                    openCmd = "start"
+                    break;
+                case "darwin":
+                    openCmd = "open"
+                    break;
+                default:
+                    openCmd = "open"
+                    break;
+            }
             let parts = f.split("~");
             if (parts.length < 2) {
                 return "invalid forward"
@@ -217,17 +229,11 @@ function createWindow() {
             switch (u.protocol) {
                 case "vnc:":
                     var dir = conf.vnc_dir;
-                    if (!dir) {
-                        dir = os.homedir() + "/Desktop";
-                    }
-                    spawn("open", [dir + "/" + parts[0] + ".vnc"])
+                    spawn(openCmd, [dir + "/" + parts[0] + ".vnc"])
                     break
                 case "rdp:":
                     var dir = conf.rdp_dir;
-                    if (!dir) {
-                        dir = os.homedir() + "/Desktop";
-                    }
-                    spawn("open", [dir + "/" + parts[0] + ".rdp"])
+                    spawn(openCmd, [dir + "/" + parts[0] + ".rdp"])
                     break
             }
             return "OK"
