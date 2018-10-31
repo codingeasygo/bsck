@@ -1,12 +1,14 @@
 @echo off
 set srv_name=bsrouter
 set srv_ver=1.4.2
+set OS=%1
 del /s /a /q build\%srv_name%
 mkdir build
 mkdir build\%srv_name%
+set GOOS=windows
+set GOARCH=%1
 go build -o build\%srv_name%\bsrouter.exe github.com/sutils/bsck/bsrouter
 if NOT %ERRORLEVEL% EQU 0 goto :efail
-reg Query "HKLM\Hardware\Description\System\CentralProcessor\0" | find /i "x86" > NUL && set OS=x86||set OS=x64
 xcopy win-%OS%\nssm.exe build\%srv_name%
 xcopy bsrouter-conf.bat build\%srv_name%
 xcopy bsrouter-install.bat build\%srv_name%
