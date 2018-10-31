@@ -208,18 +208,6 @@ function createWindow() {
     mainWindow.loadFile(`dist/view/index.html`)
     function callOpen(f: string) {
         try {
-            var openCmd = "";
-            switch (process.platform) {
-                case "win32":
-                    openCmd = "start"
-                    break;
-                case "darwin":
-                    openCmd = "open"
-                    break;
-                default:
-                    openCmd = "open"
-                    break;
-            }
             let parts = f.split("~");
             if (parts.length < 2) {
                 return "invalid forward"
@@ -229,11 +217,31 @@ function createWindow() {
             switch (u.protocol) {
                 case "vnc:":
                     var dir = conf.vnc_dir;
-                    spawn(openCmd, [dir + "/" + parts[0] + ".vnc"])
+                    switch (process.platform) {
+                        case "win32":
+                            spawn("cmd", ["/c", "start", dir + "/" + parts[0] + ".vnc"]);
+                            break;
+                        case "darwin":
+                            spawn("open", [dir + "/" + parts[0] + ".vnc"]);
+                            break;
+                        default:
+                            spawn("open", [dir + "/" + parts[0] + ".vnc"]);
+                            break;
+                    }
                     break
                 case "rdp:":
                     var dir = conf.rdp_dir;
-                    spawn(openCmd, [dir + "/" + parts[0] + ".rdp"])
+                    switch (process.platform) {
+                        case "win32":
+                            spawn("cmd", ["/c", "start", dir + "/" + parts[0] + ".rdp"]);
+                            break;
+                        case "darwin":
+                            spawn("open", [dir + "/" + parts[0] + ".rdp"])
+                            break;
+                        default:
+                            spawn("open", [dir + "/" + parts[0] + ".rdp"])
+                            break;
+                    }
                     break
             }
             return "OK"
