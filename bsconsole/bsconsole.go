@@ -243,7 +243,7 @@ func runPing(conn io.ReadWriteCloser, remote string, dialBeg time.Time) {
 	for {
 		pingBeg := time.Now()
 		c++
-		binary.BigEndian.PutUint64(buf, c)
+		fmt.Fprintf(bytes.NewBuffer(buf), "%v", c)
 		buf[64] = '\n'
 		_, err = conn.Write(buf)
 		if err != nil {
