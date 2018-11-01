@@ -62,10 +62,10 @@ ln -sf $GOPATH/bin/bsconsole $GOPATH/bin/bs-sh
 * `bs-sh <node router>` connect to node sh, equal to `bsconsole 'node1->tcp://cmd?exec=sh'`
 * `bs-ping <node router>` ping to node
   * `bs-ping node1` ping to node1
-  * `bs-ping node1->nodex` ping to nodex by router `node1->nodex`
+  * `bs-ping 'node1->nodex'` ping to nodex by router `node1->nodex`
 * `bs-state <node router>` list node state
   * `bs-state node1` list node1 state
-  * `bs-state node1->nodex` list nodex state
+  * `bs-state 'node1->nodex'` list nodex state
 * `bs-ssh <bsck uri> <ssh options>` start ssh connect
   * `bs-ssh 'node1->tcp://xxx:22' -lroot` start connect ssh server which after node1
 * `bs-sftp <bsck uri> <ssh options>` start sftp connect
