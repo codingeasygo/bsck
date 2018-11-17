@@ -352,6 +352,7 @@ func NewRouter(name string) (router *Router) {
 //StartHeartbeat will start the hearbeat on slaver/master
 func (r *Router) StartHeartbeat() {
 	if r.Heartbeat > 0 {
+		InfoLog("Router(%v) start heartbeat by %v delay", r.Name, r.Heartbeat)
 		go r.loopHeartbeat()
 	}
 }
@@ -538,9 +539,16 @@ func (r *Router) loopHeartbeat() {
 	buf[4] = CmdHeartbeat
 	binary.BigEndian.PutUint32(buf[5:], 0)
 	copy(buf[13:], data)
+	last := time.Now().Local().UnixNano() / 1e6
+	showed := false
 	for {
+		now := time.Now().Local().UnixNano() / 1e6
 		r.channelLck.RLock()
-		for _, bond := range r.channel {
+		for name, bond := range r.channel {
+			if now-last > 30000 {
+				InfoLog("Router(%v) send heartbeat to %v", r.Name, name)
+				showed = true
+			}
 			bond.channelLck.RLock()
 			for _, channel := range bond.channels {
 				channel.Write(buf)
@@ -548,6 +556,10 @@ func (r *Router) loopHeartbeat() {
 			bond.channelLck.RUnlock()
 		}
 		r.channelLck.RUnlock()
+		if showed {
+			last = time.Now().Local().UnixNano() / 1e6
+			showed = false
+		}
 		time.Sleep(r.Heartbeat)
 	}
 }
