@@ -13,6 +13,7 @@ installServer(){
   cp -f bs-sftp.sh /usr/local/bin/bs-sftp
   ln -sf /usr/local/bin/bsconsole /usr/local/bin/bs-ping
   ln -sf /usr/local/bin/bsconsole /usr/local/bin/bs-state
+  ln -sf /usr/local/bin/bsconsole /usr/local/bin/bs-bash
   if [ ! -f /etc/systemd/system/bsrouter.service ];then
     cp -f bsrouter.service /etc/systemd/system/
   fi
@@ -30,6 +31,7 @@ installClient(){
   ln -sf bs-sftp.sh bs-sftp
   ln -sf bsconsole bs-ping
   ln -sf bsconsole bs-state
+  ln -sf bsconsole bs-bash
 }
 
 case "$1" in
