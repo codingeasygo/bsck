@@ -8,7 +8,7 @@ import (
 	"os/exec"
 	"syscall"
 
-	"github.com/kr/pty"
+	"github.com/creack/pty"
 )
 
 var CtrlC = []byte{255, 244, 255, 253, 6}

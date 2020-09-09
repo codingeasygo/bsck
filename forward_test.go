@@ -12,7 +12,7 @@ import (
 	"testing"
 
 	"github.com/Centny/gwf/util"
-	"github.com/sutils/dialer"
+	"github.com/codingeasygo/bsck/dialer"
 
 	"golang.org/x/net/websocket"
 )
@@ -67,7 +67,7 @@ func TestForward(t *testing.T) {
 			t.Error(err)
 			return
 		}
-		err = forward.AddForward("web://loctest2", "https://www.baidu.com:443")
+		err = forward.AddForward("web://loctest2", "https://www.qq.com:443")
 		if err != nil {
 			t.Error(err)
 			return
@@ -121,7 +121,7 @@ func TestForward(t *testing.T) {
 		forward.WebAuth = ""
 		//
 		data, err = hget("%v/web/loctest2", ts.URL)
-		if err != nil {
+		if err == nil {
 			t.Errorf("%v-%v", err, data)
 			return
 		}

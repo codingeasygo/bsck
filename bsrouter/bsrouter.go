@@ -21,8 +21,8 @@ import (
 	"github.com/Centny/gwf/smartio"
 
 	"github.com/Centny/gwf/util"
-	"github.com/sutils/bsck"
-	"github.com/sutils/bsck/dialer"
+	"github.com/codingeasygo/bsck"
+	"github.com/codingeasygo/bsck/dialer"
 )
 
 //Web is pojo for web configure

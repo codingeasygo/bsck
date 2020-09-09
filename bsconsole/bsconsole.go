@@ -22,7 +22,7 @@ import (
 	"time"
 
 	"github.com/Centny/gwf/util"
-	"github.com/sutils/readkey"
+	"github.com/codingeasygo/readkey"
 	"golang.org/x/net/websocket"
 )
 

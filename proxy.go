@@ -4,14 +4,54 @@ import (
 	"bufio"
 	"crypto/rand"
 	"crypto/tls"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
 	"net/url"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
 )
+
+//AuthOption is a pojo struct to login auth.
+type AuthOption struct {
+	//the channel index
+	Index int `json:"index"`
+	//the chnnale name
+	Name string `json:"name"`
+	//the auth token
+	Token string `json:"token"`
+}
+
+//ChannelOption is a pojo struct for adding channel to Router
+type ChannelOption struct {
+	//enable
+	Enable bool `json:"enable"`
+	//the auth token
+	Token string `json:"token"`
+	//local tcp address to connection master
+	Local string `json:"local"`
+	//the remote address to login
+	Remote string `json:"remote"`
+	//the channel index
+	Index int `json:"index"`
+}
+
+//DialRawF is a function type to dial raw connection.
+type DialRawF func(sid uint64, uri string) (raw Conn, err error)
+
+//OnConnClose will be called when connection is closed
+func (d DialRawF) OnConnClose(conn Conn) error {
+	return nil
+}
+
+//DialRaw will dial raw connection
+func (d DialRawF) DialRaw(sid uint64, uri string) (raw Conn, err error) {
+	raw, err = d(sid, uri)
+	return
+}
 
 //BufferConn is an implementation of buffer connecton
 type BufferConn struct {
@@ -43,20 +83,30 @@ func (b *BufferConn) String() string {
 	return fmt.Sprintf("%v", b.Raw)
 }
 
+//ProxyHandler is proxy handler
+type ProxyHandler interface {
+	//dial raw connection
+	DialRaw(sid uint64, uri string) (raw Conn, err error)
+	//on connection is closed
+	OnConnClose(conn Conn) error
+}
+
 //ForwardEntry is the forward entry
 type ForwardEntry []interface{}
 
 //Proxy is an implementation of proxy router
 type Proxy struct {
-	*Router                      //the router
-	Running        bool          //proxy is running.
-	ReconnectDelay time.Duration //reconnect delay
-	Cert           string        //the tls cert
-	Key            string        //the tls key
+	*Router                          //the router
+	Running        bool              //proxy is running.
+	ReconnectDelay time.Duration     //reconnect delay
+	Cert           string            //the tls cert
+	Key            string            //the tls key
+	ACL            map[string]string //the access control
+	aclLock        sync.RWMutex      //the access control
 	master         net.Listener
 	forwards       map[string]ForwardEntry
 	forwardsLck    sync.RWMutex
-	Handler        RouterHandler
+	Handler        ProxyHandler
 }
 
 //NewProxy will return new Proxy by name
@@ -68,6 +118,8 @@ func NewProxy(name string) (proxy *Proxy) {
 		Handler:        nil,
 		Running:        true,
 		ReconnectDelay: 3 * time.Second,
+		ACL:            map[string]string{},
+		aclLock:        sync.RWMutex{},
 	}
 	proxy.Router.Handler = proxy
 	return
@@ -202,9 +254,9 @@ func (p *Proxy) Close() (err error) {
 	return
 }
 
-func (p *Proxy) runReconnect(option *ChannelOption) {
+func (p *Proxy) runReconnect(args *ChannelOption) {
 	for p.Running {
-		err := p.Login(option)
+		err := p.Login(args)
 		if err == nil {
 			break
 		}
@@ -212,19 +264,71 @@ func (p *Proxy) runReconnect(option *ChannelOption) {
 	}
 }
 
-//OnConnClose will be called when connection is closed
-func (p *Proxy) OnConnClose(conn Conn) error {
-	if channel, ok := conn.(*Channel); ok && p.Running && channel.Option != nil && channel.Option.Remote != "" {
-		InfoLog("Proxy(%v) the chnnale(%v) is closed, will reconect it", p.Name, channel)
-		go p.runReconnect(channel.Option)
-	}
-	return nil
-}
-
 //DialRaw will dial raw connection
 func (p *Proxy) DialRaw(sid uint64, uri string) (raw Conn, err error) {
 	raw, err = p.Handler.DialRaw(sid, uri)
 	return
+}
+
+//WhetherConnLogin is check connection is login
+func (p *Proxy) WhetherConnLogin(channel Conn) (ok bool) {
+	_, ok = channel.Context().(*AuthOption)
+	return
+}
+
+//OnConnDialURI is on connection dial uri
+func (p *Proxy) OnConnDialURI(channel Conn, conn string, parts []string) (err error) {
+	return
+}
+
+//OnConnLogin is on connection login
+func (p *Proxy) OnConnLogin(channel Conn, args string) (name string, index int, err error) {
+	var option AuthOption
+	err = json.Unmarshal([]byte(args), &option)
+	if err != nil {
+		ErrorLog("Proxy(%v) unmarshal login option fail with %v", p.Name, err)
+		err = fmt.Errorf("parse login opiton fail with " + err.Error())
+		return
+	}
+	if len(option.Name) < 1 || len(option.Token) < 1 {
+		ErrorLog("Proxy(%v) login option fail with name/token is required", p.Name)
+		err = fmt.Errorf("name/token is requried")
+		return
+	}
+	p.aclLock.RLock()
+	var token string
+	for n, t := range p.ACL {
+		reg, err := regexp.Compile(n)
+		if err != nil {
+			WarnLog("Proxy(%v) compile acl name regexp(%v) fail with %v", p.Name, n, err)
+			continue
+		}
+		if reg.MatchString(option.Name) {
+			token = t
+		}
+	}
+	p.aclLock.RUnlock()
+	if len(token) < 1 || token != option.Token {
+		WarnLog("Proxy(%v) login fail with auth fail", p.Name)
+		err = fmt.Errorf("access denied ")
+	}
+	channel.SetContext(option)
+	return
+}
+
+//OnConnClose will be called when connection is closed
+func (p *Proxy) OnConnClose(conn Conn) (err error) {
+	channel, ok := conn.(*Channel)
+	if !p.Running || !ok {
+		return
+	}
+	option, ok := channel.LoginArgs.(*ChannelOption)
+	if !p.Running || !ok {
+		return
+	}
+	InfoLog("Proxy(%v) the chnnale(%v) is closed, will reconect it", p.Name, channel)
+	go p.runReconnect(option)
+	return nil
 }
 
 //LoginChannel will login all channel by options.
@@ -257,7 +361,7 @@ func (p *Proxy) Login(option *ChannelOption) (err error) {
 	}
 	var conn net.Conn
 	if len(p.Cert) > 0 {
-		InfoLog("Router(%v) start dial to %v by x509 cert:%v,key:%v", p.Name, option.Remote, p.Cert, p.Key)
+		InfoLog("Proxy(%v) start dial to %v by x509 cert:%v,key:%v", p.Name, option.Remote, p.Cert, p.Key)
 		var cert tls.Certificate
 		cert, err = tls.LoadX509KeyPair(p.Cert, p.Key)
 		if err != nil {
@@ -275,7 +379,12 @@ func (p *Proxy) Login(option *ChannelOption) (err error) {
 		WarnLog("Proxy(%v) dial to %v fail with %v", p.Name, option.Remote, err)
 		return
 	}
-	err = p.JoinConn(NewInfoRWC(conn, conn.RemoteAddr().String()), option)
+	auth := &AuthOption{
+		Index: option.Index,
+		Name:  p.Name,
+		Token: option.Token,
+	}
+	err = p.JoinConn(NewInfoRWC(conn, conn.RemoteAddr().String()), option.Index, auth)
 	return
 }
 

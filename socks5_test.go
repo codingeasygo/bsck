@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sutils/bsck/dialer"
+	"github.com/codingeasygo/bsck/dialer"
 )
 
 func TestPendingConn(t *testing.T) {

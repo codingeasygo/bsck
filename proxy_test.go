@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/Centny/gwf/util"
-	"github.com/sutils/bsck/dialer"
+	"github.com/codingeasygo/bsck/dialer"
 )
 
 func init() {
@@ -73,11 +73,11 @@ func (e *Echo) Close() error {
 
 func TestProxy(t *testing.T) {
 	master := NewProxy("master")
-	master.Router.ACL["ms"] = "abc"
-	master.Router.ACL["slaver"] = "abc"
-	master.Router.ACL["slaver2"] = "abc"
-	master.Router.ACL["slaver3"] = "abc"
-	master.Router.ACL["err[slaver3"] = "abc"
+	master.ACL["ms"] = "abc"
+	master.ACL["slaver"] = "abc"
+	master.ACL["slaver2"] = "abc"
+	master.ACL["slaver3"] = "abc"
+	master.ACL["err[slaver3"] = "abc"
 	master.Heartbeat = 10 * time.Millisecond
 	master.StartHeartbeat()
 	var masterEcho *Echo
@@ -297,9 +297,9 @@ func TestProxy(t *testing.T) {
 
 func TestProxyError(t *testing.T) {
 	master := NewProxy("master")
-	master.Router.ACL["ms"] = "abc"
+	master.ACL["ms"] = "abc"
 	var masterEcho *Echo
-	master.Router.Handler = DialRawF(func(sid uint64, uri string) (conn Conn, err error) {
+	master.Handler = DialRawF(func(sid uint64, uri string) (conn Conn, err error) {
 		fmt.Println("master test dail to ", uri)
 		if uri == "error" {
 			err = fmt.Errorf("error")
@@ -471,7 +471,7 @@ func TestProxyError(t *testing.T) {
 		}
 		merr := NewErrReadWriteCloser([]byte("abc"), 10)
 		merr.ErrType = 10
-		err = slaver.JoinConn(merr, &ChannelOption{
+		err = slaver.JoinConn(merr, 0, &ChannelOption{
 			Enable: true,
 			Remote: "",
 			Token:  "abc",
@@ -482,7 +482,7 @@ func TestProxyError(t *testing.T) {
 			return
 		}
 		merr.ErrType = 20
-		err = slaver.JoinConn(merr, &ChannelOption{
+		err = slaver.JoinConn(merr, 0, &ChannelOption{
 			Enable: true,
 			Remote: "",
 			Token:  "abc",
@@ -595,7 +595,7 @@ func (e *ErrReadWriteCloser) Close() (err error) {
 func TestReconnect(t *testing.T) {
 	// ShowLog = 0
 	master := NewProxy("master")
-	master.Router.ACL["slaver"] = "abc"
+	master.ACL["slaver"] = "abc"
 	err := master.ListenMaster(":9232")
 	if err != nil {
 		t.Error(err)
@@ -623,10 +623,10 @@ func TestReconnect(t *testing.T) {
 
 func TestProxyForward(t *testing.T) {
 	master := NewProxy("master")
-	master.Router.ACL["slaver"] = "abc"
-	master.Router.ACL["client"] = "abc"
+	master.ACL["slaver"] = "abc"
+	master.ACL["client"] = "abc"
 	var masterEcho *Echo
-	master.Router.Handler = DialRawF(func(sid uint64, uri string) (conn Conn, err error) {
+	master.Handler = DialRawF(func(sid uint64, uri string) (conn Conn, err error) {
 		fmt.Println("master test dail to ", uri)
 		if uri == "error" {
 			err = fmt.Errorf("error")
@@ -792,10 +792,10 @@ func dialProxyConn(proxy, remote string, port uint16) (conn net.Conn, err error)
 
 func TestSocketProxyForward(t *testing.T) {
 	master := NewProxy("master")
-	master.Router.ACL["slaver"] = "abc"
-	master.Router.ACL["client"] = "abc"
+	master.ACL["slaver"] = "abc"
+	master.ACL["client"] = "abc"
 	// var masterEcho = NewEcho("master")
-	master.Router.Handler = DialRawF(func(sid uint64, uri string) (conn Conn, err error) {
+	master.Handler = DialRawF(func(sid uint64, uri string) (conn Conn, err error) {
 		fmt.Println("master test dail to", uri)
 		if uri == "error" {
 			err = fmt.Errorf("error")
@@ -887,9 +887,9 @@ func TestProxyTLS(t *testing.T) {
 	master := NewProxy("master")
 	master.Cert = "bsrouter/bsrouter.pem"
 	master.Key = "bsrouter/bsrouter.key"
-	master.Router.ACL["slaver"] = "abc"
-	master.Router.ACL["client"] = "abc"
-	master.Router.Handler = DialRawF(func(sid uint64, uri string) (conn Conn, err error) {
+	master.ACL["slaver"] = "abc"
+	master.ACL["client"] = "abc"
+	master.Handler = DialRawF(func(sid uint64, uri string) (conn Conn, err error) {
 		fmt.Println("master test dail to ", uri)
 		if uri == "error" {
 			err = fmt.Errorf("error")
@@ -976,10 +976,10 @@ func TestProxyClose(t *testing.T) {
 
 func TestProxyDialSync(t *testing.T) {
 	master := NewProxy("master")
-	master.Router.ACL["slaver"] = "abc"
-	master.Router.ACL["client"] = "abc"
+	master.ACL["slaver"] = "abc"
+	master.ACL["client"] = "abc"
 	var masterEcho *Echo
-	master.Router.Handler = DialRawF(func(sid uint64, uri string) (conn Conn, err error) {
+	master.Handler = DialRawF(func(sid uint64, uri string) (conn Conn, err error) {
 		fmt.Println("master test dail to ", uri)
 		if uri == "error" {
 			err = fmt.Errorf("error")
