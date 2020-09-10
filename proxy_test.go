@@ -11,6 +11,7 @@ import (
 
 	"github.com/Centny/gwf/util"
 	"github.com/codingeasygo/bsck/dialer"
+	"github.com/codingeasygo/util/xio"
 )
 
 func init() {
@@ -548,7 +549,7 @@ func TestProxyError(t *testing.T) {
 		}()
 		cmdString(CmdLoginBack)
 		echo := NewErrReadWriteCloser([]byte("data"), 0)
-		fullBuf(echo, make([]byte, 1024), 8, nil)
+		xio.FullBuffer(echo, make([]byte, 1024), 8, nil)
 		// master.DialRaw(0, "122:11")
 	}
 }
@@ -744,7 +745,7 @@ func dialProxyConn(proxy, remote string, port uint16) (conn net.Conn, err error)
 		return
 	}
 	buf := make([]byte, 1024*64)
-	err = fullBuf(conn, buf, 2, nil)
+	err = xio.FullBuffer(conn, buf, 2, nil)
 	if err != nil {
 		conn.Close()
 		return
@@ -765,18 +766,18 @@ func dialProxyConn(proxy, remote string, port uint16) (conn net.Conn, err error)
 		conn.Close()
 		return
 	}
-	err = fullBuf(conn, buf, 5, nil)
+	err = xio.FullBuffer(conn, buf, 5, nil)
 	if err != nil {
 		conn.Close()
 		return
 	}
 	switch buf[3] {
 	case 0x01:
-		err = fullBuf(conn, buf[5:], 5, nil)
+		err = xio.FullBuffer(conn, buf[5:], 5, nil)
 	case 0x03:
-		err = fullBuf(conn, buf[5:], uint32(buf[4])+2, nil)
+		err = xio.FullBuffer(conn, buf[5:], uint32(buf[4])+2, nil)
 	case 0x04:
-		err = fullBuf(conn, buf[5:], 17, nil)
+		err = xio.FullBuffer(conn, buf[5:], 17, nil)
 	default:
 		err = fmt.Errorf("reply address type is not supported:%v", buf[3])
 	}

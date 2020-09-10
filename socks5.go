@@ -5,6 +5,8 @@ import (
 	"io"
 	"net"
 	"sync/atomic"
+
+	"github.com/codingeasygo/util/xio"
 )
 
 //Codable is interface for get current code
@@ -110,7 +112,7 @@ func (s *SocksProxy) procConn(conn net.Conn) {
 	buf := make([]byte, 1024*64)
 	//
 	//Procedure method
-	err = fullBuf(conn, buf, 2, nil)
+	err = xio.FullBuffer(conn, buf, 2, nil)
 	if err != nil {
 		return
 	}
@@ -118,7 +120,7 @@ func (s *SocksProxy) procConn(conn net.Conn) {
 		err = fmt.Errorf("only ver 0x05 is supported, but %x", buf[0])
 		return
 	}
-	err = fullBuf(conn, buf[2:], uint32(buf[1]), nil)
+	err = xio.FullBuffer(conn, buf[2:], uint32(buf[1]), nil)
 	if err != nil {
 		return
 	}
@@ -128,7 +130,7 @@ func (s *SocksProxy) procConn(conn net.Conn) {
 	}
 	//
 	//Procedure request
-	err = fullBuf(conn, buf, 5, nil)
+	err = xio.FullBuffer(conn, buf, 5, nil)
 	if err != nil {
 		return
 	}
@@ -140,7 +142,7 @@ func (s *SocksProxy) procConn(conn net.Conn) {
 	var utype int
 	switch buf[3] {
 	case 0x01:
-		err = fullBuf(conn, buf[5:], 5, nil)
+		err = xio.FullBuffer(conn, buf[5:], 5, nil)
 		if err == nil {
 			remote := fmt.Sprintf("%v.%v.%v.%v", buf[4], buf[5], buf[6], buf[7])
 			port := uint16(buf[8])*256 + uint16(buf[9])
@@ -148,7 +150,7 @@ func (s *SocksProxy) procConn(conn net.Conn) {
 			utype = SocksUriTypeNormal
 		}
 	case 0x03:
-		err = fullBuf(conn, buf[5:], uint32(buf[4]+2), nil)
+		err = xio.FullBuffer(conn, buf[5:], uint32(buf[4]+2), nil)
 		if err == nil {
 			remote := string(buf[5 : buf[4]+5])
 			port := uint16(buf[buf[4]+5])*256 + uint16(buf[buf[4]+6])
@@ -156,7 +158,7 @@ func (s *SocksProxy) procConn(conn net.Conn) {
 			utype = SocksUriTypeNormal
 		}
 	case 0x13:
-		err = fullBuf(conn, buf[5:], uint32(buf[4]+2), nil)
+		err = xio.FullBuffer(conn, buf[5:], uint32(buf[4]+2), nil)
 		if err == nil {
 			uri = string(buf[5 : buf[4]+5])
 			utype = SocksUriTypeBS

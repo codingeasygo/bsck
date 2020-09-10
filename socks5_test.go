@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/codingeasygo/bsck/dialer"
+	"github.com/codingeasygo/util/xio"
 )
 
 func TestPendingConn(t *testing.T) {
@@ -33,7 +34,7 @@ func proxyDial(t *testing.T, remote string, port uint16) {
 	if err != nil {
 		return
 	}
-	err = fullBuf(proxyReader, buf, 2, nil)
+	err = xio.FullBuffer(proxyReader, buf, 2, nil)
 	if err != nil {
 		return
 	}
@@ -69,7 +70,7 @@ func proxyDial2(t *testing.T, remote string, port uint16) {
 	if err != nil {
 		return
 	}
-	err = fullBuf(proxyReader, buf, 2, nil)
+	err = xio.FullBuffer(proxyReader, buf, 2, nil)
 	if err != nil {
 		return
 	}
@@ -105,7 +106,7 @@ func proxyDialIP(t *testing.T, bys []byte, port uint16) {
 	if err != nil {
 		return
 	}
-	err = fullBuf(proxyReader, buf, 2, nil)
+	err = xio.FullBuffer(proxyReader, buf, 2, nil)
 	if err != nil {
 		return
 	}
@@ -140,7 +141,7 @@ func proxyDialIPv6(t *testing.T, bys []byte, port uint16) {
 	if err != nil {
 		return
 	}
-	err = fullBuf(proxyReader, buf, 2, nil)
+	err = xio.FullBuffer(proxyReader, buf, 2, nil)
 	if err != nil {
 		return
 	}

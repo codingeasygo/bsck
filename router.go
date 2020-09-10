@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Centny/gwf/util"
+	"github.com/codingeasygo/util/xio/frame"
 )
 
 const (
@@ -70,7 +71,7 @@ func cmdString(cmd byte) string {
 //Type is the connection type by ConnTypeRaw/ConnTypeChannel
 type Conn interface {
 	//the basic ReadWriteCloser
-	io.ReadWriteCloser
+	frame.ReadWriteCloser
 	//the connection id
 	ID() uint64
 	//the channel name
@@ -85,40 +86,41 @@ type Conn interface {
 	SetContext(v interface{})
 }
 
+//ConnectedWaiter interface for connected waiter
 type ConnectedWaiter interface {
 	Wait() bool
 	Ready()
 }
 
-//CmdReader is the interface that wraps the basic ReadCmd method.
-//
-//ReadCmd will read one command to b buffer, return the command length
-//
-//the command mode is length(4 byte)|data
-type CmdReader interface {
-	ReadCmd(b []byte) (n uint32, err error)
+type readDeadlinable interface {
+	SetReadDeadline(t time.Time) error
+}
+
+type writeDeadlinable interface {
+	SetWriteDeadline(t time.Time) error
 }
 
 //RawConn is an implementation of the Conn interface for raw network connections.
 type RawConn struct {
 	//the raw connection
-	Raw       io.ReadWriteCloser
+	io.ReadWriteCloser
 	sid       uint64
 	uri       string
 	connected chan int
 	closed    uint32
 	lck       chan int
 	context   interface{}
+	buffer    []byte
 }
 
 // NewRawConn returns a new RawConn by raw connection/session id/uri
-func NewRawConn(raw io.ReadWriteCloser, sid uint64, uri string) (conn *RawConn) {
+func NewRawConn(raw frame.ReadWriteCloser, sid uint64, uri string) (conn *RawConn) {
 	conn = &RawConn{
-		Raw:       raw,
-		sid:       sid,
-		uri:       uri,
-		connected: make(chan int, 1),
-		lck:       make(chan int, 1),
+		ReadWriteCloser: raw,
+		sid:             sid,
+		uri:             uri,
+		connected:       make(chan int, 1),
+		lck:             make(chan int, 1),
 	}
 	conn.lck <- 1
 	return
@@ -126,7 +128,7 @@ func NewRawConn(raw io.ReadWriteCloser, sid uint64, uri string) (conn *RawConn) 
 
 func (r *RawConn) Write(p []byte) (n int, err error) {
 	n = len(p)
-	_, err = r.Raw.Write(p[13:])
+	_, err = r.ReadWriteCloser.Write(p[13:])
 	return
 }
 
@@ -134,18 +136,38 @@ func (r *RawConn) Read(b []byte) (n int, err error) {
 	panic("not supported")
 }
 
-//ReadCmd is an implementation of CmdReader
-func (r *RawConn) ReadCmd(b []byte) (n uint32, err error) {
-	var readed int
-	readed, err = r.Raw.Read(b[13:])
-	if err == nil {
-		binary.BigEndian.PutUint32(b, uint32(readed+9))
-		b[4] = CmdData
-		binary.BigEndian.PutUint64(b[5:], r.sid)
-		n = uint32(readed) + 13
+func (r *RawConn) ReadFrame() (frame []byte, err error) {
+	n, err := r.ReadWriteCloser.Read(r.buffer[13:])
+	if err != nil {
+		return
 	}
+	binary.BigEndian.PutUint32(r.buffer, uint32(n+13))
+	binary.BigEndian.PutUint64(r.buffer[6:], r.sid)
+	frame = r.buffer[:n+13]
 	return
 }
+
+func (r *RawConn) SetReadTimeout(timeout time.Duration) {
+
+}
+
+//SetReadTimeout will record the timout
+func (r *RawConn) SetWriteTimeout(timeout time.Duration) {
+	b.Timeout = timeout
+}
+
+// //ReadCmd is an implementation of CmdReader
+// func (r *RawConn) ReadCmd(b []byte) (n uint32, err error) {
+// 	var readed int
+// 	readed, err = r.Raw.Read(b[13:])
+// 	if err == nil {
+// 		binary.BigEndian.PutUint32(b, uint32(readed+9))
+// 		b[4] = CmdData
+// 		binary.BigEndian.PutUint64(b[5:], r.sid)
+// 		n = uint32(readed) + 13
+// 	}
+// 	return
+// }
 
 //Close will close the raw connection
 func (r *RawConn) Close() (err error) {
@@ -155,15 +177,17 @@ func (r *RawConn) Close() (err error) {
 		r.closed = 1
 	}
 	r.lck <- 1
-	err = r.Raw.Close()
+	err = r.ReadWriteCloser.Close()
 	return
 }
 
+//Wait is ConnectedWaiter impl
 func (r *RawConn) Wait() bool {
 	v := <-r.connected
 	return v > 0
 }
 
+//Ready is ConnectedWaiter impl
 func (r *RawConn) Ready() {
 	<-r.lck
 	if r.closed < 1 {
@@ -206,7 +230,7 @@ func (r *RawConn) String() string {
 	ts := strings.Split(r.uri, "->")
 	uri, err := url.Parse(ts[len(ts)-1])
 	if err != nil {
-		return fmt.Sprintf("raw{error:%v,info:%v}", err, r.Raw)
+		return fmt.Sprintf("raw{error:%v,info:%v}", err, r.ReadWriteCloser)
 	}
 	router := uri.Query().Get("router")
 	router = strings.SplitN(router, "?", 2)[0]
@@ -215,18 +239,18 @@ func (r *RawConn) String() string {
 	args.Del("cols")
 	args.Del("rows")
 	uri.RawQuery = args.Encode()
-	return fmt.Sprintf("raw{uri:%v,router:%v,info:%v}", uri, router, r.Raw)
+	return fmt.Sprintf("raw{uri:%v,router:%v,info:%v}", uri, router, r.ReadWriteCloser)
 }
 
 //Channel is an implementation of the Conn interface for channel network connections.
 type Channel struct {
-	io.ReadWriteCloser //the raw connection
-	cid                uint64
-	name               string
-	index              int
-	context            interface{}
-	LoginArgs          interface{}
-	Heartbeat          int64
+	frame.ReadWriteCloser //the raw connection
+	cid                   uint64
+	name                  string
+	index                 int
+	context               interface{}
+	LoginArgs             interface{}
+	Heartbeat             int64
 }
 
 //ID is an implementation of Conn
@@ -348,7 +372,7 @@ func (r *Router) StartHeartbeat() {
 
 //Accept one raw connecton as channel,
 //it will auth the raw connecton by ACL.
-func (r *Router) Accept(raw io.ReadWriteCloser) {
+func (r *Router) Accept(raw frame.ReadWriteCloser) {
 	channel := &Channel{
 		ReadWriteCloser: raw,
 		cid:             atomic.AddUint64(&r.connectSequence, 1),
@@ -442,32 +466,23 @@ func (r *Router) removeTableNoLock(conn Conn, sid uint64) TableRouter {
 
 func (r *Router) loopReadRaw(channel Conn, bufferSize uint32) {
 	var err error
-	var last int64
-	var length uint32
-	buf := make([]byte, bufferSize)
+	var buf []byte
 	InfoLog("Router(%v) the reader(%v) is starting", r.Name, channel)
-	var procReadCmd = func(b []byte) (n uint32, err error) {
-		n, err = readCmd(channel, buf, &last)
-		return
-	}
-	if cmdReader, ok := channel.(CmdReader); ok {
-		procReadCmd = cmdReader.ReadCmd
-	}
 	for {
-		length, err = procReadCmd(buf)
+		buf, err = channel.ReadFrame()
 		if err != nil {
 			break
 		}
-		if length < 13 {
-			ErrorLog("Router(%v) receive invalid frame(length:%v) from %v", length, channel)
+		if len(buf) < 13 {
+			ErrorLog("Router(%v) receive invalid frame(length:%v) from %v", len(buf), channel)
 			break
 		}
 		if ShowLog > 1 {
-			DebugLog("Router(%v) read one command(%v,%v) from %v", r.Name, cmdString(buf[4]), length, channel)
+			DebugLog("Router(%v) read one command(%v,%v) from %v", r.Name, cmdString(buf[4]), len(buf), channel)
 		}
 		switch buf[4] {
 		case CmdLogin:
-			err = r.procLogin(channel, buf, length)
+			err = r.procLogin(channel, buf)
 		}
 		if err != nil {
 			break
@@ -478,15 +493,15 @@ func (r *Router) loopReadRaw(channel Conn, bufferSize uint32) {
 		}
 		switch buf[4] {
 		case CmdDial:
-			err = r.procDial(channel, buf, length)
+			err = r.procDial(channel, buf)
 		case CmdDialBack:
-			err = r.procDialBack(channel, buf, length)
+			err = r.procDialBack(channel, buf)
 		case CmdData:
-			err = r.procChannelData(channel, buf, length)
+			err = r.procChannelData(channel, buf)
 		case CmdClosed:
-			err = r.procClosed(channel, buf, length)
+			err = r.procClosed(channel, buf)
 		case CmdHeartbeat:
-			err = r.procHeartbeat(channel, buf, length)
+			err = r.procHeartbeat(channel, buf)
 		default:
 			err = fmt.Errorf("not supported cmd(%v)", buf[4])
 		}
@@ -566,7 +581,7 @@ func (r *Router) loopHeartbeat() {
 	}
 }
 
-func (r *Router) procLogin(conn Conn, buf []byte, length uint32) (err error) {
+func (r *Router) procLogin(conn Conn, buf []byte) (err error) {
 	channel, ok := conn.(*Channel)
 	if !ok {
 		ErrorLog("Router(%v) proc login error with connection is not channel", r.Name)
@@ -574,10 +589,11 @@ func (r *Router) procLogin(conn Conn, buf []byte, length uint32) (err error) {
 		conn.Close()
 		return
 	}
-	name, index, err := r.Handler.OnConnLogin(channel, string(buf[13:length]))
+	name, index, err := r.Handler.OnConnLogin(channel, string(buf[13:]))
 	if err != nil {
 		ErrorLog("Router(%v) proc login fail with %v", r.Name, err)
-		err = writeCmd(conn, buf, CmdLoginBack, 0, []byte(err.Error()))
+		message := []byte(err.Error())
+		err = writeCmd(conn, make([]byte, 64+len(message)), CmdLoginBack, 0, message)
 		conn.Close()
 		return
 	}
@@ -595,7 +611,8 @@ func (r *Router) procRawDial(channel Conn, sid uint64, conn, uri string) (err er
 	raw, cerr := r.Handler.DialRaw(dstSid, uri)
 	if cerr != nil {
 		DebugLog("Router(%v) dail to %v fail on channel(%v) by %v", r.Name, conn, channel, cerr)
-		err = writeCmd(channel, buf, CmdDialBack, sid, []byte(fmt.Sprintf("dial to uri(%v) fail with %v", uri, cerr)))
+		message := []byte(fmt.Sprintf("dial to uri(%v) fail with %v", uri, cerr))
+		err = writeCmd(channel, make([]byte, 64+len(message)), CmdDialBack, sid, message)
 		return
 	}
 	DebugLog("Router(%v) dail to %v success on channel(%v)", r.Name, conn, channel)
@@ -606,13 +623,13 @@ func (r *Router) procRawDial(channel Conn, sid uint64, conn, uri string) (err er
 	return
 }
 
-func (r *Router) procDial(channel Conn, buf []byte, length uint32) (err error) {
+func (r *Router) procDial(channel Conn, buf []byte) (err error) {
 	sid := binary.BigEndian.Uint64(buf[5:])
-	conn := string(buf[13:length])
+	conn := string(buf[13:])
 	DebugLog("Router(%v) proc dail to %v on channel(%v)", r.Name, conn, channel)
 	path := strings.SplitN(conn, "@", 2)
 	if len(path) < 2 {
-		err = writeCmd(channel, buf, CmdDialBack, sid, []byte(fmt.Sprintf("invalid uri(%v)", conn)))
+		err = writeCmd(channel, make([]byte, 64+len(conn)), CmdDialBack, sid, []byte(fmt.Sprintf("invalid uri(%v)", conn)))
 		return
 	}
 	parts := strings.SplitN(path[1], "->", 2)
@@ -628,7 +645,8 @@ func (r *Router) procDial(channel Conn, buf []byte, length uint32) (err error) {
 	next := parts[0]
 	dst, err := r.SelectChannel(next)
 	if err != nil {
-		err = writeCmd(channel, buf, CmdDialBack, sid, []byte(err.Error()))
+		message := err.Error()
+		err = writeCmd(channel, make([]byte, 64+len(message)), CmdDialBack, sid, []byte(message))
 		return
 	}
 	dstSid := atomic.AddUint64(&r.connectSequence, 1)
@@ -636,25 +654,26 @@ func (r *Router) procDial(channel Conn, buf []byte, length uint32) (err error) {
 	werr := writeCmd(dst, buf, CmdDial, dstSid, []byte(path[0]+"->"+next+"@"+parts[1]))
 	if werr != nil {
 		WarnLog("Router(%v) send dial to channel(%v) fail with %v", r.Name, dst, werr)
-		err = writeCmd(channel, buf, CmdDialBack, sid, []byte(werr.Error()))
+		message := werr.Error()
+		err = writeCmd(channel, make([]byte, 64+len(message)), CmdDialBack, sid, []byte(message))
 		r.removeTable(channel, sid)
 	}
 	return
 }
 
-func (r *Router) procDialBack(channel Conn, buf []byte, length uint32) (err error) {
+func (r *Router) procDialBack(channel Conn, buf []byte) (err error) {
 	sid := binary.BigEndian.Uint64(buf[5:])
 	DebugLog("Router(%v) proc dail back by %v on channel(%v)", r.Name, sid, channel)
 	r.tableLck.RLock()
 	router := r.table[fmt.Sprintf("%v-%v", channel.ID(), sid)]
 	r.tableLck.RUnlock()
 	if router == nil {
-		err = writeCmd(channel, buf, CmdClosed, sid, []byte("closed"))
+		err = writeCmd(channel, make([]byte, 32), CmdClosed, sid, []byte("closed"))
 		return
 	}
 	target, rsid := router.Next(channel)
 	if target.Type() == ConnTypeRaw {
-		msg := string(buf[13:length])
+		msg := string(buf[13:])
 		if msg == "OK" {
 			InfoLog("Router(%v) dail to %v success", r.Name, target)
 			r.Bind(channel, sid, target, target.ID())
@@ -668,15 +687,15 @@ func (r *Router) procDialBack(channel Conn, buf []byte, length uint32) (err erro
 		}
 	} else {
 		binary.BigEndian.PutUint64(buf[5:], rsid)
-		_, werr := target.Write(buf[:length])
+		_, werr := target.Write(buf)
 		if werr != nil {
-			err = writeCmd(channel, buf, CmdClosed, sid, []byte("closed"))
+			err = writeCmd(channel, make([]byte, 32), CmdClosed, sid, []byte("closed"))
 		}
 	}
 	return
 }
 
-func (r *Router) procChannelData(channel Conn, buf []byte, length uint32) (err error) {
+func (r *Router) procChannelData(channel Conn, buf []byte) (err error) {
 	sid := binary.BigEndian.Uint64(buf[5:])
 	r.tableLck.RLock()
 	router := r.table[fmt.Sprintf("%v-%v", channel.ID(), sid)]
@@ -684,16 +703,16 @@ func (r *Router) procChannelData(channel Conn, buf []byte, length uint32) (err e
 	if router != nil {
 		target, rsid := router.Next(channel)
 		binary.BigEndian.PutUint64(buf[5:], rsid)
-		_, err = target.Write(buf[:length])
+		_, err = target.Write(buf)
 	}
 	if router == nil || err != nil {
-		err = writeCmd(channel, buf, CmdClosed, sid, []byte("closed"))
+		err = writeCmd(channel, make([]byte, 32), CmdClosed, sid, []byte("closed"))
 	}
 	return
 }
 
-func (r *Router) procClosed(channel Conn, buf []byte, length uint32) (err error) {
-	message := string(buf[13:length])
+func (r *Router) procClosed(channel Conn, buf []byte) (err error) {
+	message := string(buf[13:])
 	sid := binary.BigEndian.Uint64(buf[5:])
 	DebugLog("Router(%v) the session(%v) is closed by %v", r.Name, sid, message)
 	router := r.removeTable(channel, sid)
@@ -702,13 +721,14 @@ func (r *Router) procClosed(channel Conn, buf []byte, length uint32) (err error)
 		if target.Type() == ConnTypeRaw {
 			target.Close()
 		} else {
-			writeCmd(target, buf, CmdClosed, rsid, []byte(message))
+			binary.BigEndian.PutUint64(buf[5:], rsid)
+			target.WriteFrame(buf)
 		}
 	}
 	return
 }
 
-func (r *Router) procHeartbeat(conn Conn, buf []byte, length uint32) (err error) {
+func (r *Router) procHeartbeat(conn Conn, buf []byte) (err error) {
 	if channel, ok := conn.(*Channel); ok {
 		channel.Heartbeat = time.Now().Local().UnixNano() / 1e6
 	}
@@ -723,6 +743,16 @@ func (r *Router) Dial(uri string, raw io.ReadWriteCloser) (sid uint64, err error
 	return
 }
 
+//SyncDial will dial to remote by uri and wait dial successs
+func (r *Router) SyncDial(uri string, raw io.ReadWriteCloser) (sid uint64, err error) {
+	sid, conn, err := r.DialConn(uri, raw)
+	if err == nil && !conn.Wait() {
+		err = fmt.Errorf("connect reseted")
+	}
+	return
+}
+
+//DialConn will dial to remote by uri and bind channel to raw connection and return raw connection
 func (r *Router) DialConn(uri string, raw io.ReadWriteCloser) (sid uint64, conn *RawConn, err error) {
 	parts := strings.SplitN(uri, "->", 2)
 	if len(parts) < 2 {
@@ -744,29 +774,20 @@ func (r *Router) DialConn(uri string, raw io.ReadWriteCloser) (sid uint64, conn 
 	return
 }
 
-func (r *Router) SyncDial(uri string, raw io.ReadWriteCloser) (sid uint64, err error) {
-	sid, conn, err := r.DialConn(uri, raw)
-	if err == nil && !conn.Wait() {
-		err = fmt.Errorf("connect reseted")
-	}
-	return
-}
-
 //JoinConn will add channel by the connected connection
-func (r *Router) JoinConn(conn io.ReadWriteCloser, index int, args interface{}) (err error) {
+func (r *Router) JoinConn(conn frame.ReadWriteCloser, index int, args interface{}) (err error) {
 	data, _ := json.Marshal(args)
-	buf := make([]byte, 1024)
-	err = writeCmd(conn, buf, CmdLogin, 0, data)
+	err = writeCmd(conn, make([]byte, len(data)+16), CmdLogin, 0, data)
 	if err != nil {
 		WarnLog("Router(%v) send login to %v fail with %v", r.Name, conn, err)
 		return
 	}
-	length, err := readCmd(conn, buf, nil)
+	buf, err := conn.ReadFrame()
 	if err != nil {
 		WarnLog("Router(%v) read login back from %v fail with %v", r.Name, conn, err)
 		return
 	}
-	msg := string(buf[13:length])
+	msg := string(buf[13:])
 	if !strings.HasPrefix(msg, "OK:") {
 		err = fmt.Errorf("%v", msg)
 		WarnLog("Router(%v) login to %v fail with %v", r.Name, conn, err)
@@ -774,7 +795,7 @@ func (r *Router) JoinConn(conn io.ReadWriteCloser, index int, args interface{}) 
 	}
 	remoteName := strings.TrimPrefix(msg, "OK:")
 	channel := &Channel{
-		ReadWriteCloser: NewBufferConn(conn, 4096),
+		ReadWriteCloser: conn,
 		cid:             atomic.AddUint64(&r.connectSequence, 1),
 		name:            remoteName,
 		index:           index,
