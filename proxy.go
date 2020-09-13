@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/codingeasygo/util/xio/frame"
 )
 
 //AuthOption is a pojo struct to login auth.
@@ -96,30 +98,32 @@ type ForwardEntry []interface{}
 
 //Proxy is an implementation of proxy router
 type Proxy struct {
-	*Router                          //the router
-	Running        bool              //proxy is running.
-	ReconnectDelay time.Duration     //reconnect delay
-	Cert           string            //the tls cert
-	Key            string            //the tls key
-	ACL            map[string]string //the access control
-	aclLock        sync.RWMutex      //the access control
-	master         net.Listener
-	forwards       map[string]ForwardEntry
-	forwardsLck    sync.RWMutex
-	Handler        ProxyHandler
+	*Router           //the router
+	PerConnBufferSize int
+	Running           bool              //proxy is running.
+	ReconnectDelay    time.Duration     //reconnect delay
+	Cert              string            //the tls cert
+	Key               string            //the tls key
+	ACL               map[string]string //the access control
+	aclLock           sync.RWMutex      //the access control
+	master            net.Listener
+	forwards          map[string]ForwardEntry
+	forwardsLck       sync.RWMutex
+	Handler           ProxyHandler
 }
 
 //NewProxy will return new Proxy by name
 func NewProxy(name string) (proxy *Proxy) {
 	proxy = &Proxy{
-		Router:         NewRouter(name),
-		forwards:       map[string]ForwardEntry{},
-		forwardsLck:    sync.RWMutex{},
-		Handler:        nil,
-		Running:        true,
-		ReconnectDelay: 3 * time.Second,
-		ACL:            map[string]string{},
-		aclLock:        sync.RWMutex{},
+		Router:            NewRouter(name),
+		PerConnBufferSize: 1024,
+		forwards:          map[string]ForwardEntry{},
+		forwardsLck:       sync.RWMutex{},
+		Handler:           nil,
+		Running:           true,
+		ReconnectDelay:    3 * time.Second,
+		ACL:               map[string]string{},
+		aclLock:           sync.RWMutex{},
 	}
 	proxy.Router.Handler = proxy
 	return
@@ -207,7 +211,7 @@ func (p *Proxy) loopMaster(l net.Listener) {
 			break
 		}
 		DebugLog("Proxy(%v) master accepting connection from %v", p.Name, conn.RemoteAddr())
-		p.Router.Accept(NewBufferConn(conn, 4096))
+		p.Router.Accept(frame.NewReadWriteCloser(conn, 4096))
 	}
 	l.Close()
 	InfoLog("Proxy(%v) master aceept on %v is stopped", p.Name, l.Addr())
@@ -384,18 +388,18 @@ func (p *Proxy) Login(option *ChannelOption) (err error) {
 		Name:  p.Name,
 		Token: option.Token,
 	}
-	err = p.JoinConn(NewInfoRWC(conn, conn.RemoteAddr().String()), option.Index, auth)
+	err = p.JoinConn(NewInfoRWC(frame.NewReadWriteCloser(conn, p.PerConnBufferSize), conn.RemoteAddr().String()), option.Index, auth)
 	return
 }
 
 //InfoRWC is external ReadWriteCloser to get info to String
 type InfoRWC struct {
-	io.ReadWriteCloser
+	frame.ReadWriteCloser
 	Info string
 }
 
 //NewInfoRWC will return new nfoRWC
-func NewInfoRWC(raw io.ReadWriteCloser, info string) *InfoRWC {
+func NewInfoRWC(raw frame.ReadWriteCloser, info string) *InfoRWC {
 	return &InfoRWC{ReadWriteCloser: raw, Info: info}
 }
 

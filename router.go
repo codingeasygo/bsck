@@ -104,39 +104,44 @@ type writeDeadlinable interface {
 type RawConn struct {
 	//the raw connection
 	io.ReadWriteCloser
-	sid       uint64
-	uri       string
-	connected chan int
-	closed    uint32
-	lck       chan int
-	context   interface{}
-	buffer    []byte
+	sid          uint64
+	uri          string
+	connected    chan int
+	closed       uint32
+	lck          chan int
+	context      interface{}
+	buffer       []byte
+	readTimeout  time.Duration
+	writeTimeout time.Duration
 }
 
 // NewRawConn returns a new RawConn by raw connection/session id/uri
-func NewRawConn(raw frame.ReadWriteCloser, sid uint64, uri string) (conn *RawConn) {
+func NewRawConn(raw io.ReadWriteCloser, bufferSize int, sid uint64, uri string) (conn *RawConn) {
 	conn = &RawConn{
 		ReadWriteCloser: raw,
 		sid:             sid,
 		uri:             uri,
 		connected:       make(chan int, 1),
 		lck:             make(chan int, 1),
+		buffer:          make([]byte, bufferSize),
 	}
 	conn.lck <- 1
 	return
 }
 
 func (r *RawConn) Write(p []byte) (n int, err error) {
-	n = len(p)
-	_, err = r.ReadWriteCloser.Write(p[13:])
-	return
+	panic("not supported")
 }
 
 func (r *RawConn) Read(b []byte) (n int, err error) {
 	panic("not supported")
 }
 
+//ReadFrame will read frame from raw
 func (r *RawConn) ReadFrame() (frame []byte, err error) {
+	if timeout, ok := r.ReadWriteCloser.(readDeadlinable); r.readTimeout > 0 && ok {
+		timeout.SetReadDeadline(time.Now().Add(r.readTimeout))
+	}
 	n, err := r.ReadWriteCloser.Read(r.buffer[13:])
 	if err != nil {
 		return
@@ -147,27 +152,35 @@ func (r *RawConn) ReadFrame() (frame []byte, err error) {
 	return
 }
 
+//WriteFrame will write frame to raw
+func (r *RawConn) WriteFrame(buffer []byte) (n int, err error) {
+	if len(buffer) < 14 {
+		err = fmt.Errorf("error frame")
+		return
+	}
+	if timeout, ok := r.ReadWriteCloser.(writeDeadlinable); r.writeTimeout > 0 && ok {
+		timeout.SetWriteDeadline(time.Now().Add(r.readTimeout))
+	}
+	n, err = r.ReadWriteCloser.Write(buffer[13:])
+	n += 13
+	return
+}
+
+//SetReadTimeout is read timeout setter
 func (r *RawConn) SetReadTimeout(timeout time.Duration) {
-
+	r.readTimeout = timeout
 }
 
-//SetReadTimeout will record the timout
+//SetWriteTimeout is write timeout setter
 func (r *RawConn) SetWriteTimeout(timeout time.Duration) {
-	b.Timeout = timeout
+	r.writeTimeout = timeout
 }
 
-// //ReadCmd is an implementation of CmdReader
-// func (r *RawConn) ReadCmd(b []byte) (n uint32, err error) {
-// 	var readed int
-// 	readed, err = r.Raw.Read(b[13:])
-// 	if err == nil {
-// 		binary.BigEndian.PutUint32(b, uint32(readed+9))
-// 		b[4] = CmdData
-// 		binary.BigEndian.PutUint64(b[5:], r.sid)
-// 		n = uint32(readed) + 13
-// 	}
-// 	return
-// }
+//SetTimeout is read/write timeout setter
+func (r *RawConn) SetTimeout(timeout time.Duration) {
+	r.readTimeout = timeout
+	r.writeTimeout = timeout
+}
 
 //Close will close the raw connection
 func (r *RawConn) Close() (err error) {
@@ -337,7 +350,7 @@ type Handler interface {
 //Router is an implementation of the router control
 type Router struct {
 	Name            string        //current router name
-	BufferSize      uint32        //buffer size of connection runner
+	BufferSize      int           //buffer size of connection runner
 	Heartbeat       time.Duration //the delay of heartbeat
 	Handler         Handler       //the router handler
 	connectSequence uint64
@@ -355,7 +368,7 @@ func NewRouter(name string) (router *Router) {
 		channelLck: sync.RWMutex{},
 		table:      map[string]TableRouter{},
 		tableLck:   sync.RWMutex{},
-		BufferSize: 1024 * 1024,
+		BufferSize: 1024,
 		Heartbeat:  5 * time.Second,
 		Handler:    nil,
 	}
@@ -377,19 +390,19 @@ func (r *Router) Accept(raw frame.ReadWriteCloser) {
 		ReadWriteCloser: raw,
 		cid:             atomic.AddUint64(&r.connectSequence, 1),
 	}
-	go r.loopReadRaw(channel, r.BufferSize)
+	go r.loopReadRaw(channel)
 }
 
 //Register one logined raw connecton to channel,
 func (r *Router) Register(channel Conn) {
 	r.addChannel(channel)
-	go r.loopReadRaw(channel, r.BufferSize)
+	go r.loopReadRaw(channel)
 }
 
 //Bind one raw connection to channel by session.
 func (r *Router) Bind(src Conn, srcSid uint64, dst Conn, dstSid uint64) {
 	r.addTable(src, srcSid, dst, dstSid)
-	go r.loopReadRaw(dst, r.BufferSize)
+	go r.loopReadRaw(dst)
 }
 
 func (r *Router) addChannel(channel Conn) {
@@ -464,7 +477,7 @@ func (r *Router) removeTableNoLock(conn Conn, sid uint64) TableRouter {
 	return router
 }
 
-func (r *Router) loopReadRaw(channel Conn, bufferSize uint32) {
+func (r *Router) loopReadRaw(channel Conn) {
 	var err error
 	var buf []byte
 	InfoLog("Router(%v) the reader(%v) is starting", r.Name, channel)
@@ -765,7 +778,7 @@ func (r *Router) DialConn(uri string, raw io.ReadWriteCloser) (sid uint64, conn 
 	}
 	DebugLog("Router(%v) start dail to %v on channel(%v)", r.Name, uri, channel)
 	sid = atomic.AddUint64(&r.connectSequence, 1)
-	conn = NewRawConn(raw, sid, uri)
+	conn = NewRawConn(raw, r.BufferSize, sid, uri)
 	r.addTable(channel, sid, conn, sid)
 	err = writeCmd(channel, make([]byte, 4096), CmdDial, sid, []byte(fmt.Sprintf("%v@%v", parts[0], parts[1])))
 	if err != nil {
