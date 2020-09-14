@@ -98,32 +98,30 @@ type ForwardEntry []interface{}
 
 //Proxy is an implementation of proxy router
 type Proxy struct {
-	*Router           //the router
-	PerConnBufferSize int
-	Running           bool              //proxy is running.
-	ReconnectDelay    time.Duration     //reconnect delay
-	Cert              string            //the tls cert
-	Key               string            //the tls key
-	ACL               map[string]string //the access control
-	aclLock           sync.RWMutex      //the access control
-	master            net.Listener
-	forwards          map[string]ForwardEntry
-	forwardsLck       sync.RWMutex
-	Handler           ProxyHandler
+	*Router                          //the router
+	Running        bool              //proxy is running.
+	ReconnectDelay time.Duration     //reconnect delay
+	Cert           string            //the tls cert
+	Key            string            //the tls key
+	ACL            map[string]string //the access control
+	aclLock        sync.RWMutex      //the access control
+	master         net.Listener
+	forwards       map[string]ForwardEntry
+	forwardsLck    sync.RWMutex
+	Handler        ProxyHandler
 }
 
 //NewProxy will return new Proxy by name
 func NewProxy(name string) (proxy *Proxy) {
 	proxy = &Proxy{
-		Router:            NewRouter(name),
-		PerConnBufferSize: 1024,
-		forwards:          map[string]ForwardEntry{},
-		forwardsLck:       sync.RWMutex{},
-		Handler:           nil,
-		Running:           true,
-		ReconnectDelay:    3 * time.Second,
-		ACL:               map[string]string{},
-		aclLock:           sync.RWMutex{},
+		Router:         NewRouter(name),
+		forwards:       map[string]ForwardEntry{},
+		forwardsLck:    sync.RWMutex{},
+		Handler:        nil,
+		Running:        true,
+		ReconnectDelay: 3 * time.Second,
+		ACL:            map[string]string{},
+		aclLock:        sync.RWMutex{},
 	}
 	proxy.Router.Handler = proxy
 	return
@@ -277,6 +275,7 @@ func (p *Proxy) DialRaw(sid uint64, uri string) (raw Conn, err error) {
 //WhetherConnLogin is check connection is login
 func (p *Proxy) WhetherConnLogin(channel Conn) (ok bool) {
 	_, ok = channel.Context().(*AuthOption)
+	fmt.Printf("----->%v,%v\n", ok, channel.Context())
 	return
 }
 
@@ -287,8 +286,8 @@ func (p *Proxy) OnConnDialURI(channel Conn, conn string, parts []string) (err er
 
 //OnConnLogin is on connection login
 func (p *Proxy) OnConnLogin(channel Conn, args string) (name string, index int, err error) {
-	var option AuthOption
-	err = json.Unmarshal([]byte(args), &option)
+	var option = &AuthOption{}
+	err = json.Unmarshal([]byte(args), option)
 	if err != nil {
 		ErrorLog("Proxy(%v) unmarshal login option fail with %v", p.Name, err)
 		err = fmt.Errorf("parse login opiton fail with " + err.Error())
@@ -315,7 +314,11 @@ func (p *Proxy) OnConnLogin(channel Conn, args string) (name string, index int, 
 	if len(token) < 1 || token != option.Token {
 		WarnLog("Proxy(%v) login fail with auth fail", p.Name)
 		err = fmt.Errorf("access denied ")
+		return
 	}
+	name = option.Name
+	index = option.Index
+	// InfoLog("Proxy(%v) channel %v login success on %v ", p.Name, name, channel)
 	channel.SetContext(option)
 	return
 }
@@ -388,7 +391,7 @@ func (p *Proxy) Login(option *ChannelOption) (err error) {
 		Name:  p.Name,
 		Token: option.Token,
 	}
-	err = p.JoinConn(NewInfoRWC(frame.NewReadWriteCloser(conn, p.PerConnBufferSize), conn.RemoteAddr().String()), option.Index, auth)
+	err = p.JoinConn(NewInfoRWC(frame.NewReadWriteCloser(conn, p.BufferSize), conn.RemoteAddr().String()), option.Index, auth)
 	return
 }
 

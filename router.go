@@ -496,6 +496,7 @@ func (r *Router) loopReadRaw(channel Conn) {
 		switch buf[4] {
 		case CmdLogin:
 			err = r.procLogin(channel, buf)
+			continue
 		}
 		if err != nil {
 			break
