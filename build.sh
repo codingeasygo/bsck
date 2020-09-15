@@ -12,7 +12,7 @@ echo "Installing Dependence"
 #########Running Test#########
 echo "Running Test"
 pkgs="\
- github.com/sutils/bsck\
+ github.com/codingeasygo/bsck\
 "
 
 echo "mode: set" > a.out

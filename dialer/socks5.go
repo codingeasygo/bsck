@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	"github.com/Centny/gwf/log"
-	"github.com/Centny/gwf/util"
+	"github.com/codingeasygo/util/xmap"
 )
 
 type CodeError struct {
@@ -53,14 +53,14 @@ type SocksProxyDialer struct {
 	ID      string
 	Pooler  SocksProxyAddressPooler
 	matcher *regexp.Regexp
-	conf    util.Map
+	conf    xmap.M
 }
 
 //NewSocksProxyDialer will return new SocksProxyDialer
 func NewSocksProxyDialer() *SocksProxyDialer {
 	return &SocksProxyDialer{
 		matcher: regexp.MustCompile("^.*:[0-9]+$"),
-		conf:    util.Map{},
+		conf:    xmap.M{},
 	}
 }
 
@@ -70,23 +70,23 @@ func (s *SocksProxyDialer) Name() string {
 }
 
 //Bootstrap the dialer.
-func (s *SocksProxyDialer) Bootstrap(options util.Map) (err error) {
-	s.ID = options.StrVal("id")
+func (s *SocksProxyDialer) Bootstrap(options xmap.M) (err error) {
+	s.ID = options.Str("id")
 	if len(s.ID) < 1 {
 		return fmt.Errorf("the dialer id is required")
 	}
 	if options != nil {
-		s.Pooler = StringAddressPooler(options.StrVal("address"))
+		s.Pooler = StringAddressPooler(options.Str("address"))
 	}
 	s.conf = options
-	matcher := options.StrVal("matcher")
+	matcher := options.Str("matcher")
 	if len(matcher) > 0 {
 		s.matcher, err = regexp.Compile(matcher)
 	}
 	return nil
 }
 
-func (s *SocksProxyDialer) Options() util.Map {
+func (s *SocksProxyDialer) Options() xmap.M {
 	return s.conf
 }
 

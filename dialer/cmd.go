@@ -10,8 +10,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/Centny/gwf/log"
-	"github.com/Centny/gwf/util"
+	"github.com/codingeasygo/util"
+	"github.com/codingeasygo/util/xmap"
 	"golang.org/x/text/encoding/simplifiedchinese"
 	"golang.org/x/text/transform"
 )
@@ -65,7 +65,7 @@ type CmdDialer struct {
 	running      map[string]*ReusableRWC
 	runningLck   sync.RWMutex
 	loopRunning  bool
-	conf         util.Map
+	conf         xmap.M
 }
 
 //NewCmdDialer will return new CmdDialer
@@ -77,7 +77,7 @@ func NewCmdDialer() *CmdDialer {
 		ReuseTimeout: 3600000,
 		ReuseDelay:   30 * time.Second,
 		loopRunning:  true,
-		conf:         util.Map{},
+		conf:         xmap.M{},
 	}
 	if runtime.GOOS == "windows" {
 		// cmd.Replace = []byte("\r")
@@ -91,7 +91,7 @@ func (c *CmdDialer) Name() string {
 }
 
 func (c *CmdDialer) loopReuse() {
-	log.D("CmdDailer the reuse time loop is starting")
+	DebugLog("CmdDailer the reuse time loop is starting")
 	for c.loopRunning {
 		c.runningLck.Lock()
 		now := util.Now()
@@ -104,21 +104,21 @@ func (c *CmdDialer) loopReuse() {
 		c.runningLck.Unlock()
 		time.Sleep(c.ReuseDelay)
 	}
-	log.D("CmdDailer the reuse time loop is stopped")
+	DebugLog("CmdDailer the reuse time loop is stopped")
 }
 
 //Bootstrap the dilaer
-func (c *CmdDialer) Bootstrap(options util.Map) error {
+func (c *CmdDialer) Bootstrap(options xmap.M) error {
 	if options != nil {
-		c.PS1 = options.StrVal("PS1")
-		c.Dir = options.StrVal("Dir")
-		c.LC = options.StrVal("LC")
-		c.Prefix = options.StrVal("Prefix")
-		for k, v := range options.MapVal("Env") {
+		c.PS1 = options.Str("PS1")
+		c.Dir = options.Str("Dir")
+		c.LC = options.Str("LC")
+		c.Prefix = options.Str("Prefix")
+		for k, v := range options.Map("Env") {
 			c.Env = append(c.Env, fmt.Sprintf("%v=%v", k, v))
 		}
-		c.ReuseTimeout = options.IntValV("reuse_timeout", 3600000)
-		c.ReuseDelay = time.Duration(options.IntValV("reuse_delay", 30000)) * time.Millisecond
+		c.ReuseTimeout = options.Int64Def(3600000, "reuse_timeout")
+		c.ReuseDelay = time.Duration(options.Int64Def(30000, "reuse_delay")) * time.Millisecond
 	}
 	if c.ReuseTimeout > 0 {
 		go c.loopReuse()
@@ -126,7 +126,7 @@ func (c *CmdDialer) Bootstrap(options util.Map) error {
 	return nil
 }
 
-func (c *CmdDialer) Options() util.Map {
+func (c *CmdDialer) Options() xmap.M {
 	return c.conf
 }
 
@@ -141,7 +141,7 @@ func (c *CmdDialer) onCmdPaused(r *ReusableRWC) {
 	defer c.runningLck.Unlock()
 	c.running[r.Name] = r
 	r.Last = util.Now()
-	log.D("CmdDialer add session to reuse by %v->%p", r.Name, r)
+	DebugLog("CmdDialer add session to reuse by %v->%p", r.Name, r)
 }
 
 //Dial will start command and pipe to stdin/stdout
@@ -158,7 +158,7 @@ func (c *CmdDialer) Dial(sid uint64, uri string, pipe io.ReadWriteCloser) (raw C
 		delete(c.running, reuse)
 		c.runningLck.Unlock()
 		if ok {
-			log.D("CmdDialer reusing session by %v->%p", reuse, old)
+			DebugLog("CmdDialer reusing session by %v->%p", reuse, old)
 			old.Resume()
 			fmt.Fprintf(old, "\n")
 			raw = old
@@ -166,7 +166,7 @@ func (c *CmdDialer) Dial(sid uint64, uri string, pipe io.ReadWriteCloser) (raw C
 		}
 	}
 	runnable := remote.Query().Get("exec")
-	log.D("CmdDialer dial to cmd:%v", runnable)
+	DebugLog("CmdDialer dial to cmd:%v", runnable)
 	cmdReader, cmdWriter, cmdCloser, cmdStart := createCmd(c, runnable, remote)
 	//
 	lc := remote.Query().Get("LC")

@@ -6,20 +6,20 @@ import (
 	"net/url"
 	"regexp"
 
-	"github.com/Centny/gwf/util"
+	"github.com/codingeasygo/util/xmap"
 )
 
 //TCPDialer is an implementation of the Dialer interface for dial tcp connections.
 type TCPDialer struct {
 	portMatcher *regexp.Regexp
-	conf        util.Map
+	conf        xmap.M
 }
 
 //NewTCPDialer will return new TCPDialer
 func NewTCPDialer() *TCPDialer {
 	return &TCPDialer{
 		portMatcher: regexp.MustCompile("^.*:[0-9]+$"),
-		conf:        util.Map{},
+		conf:        xmap.M{},
 	}
 }
 
@@ -29,12 +29,12 @@ func (t *TCPDialer) Name() string {
 }
 
 //Bootstrap the dialer.
-func (t *TCPDialer) Bootstrap(options util.Map) error {
+func (t *TCPDialer) Bootstrap(options xmap.M) error {
 	t.conf = options
 	return nil
 }
 
-func (t *TCPDialer) Options() util.Map {
+func (t *TCPDialer) Options() xmap.M {
 	return t.conf
 }
 
@@ -51,7 +51,7 @@ func (t *TCPDialer) Dial(sid uint64, uri string, pipe io.ReadWriteCloser) (raw C
 		var dialer net.Dialer
 		bind := remote.Query().Get("bind")
 		if len(bind) < 1 && t.conf != nil {
-			bind = t.conf.StrVal("bind")
+			bind = t.conf.Str("bind")
 		}
 		if len(bind) > 0 {
 			dialer.LocalAddr, err = net.ResolveTCPAddr("tcp", bind)

@@ -10,8 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Centny/gwf/log"
-	"github.com/Centny/gwf/util"
+	"github.com/codingeasygo/util/xmap"
 	"golang.org/x/net/webdav"
 )
 
@@ -23,7 +22,7 @@ type WebDialer struct {
 	cons    map[string]*WebDialerConn
 	davsLck sync.RWMutex
 	davs    map[string]*WebdavHandler
-	conf    util.Map
+	conf    xmap.M
 }
 
 //NewWebDialer will return new WebDialer
@@ -34,7 +33,7 @@ func NewWebDialer() (dialer *WebDialer) {
 		cons:    map[string]*WebDialerConn{},
 		davsLck: sync.RWMutex{},
 		davs:    map[string]*WebdavHandler{},
-		conf:    util.Map{},
+		conf:    xmap.M{},
 	}
 	return
 }
@@ -45,7 +44,7 @@ func (web *WebDialer) Name() string {
 }
 
 //Bootstrap the web dialer
-func (web *WebDialer) Bootstrap(options util.Map) error {
+func (web *WebDialer) Bootstrap(options xmap.M) error {
 	go func() {
 		http.Serve(web, web)
 		web.consLck.Lock()
@@ -56,7 +55,7 @@ func (web *WebDialer) Bootstrap(options util.Map) error {
 	return nil
 }
 
-func (web *WebDialer) Options() util.Map {
+func (web *WebDialer) Options() xmap.M {
 	return web.conf
 }
 
@@ -206,7 +205,7 @@ func NewWebdavHandler(dir string) *WebdavHandler {
 }
 
 func (w *WebdavHandler) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
-	log.D("WebdavHandler proc %v", req.RequestURI)
+	DebugLog("WebdavHandler proc %v", req.RequestURI)
 	if req.Method == "GET" {
 		w.fs.ServeHTTP(resp, req)
 	} else {

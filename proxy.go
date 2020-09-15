@@ -1,7 +1,6 @@
 package bsck
 
 import (
-	"bufio"
 	"crypto/rand"
 	"crypto/tls"
 	"encoding/json"
@@ -53,36 +52,6 @@ func (d DialRawF) OnConnClose(conn Conn) error {
 func (d DialRawF) DialRaw(sid uint64, uri string) (raw Conn, err error) {
 	raw, err = d(sid, uri)
 	return
-}
-
-//BufferConn is an implementation of buffer connecton
-type BufferConn struct {
-	*bufio.Reader                    //the buffer reader.
-	io.Writer                        //the writer.
-	Raw           io.ReadWriteCloser //the raw connection
-}
-
-//NewBufferConn will return new BufferConn
-func NewBufferConn(raw io.ReadWriteCloser, bufferSize int) (buf *BufferConn) {
-	buf = &BufferConn{
-		Reader: bufio.NewReaderSize(raw, bufferSize),
-		Writer: raw,
-		Raw:    raw,
-	}
-	return
-}
-
-//Close will close raw.
-func (b *BufferConn) Close() (err error) {
-	err = b.Raw.Close()
-	return
-}
-
-func (b *BufferConn) String() string {
-	if conn, ok := b.Raw.(net.Conn); ok {
-		return conn.RemoteAddr().String()
-	}
-	return fmt.Sprintf("%v", b.Raw)
 }
 
 //ProxyHandler is proxy handler
@@ -209,7 +178,7 @@ func (p *Proxy) loopMaster(l net.Listener) {
 			break
 		}
 		DebugLog("Proxy(%v) master accepting connection from %v", p.Name, conn.RemoteAddr())
-		p.Router.Accept(frame.NewReadWriteCloser(conn, 4096))
+		p.Router.Accept(NewInfoRWC(frame.NewReadWriteCloser(conn, p.BufferSize), conn.RemoteAddr().String()))
 	}
 	l.Close()
 	InfoLog("Proxy(%v) master aceept on %v is stopped", p.Name, l.Addr())
@@ -243,22 +212,26 @@ func (p *Proxy) loopForward(l net.Listener, name string, listen *url.URL, uri st
 
 //Close will close the tcp listen
 func (p *Proxy) Close() (err error) {
+	InfoLog("Proxy(%v) is closing", p.Name)
 	p.Running = false
 	if p.master != nil {
 		err = p.master.Close()
+		InfoLog("Proxy(%v) master is closed", p.Name)
 	}
 	p.forwardsLck.RLock()
-	for _, f := range p.forwards {
+	for key, f := range p.forwards {
 		f[0].(net.Listener).Close()
+		InfoLog("Proxy(%v) forwad %v is closed", p.Name, key)
 	}
 	p.forwardsLck.RUnlock()
 	p.Router.Close()
+	InfoLog("Proxy(%v) router is closed", p.Name)
 	return
 }
 
 func (p *Proxy) runReconnect(args *ChannelOption) {
 	for p.Running {
-		err := p.Login(args)
+		_, err := p.Login(args)
 		if err == nil {
 			break
 		}
@@ -269,13 +242,6 @@ func (p *Proxy) runReconnect(args *ChannelOption) {
 //DialRaw will dial raw connection
 func (p *Proxy) DialRaw(sid uint64, uri string) (raw Conn, err error) {
 	raw, err = p.Handler.DialRaw(sid, uri)
-	return
-}
-
-//WhetherConnLogin is check connection is login
-func (p *Proxy) WhetherConnLogin(channel Conn) (ok bool) {
-	_, ok = channel.Context().(*AuthOption)
-	fmt.Printf("----->%v,%v\n", ok, channel.Context())
 	return
 }
 
@@ -325,11 +291,14 @@ func (p *Proxy) OnConnLogin(channel Conn, args string) (name string, index int, 
 
 //OnConnClose will be called when connection is closed
 func (p *Proxy) OnConnClose(conn Conn) (err error) {
+	if !p.Running {
+		return
+	}
 	channel, ok := conn.(*Channel)
 	if !p.Running || !ok {
 		return
 	}
-	option, ok := channel.LoginArgs.(*ChannelOption)
+	option, ok := channel.Context().(*ChannelOption)
 	if !p.Running || !ok {
 		return
 	}
@@ -344,7 +313,7 @@ func (p *Proxy) LoginChannel(reconnect bool, channels ...*ChannelOption) (err er
 		if !channel.Enable {
 			continue
 		}
-		err = p.Login(channel)
+		_, err = p.Login(channel)
 		if err == nil {
 			continue
 		}
@@ -358,7 +327,7 @@ func (p *Proxy) LoginChannel(reconnect bool, channels ...*ChannelOption) (err er
 }
 
 //Login will add channel by local address, master address, auth token, channel index.
-func (p *Proxy) Login(option *ChannelOption) (err error) {
+func (p *Proxy) Login(option *ChannelOption) (channel *Channel, err error) {
 	var dialer net.Dialer
 	if len(option.Local) > 0 {
 		dialer.LocalAddr, err = net.ResolveTCPAddr("tcp", option.Local)
@@ -391,7 +360,10 @@ func (p *Proxy) Login(option *ChannelOption) (err error) {
 		Name:  p.Name,
 		Token: option.Token,
 	}
-	err = p.JoinConn(NewInfoRWC(frame.NewReadWriteCloser(conn, p.BufferSize), conn.RemoteAddr().String()), option.Index, auth)
+	channel, err = p.JoinConn(NewInfoRWC(frame.NewReadWriteCloser(conn, p.BufferSize), conn.RemoteAddr().String()), option.Index, auth)
+	if err == nil {
+		channel.SetContext(option)
+	}
 	return
 }
 

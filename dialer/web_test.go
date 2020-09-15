@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Centny/gwf/routing"
-	"github.com/Centny/gwf/routing/httptest"
-	"github.com/Centny/gwf/util"
+	"github.com/codingeasygo/util/xhttp"
+	"github.com/codingeasygo/web"
+	"github.com/codingeasygo/web/httptest"
 )
 
 func TestWebDialer(t *testing.T) {
@@ -55,8 +55,8 @@ func TestWebDialer(t *testing.T) {
 			go io.Copy(raw, con)
 		}
 	}()
-	fmt.Println(util.HGet("http://localhost:2422/"))
-	fmt.Println(util.HPost("http://localhost:2422/", nil))
+	fmt.Println(xhttp.GetText("http://localhost:2422/"))
+	fmt.Println(xhttp.GetText("http://localhost:2422/"))
 	//
 	//test pipe
 	cona, conb, _ := CreatePipedConn()
@@ -93,11 +93,11 @@ func TestWebDialer(t *testing.T) {
 		return
 	}
 	//
-	ts := httptest.NewServer(func(hs *routing.HTTPSession) routing.HResult {
+	ts := httptest.NewHandlerFuncServer(func(hs *web.Session) web.Result {
 		dialer.ServeHTTP(hs.W, hs.R)
-		return routing.HRES_RETURN
+		return web.Return
 	})
-	data, err := ts.G("/")
+	data, err := ts.GetText("/")
 	if err == nil {
 		t.Errorf("%v-%v", data, err)
 		return

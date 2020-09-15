@@ -8,17 +8,17 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Centny/gwf/util"
+	"github.com/codingeasygo/util/xmap"
 )
 
 func TestCmdDialer(t *testing.T) {
 	cmd := NewCmdDialer()
 	cmd.PS1 = "CmdDialer"
 	cmd.Prefix = `echo testing`
-	cmd.Bootstrap(util.Map{
+	cmd.Bootstrap(xmap.M{
 		"reuse_timeout": 100,
 		"reuse_delay":   50,
-		"Env": util.Map{
+		"Env": xmap.M{
 			"a": "val",
 		},
 	})
@@ -197,7 +197,7 @@ func TestCmdDialerPipe(t *testing.T) {
 	cmd := NewCmdDialer()
 	cmd.PS1 = "CmdDialer"
 	cmd.Prefix = `echo testing`
-	cmd.Bootstrap(util.Map{})
+	cmd.Bootstrap(xmap.M{})
 	cona, conb, _ := CreatePipedConn()
 	cmd.Dial(0, "tcp://cmd?exec=/bin/bash", conb)
 	go io.Copy(os.Stdout, cona)

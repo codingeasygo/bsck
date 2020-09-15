@@ -6,7 +6,7 @@ import (
 	"io"
 	"net/url"
 
-	"github.com/Centny/gwf/util"
+	"github.com/codingeasygo/util"
 )
 
 func createCmd(c *CmdDialer, runnable string, remote *url.URL) (cmdReader io.Reader,

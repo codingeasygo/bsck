@@ -1,24 +1,10 @@
-package bsck
+package dialer
 
 import (
-	"encoding/binary"
 	"fmt"
 	"log"
 	"os"
-
-	"github.com/codingeasygo/util/xio/frame"
 )
-
-func writeCmd(w frame.Writer, buffer []byte, cmd byte, sid uint64, msg []byte) (err error) {
-	if buffer == nil {
-		buffer = make([]byte, len(msg)+13)
-	}
-	buffer[4] = cmd
-	binary.BigEndian.PutUint64(buffer[5:], sid)
-	copy(buffer[13:], msg)
-	_, err = w.WriteFrame(buffer[:len(msg)+13])
-	return
-}
 
 //LogLevel is log leveo config
 var LogLevel int = 3

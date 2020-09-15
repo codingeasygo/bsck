@@ -6,12 +6,12 @@ import (
 	"io"
 	"net/url"
 
-	"github.com/Centny/gwf/util"
+	"github.com/codingeasygo/util/xmap"
 )
 
 //Statable is interface for get current state.
 type Statable interface {
-	State() util.Map
+	State() xmap.M
 }
 
 //StateBuffer is an io.ReadWriteCloser by read from bytes.Buffer and write discard
@@ -52,7 +52,7 @@ func (s *StateBuffer) String() string {
 type StateDialer struct {
 	Alias string
 	State Statable
-	conf  util.Map
+	conf  xmap.M
 }
 
 //NewStateDialer is the default creator by router.
@@ -60,7 +60,7 @@ func NewStateDialer(alias string, s Statable) *StateDialer {
 	return &StateDialer{
 		Alias: alias,
 		State: s,
-		conf:  util.Map{},
+		conf:  xmap.M{},
 	}
 }
 
@@ -70,13 +70,13 @@ func (s *StateDialer) Name() string {
 }
 
 //Bootstrap the dialer by configure
-func (s *StateDialer) Bootstrap(options util.Map) error {
+func (s *StateDialer) Bootstrap(options xmap.M) error {
 	s.conf = options
 	return nil
 }
 
 //Options return the current configure of dialer.
-func (s *StateDialer) Options() util.Map {
+func (s *StateDialer) Options() xmap.M {
 	return s.conf
 }
 

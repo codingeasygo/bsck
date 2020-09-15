@@ -5,18 +5,18 @@ import (
 	"net/url"
 	"sync"
 
-	"github.com/Centny/gwf/util"
+	"github.com/codingeasygo/util/xmap"
 )
 
 //EchoDialer is an implementation of the Dialer interface for echo tcp connection.
 type EchoDialer struct {
-	conf util.Map
+	conf xmap.M
 }
 
 //NewEchoDialer will return new EchoDialer
 func NewEchoDialer() (dialer *EchoDialer) {
 	dialer = &EchoDialer{
-		conf: util.Map{},
+		conf: xmap.M{},
 	}
 	return
 }
@@ -27,12 +27,12 @@ func (e *EchoDialer) Name() string {
 }
 
 //Bootstrap the dialer
-func (e *EchoDialer) Bootstrap(options util.Map) error {
+func (e *EchoDialer) Bootstrap(options xmap.M) error {
 	e.conf = options
 	return nil
 }
 
-func (e *EchoDialer) Options() util.Map {
+func (e *EchoDialer) Options() xmap.M {
 	return e.conf
 }
 

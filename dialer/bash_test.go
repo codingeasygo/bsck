@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/kr/pty"
+	"github.com/creack/pty"
 )
 
 // func TestBash(t *testing.T) {
