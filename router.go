@@ -860,3 +860,14 @@ func (r *Router) State() (state xmap.M) {
 	state["table"] = table
 	return
 }
+
+func writeCmd(w frame.Writer, buffer []byte, cmd byte, sid uint64, msg []byte) (err error) {
+	if buffer == nil {
+		buffer = make([]byte, len(msg)+13)
+	}
+	buffer[4] = cmd
+	binary.BigEndian.PutUint64(buffer[5:], sid)
+	copy(buffer[13:], msg)
+	_, err = w.WriteFrame(buffer[:len(msg)+13])
+	return
+}
