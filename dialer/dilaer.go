@@ -6,7 +6,7 @@ import (
 	"net"
 	"sync/atomic"
 
-	"github.com/codingeasygo/util"
+	"github.com/codingeasygo/util/converter"
 	"github.com/codingeasygo/util/xmap"
 )
 
@@ -87,18 +87,13 @@ func (p *Pool) Bootstrap(options xmap.M) error {
 		dtype := option.Str("type")
 		dialer := NewDialer(dtype)
 		if dialer == nil {
-			return fmt.Errorf("create dialer fail by %v", util.S2Json(option))
+			return fmt.Errorf("create dialer fail by %v", converter.JSON(option))
 		}
 		err := dialer.Bootstrap(option)
 		if err != nil {
 			return err
 		}
 		p.Dialers = append(p.Dialers, dialer)
-	}
-	if options.Value("cmd") != nil || options.IntDef(0, "standard") > 0 || options.IntDef(0, "std") > 0 {
-		cmd := NewCmdDialer()
-		cmd.Bootstrap(options.MapDef(xmap.M{}, "cmd"))
-		p.Dialers = append(p.Dialers, cmd)
 	}
 	if options.Value("echo") != nil || options.IntDef(0, "standard") > 0 || options.IntDef(0, "std") > 0 {
 		echo := NewEchoDialer()
@@ -134,8 +129,6 @@ func DefaultDialerCreator(t string) (dialer Dialer) {
 	switch t {
 	case "balance":
 		dialer = NewBalancedDialer()
-	case "cmd":
-		dialer = NewCmdDialer()
 	case "echo":
 		dialer = NewEchoDialer()
 	case "socks":

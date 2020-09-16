@@ -11,8 +11,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/Centny/gwf/util"
 	"github.com/codingeasygo/util/xio/frame"
+	"github.com/codingeasygo/util/xmap"
 )
 
 const (
@@ -823,15 +823,15 @@ func (r *Router) Close() (err error) {
 }
 
 //State return the current state of router
-func (r *Router) State() (state util.Map) {
-	state = util.Map{}
+func (r *Router) State() (state xmap.M) {
+	state = xmap.M{}
 	//
-	channels := util.Map{}
+	channels := xmap.M{}
 	r.channelLck.RLock()
 	for name, bond := range r.channel {
-		channel := util.Map{}
+		channel := xmap.M{}
 		for idx, con := range bond.channels {
-			info := util.Map{
+			info := xmap.M{
 				"connect": fmt.Sprintf("%v", con),
 				"used":    bond.used[idx],
 			}

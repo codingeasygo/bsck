@@ -17,12 +17,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Centny/gwf/log"
-	"github.com/Centny/gwf/smartio"
-
-	"github.com/Centny/gwf/util"
 	"github.com/codingeasygo/bsck"
 	"github.com/codingeasygo/bsck/dialer"
+	"github.com/codingeasygo/util/xmap"
 )
 
 //Web is pojo for web configure
@@ -47,8 +44,8 @@ type Config struct {
 	LogErr    string                `json:"log_err"`
 	Forwards  map[string]string     `json:"forwards"`
 	Channels  []*bsck.ChannelOption `json:"channels"`
-	Dialer    util.Map              `json:"dialer"`
-	Proxy     util.Map              `json:"proxy"`
+	Dialer    xmap.M                `json:"dialer"`
+	Proxy     xmap.M                `json:"proxy"`
 	Reconnect int64                 `json:"reconnect"`
 	RDPDir    string                `json:"rdp_dir"`
 	VNCDir    string                `json:"vnc_dir"`
@@ -118,12 +115,12 @@ func readConfig(path string) (config *Config, last int64, err error) {
 }
 
 var exitf = func(code int) {
-	if smartio.Stdout != nil {
-		smartio.Stdout.Flush()
-	}
-	if smartio.Stderr != nil {
-		smartio.Stderr.Flush()
-	}
+	// if smartio.Stdout != nil {
+	// 	smartio.Stdout.Flush()
+	// }
+	// if smartio.Stderr != nil {
+	// 	smartio.Stderr.Flush()
+	// }
 	os.Exit(code)
 }
 
@@ -181,14 +178,14 @@ func main() {
 			exitf(1)
 		}
 	}
-	if len(config.LogOut) > 0 || len(config.LogErr) > 0 {
-		log.Redirect(config.LogOut, config.LogErr)
-		bsck.Log.SetOutput(os.Stdout)
-	}
-	if config.LogFlags > 0 {
-		bsck.Log.SetFlags(config.LogFlags)
-		log.SharedLogger().SetFlags(config.LogFlags)
-	}
+	// if len(config.LogOut) > 0 || len(config.LogErr) > 0 {
+	// 	log.Redirect(config.LogOut, config.LogErr)
+	// 	bsck.Log.SetOutput(os.Stdout)
+	// }
+	// if config.LogFlags > 0 {
+	// 	bsck.Log.SetFlags(config.LogFlags)
+	// 	log.SharedLogger().SetFlags(config.LogFlags)
+	// }
 	bsck.ShowLog = config.ShowLog
 	socks5 := bsck.NewSocksProxy()
 	forward := bsck.NewForward()
@@ -216,14 +213,14 @@ func main() {
 	dialerPool.AddDialer(dialer.NewStateDialer("router", node.Router))
 	err = dialerPool.Bootstrap(config.Dialer)
 	if err != nil {
-		log.E("boot dialer pool fail with %v\n", err)
+		bsck.ErrorLog("boot dialer pool fail with %v\n", err)
 		exitf(1)
 	}
 	dialerProxy := dialer.NewBalancedDialer()
-	if config.Proxy != nil && len(config.Proxy.StrVal("id")) > 0 {
+	if config.Proxy != nil && len(config.Proxy.Str("id")) > 0 {
 		err = dialerProxy.Bootstrap(config.Proxy)
 		if err != nil {
-			log.E("boot proxy dialer fail with %v\n", err)
+			bsck.ErrorLog("boot proxy dialer fail with %v\n", err)
 			os.Exit(1)
 		}
 	}
@@ -269,7 +266,7 @@ func main() {
 	node.Handler = bsck.DialRawF(func(sid uint64, uri string) (conn bsck.Conn, err error) {
 		raw, err := dialerPool.Dial(sid, uri, nil)
 		if err == nil {
-			conn = bsck.NewRawConn(raw, sid, uri)
+			conn = bsck.NewRawConn(raw, node.BufferSize, sid, uri)
 		}
 		return
 	})
@@ -487,7 +484,7 @@ func main() {
 type RouterDialer struct {
 	basic   *bsck.Router
 	ID      string
-	conf    util.Map
+	conf    xmap.M
 	matcher *regexp.Regexp
 	router  string
 	args    string
@@ -497,7 +494,7 @@ type RouterDialer struct {
 func NewRouterDialer(basic *bsck.Router) *RouterDialer {
 	return &RouterDialer{
 		basic:   basic,
-		conf:    util.Map{},
+		conf:    xmap.M{},
 		matcher: regexp.MustCompile("^.*$"),
 	}
 }
@@ -508,26 +505,26 @@ func (r *RouterDialer) Name() string {
 }
 
 //Bootstrap will initial dialer
-func (r *RouterDialer) Bootstrap(options util.Map) (err error) {
+func (r *RouterDialer) Bootstrap(options xmap.M) (err error) {
 	r.conf = options
-	r.ID = options.StrVal("id")
+	r.ID = options.Str("id")
 	if len(r.ID) < 1 {
 		return fmt.Errorf("the dialer id is required")
 	}
-	matcher := options.StrVal("matcher")
+	matcher := options.Str("matcher")
 	if len(matcher) > 0 {
 		r.matcher, err = regexp.Compile(matcher)
 	}
-	r.router = options.StrVal("router")
+	r.router = options.Str("router")
 	if len(r.router) < 1 {
 		err = fmt.Errorf("the dialer router is required")
 	}
-	r.args = options.StrVal("args")
+	r.args = options.Str("args")
 	return
 }
 
 //Options return current configure
-func (r *RouterDialer) Options() util.Map {
+func (r *RouterDialer) Options() xmap.M {
 	return r.conf
 }
 

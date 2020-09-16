@@ -23,7 +23,7 @@ func TestSocksProxy(t *testing.T) {
 	dailer := NewSocksProxyDialer()
 	dailer.Bootstrap(xmap.M{
 		"id":      "testing",
-		"address": "127.0.0.1:1080",
+		"address": "127.0.0.1:1105",
 	})
 	remote := "tcp://www.google.com:80"
 	if !dailer.Matched(remote) {

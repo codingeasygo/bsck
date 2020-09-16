@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/codingeasygo/util"
 	"github.com/codingeasygo/util/xmap"
+	"github.com/codingeasygo/util/xtime"
 )
 
 type OnceDialer struct {
@@ -230,11 +230,11 @@ func (t *TimeDialer) Matched(uri string) bool {
 
 //dial raw connection
 func (t *TimeDialer) Dial(sid uint64, uri string, pipe io.ReadWriteCloser) (r Conn, err error) {
-	if util.Now()-t.last < 100 {
+	if xtime.Now()-t.last < 100 {
 		panic("too fast")
 	}
 	r = t
-	t.last = util.Now()
+	t.last = xtime.Now()
 	time.Sleep(10 * time.Millisecond)
 	return
 }

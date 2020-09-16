@@ -9,7 +9,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/Centny/gwf/log"
 	"github.com/codingeasygo/util/xmap"
 )
 
@@ -119,7 +118,7 @@ func (s *SocksProxyDialer) Dial(sid uint64, uri string, pipe io.ReadWriteCloser)
 	}
 	var doneErr error
 	defer s.Pooler.Done(address, uri, doneErr)
-	log.D("SocksProxyDialer dial to %v", address)
+	DebugLog("SocksProxyDialer dial to %v", address)
 	conn, err := net.Dial("tcp", address)
 	if err != nil {
 		doneErr = &CodeError{Inner: err, ByteCode: 0x10}

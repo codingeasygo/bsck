@@ -8,9 +8,9 @@ import (
 	"sort"
 	"time"
 
-	"github.com/codingeasygo/util"
 	"github.com/codingeasygo/util/converter"
 	"github.com/codingeasygo/util/xmap"
+	"github.com/codingeasygo/util/xtime"
 )
 
 type MapIntSorter struct {
@@ -207,11 +207,11 @@ func (b *BalancedDialer) Dial(sid uint64, uri string, pipe io.ReadWriteCloser) (
 		return
 	}
 	//
-	begin := util.Now()
+	begin := xtime.Now()
 	var showed int64
 	failed := map[string]int{}
 	for {
-		now := util.Now()
+		now := xtime.Now()
 		if now-begin >= b.Timeout {
 			err = fmt.Errorf("dial to %v timeout", uri)
 			break
@@ -220,7 +220,7 @@ func (b *BalancedDialer) Dial(sid uint64, uri string, pipe io.ReadWriteCloser) (
 		//do dialer limit
 		sortedNames := b.sortedDialer(1)
 		var limitedNames []string
-		now = util.Now()
+		now = xtime.Now()
 		for _, name := range sortedNames {
 			if failed[name] > 2 {
 				continue
@@ -281,10 +281,10 @@ func (b *BalancedDialer) Dial(sid uint64, uri string, pipe io.ReadWriteCloser) (
 				b.dialersHostUsed[name][target.Host] = hostUsed
 			}
 			if used[1] == 0 {
-				used[0] = util.Now()
+				used[0] = xtime.Now()
 			}
 			if hostUsed[1] == 0 {
-				hostUsed[0] = util.Now()
+				hostUsed[0] = xtime.Now()
 			}
 			used[1]++
 			hostUsed[1]++
@@ -311,7 +311,7 @@ func (b *BalancedDialer) Dial(sid uint64, uri string, pipe io.ReadWriteCloser) (
 			}
 		}
 		b.dialersLock <- 1
-		now = util.Now()
+		now = xtime.Now()
 		if now-showed > 3000 {
 			DebugLog("BalancedDialer dial to %v is waiting to connect", uri)
 			showed = now

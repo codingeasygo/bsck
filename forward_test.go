@@ -11,8 +11,8 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/Centny/gwf/util"
 	"github.com/codingeasygo/bsck/dialer"
+	"github.com/codingeasygo/util/xmap"
 
 	"golang.org/x/net/websocket"
 )
@@ -39,7 +39,7 @@ func hget(format string, args ...interface{}) (data string, err error) {
 
 func TestForward(t *testing.T) {
 	dialerPool := dialer.NewPool()
-	dialerPool.Bootstrap(util.Map{
+	dialerPool.Bootstrap(xmap.M{
 		"standard": 1,
 	})
 	//

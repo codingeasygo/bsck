@@ -18,9 +18,6 @@ func TestPool(t *testing.T) {
 				"matcher": "^proxy://.*$",
 			},
 			{
-				"type": "cmd",
-			},
-			{
 				"type": "echo",
 			},
 			{

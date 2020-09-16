@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Centny/gwf/util"
 	"github.com/codingeasygo/bsck/dialer"
+	"github.com/codingeasygo/util/converter"
 	"github.com/codingeasygo/util/xio"
 	"github.com/codingeasygo/util/xio/frame"
 )
@@ -1067,9 +1067,9 @@ func TestProxyDialSync(t *testing.T) {
 		t.Error("error")
 		return
 	}
-	fmt.Printf("master-->\n%v\n\n", util.S2Json(master.State()))
-	fmt.Printf("slaver-->\n%v\n\n", util.S2Json(slaver.State()))
-	fmt.Printf("client-->\n%v\n\n", util.S2Json(client.State()))
+	fmt.Printf("master-->\n%v\n\n", converter.JSON(master.State()))
+	fmt.Printf("slaver-->\n%v\n\n", converter.JSON(slaver.State()))
+	fmt.Printf("client-->\n%v\n\n", converter.JSON(client.State()))
 	_, err = client.SyncDial("master->error", connb)
 	if err == nil {
 		t.Error("error")
