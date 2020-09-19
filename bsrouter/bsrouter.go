@@ -189,7 +189,8 @@ func main() {
 	bsck.ShowLog = config.ShowLog
 	socks5 := bsck.NewSocksProxy()
 	forward := bsck.NewForward()
-	node := bsck.NewProxy(config.Name)
+	handler := bsck.NewNormalAcessHandler(config.Name, nil)
+	node := bsck.NewProxy(config.Name, handler)
 	if !filepath.IsAbs(config.Cert) {
 		config.Cert = filepath.Join(filepath.Dir(configPath), config.Cert)
 	}
@@ -201,7 +202,7 @@ func main() {
 		node.ReconnectDelay = time.Duration(config.Reconnect) * time.Millisecond
 	}
 	if len(config.ACL) > 0 {
-		node.ACL = config.ACL
+		handler.LoginAccess = config.ACL
 	}
 	dialer.NewDialer = func(t string) dialer.Dialer {
 		if t == "router" {
@@ -263,7 +264,7 @@ func main() {
 		return
 	}
 	forward.Dialer = dialerAll
-	node.Handler = bsck.DialRawF(func(sid uint64, uri string) (conn bsck.Conn, err error) {
+	handler.Dialer = bsck.DialRawF(func(sid uint64, uri string) (conn bsck.Conn, err error) {
 		raw, err := dialerPool.Dial(sid, uri, nil)
 		if err == nil {
 			conn = bsck.NewRawConn(raw, node.BufferSize, sid, uri)
