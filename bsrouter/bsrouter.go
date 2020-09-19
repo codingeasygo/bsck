@@ -60,7 +60,8 @@ func main() {
 			exitf(1)
 		}
 	}
-	service := bsck.NewService(configPath)
+	service := bsck.NewService()
+	service.ConfigPath = configPath
 	err = service.Start()
 	wc := make(chan os.Signal, 1)
 	signal.Notify(wc, os.Interrupt, os.Kill)

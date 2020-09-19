@@ -131,9 +131,8 @@ type Service struct {
 }
 
 //NewService will return new Service
-func NewService(configPath string) (s *Service) {
+func NewService() (s *Service) {
 	s = &Service{
-		ConfigPath: configPath,
 		configLock: sync.RWMutex{},
 	}
 	return
@@ -355,9 +354,14 @@ func (s *Service) DialRaw(sid uint64, uri string) (conn Conn, err error) {
 
 //Start will start service
 func (s *Service) Start() (err error) {
-	s.Config, s.configLast, err = ReadConfig(s.ConfigPath)
-	if err != nil {
-		ErrorLog("Service read config %v fail with %v", s.ConfigPath, err)
+	if len(s.ConfigPath) > 0 {
+		s.Config, s.configLast, err = ReadConfig(s.ConfigPath)
+		if err != nil {
+			ErrorLog("Service read config %v fail with %v", s.ConfigPath, err)
+			return
+		}
+	} else if s.Config == nil {
+		err = fmt.Errorf("config is nil and configure path is empty")
 		return
 	}
 	InfoLog("Service will start by config %v", s.ConfigPath)
