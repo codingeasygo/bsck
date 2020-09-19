@@ -87,7 +87,6 @@ func (n *NormalAcessHandler) DialRaw(sid uint64, uri string) (raw Conn, err erro
 
 //OnConnLogin is proxy handler to handle login
 func (n *NormalAcessHandler) OnConnLogin(channel Conn, args string) (name string, index int, err error) {
-	fmt.Println("--->")
 	var option = xmap.M{}
 	err = json.Unmarshal([]byte(args), &option)
 	if err != nil {
@@ -130,6 +129,11 @@ func (n *NormalAcessHandler) OnConnLogin(channel Conn, args string) (name string
 
 //OnConnDialURI is proxy handler to handle dial uri
 func (n *NormalAcessHandler) OnConnDialURI(channel Conn, conn string, parts []string) (err error) {
+	_, islogin := channel.Context().(xmap.M)
+	if !islogin {
+		err = fmt.Errorf("not login")
+		return
+	}
 	name := channel.Name()
 	for _, entry := range n.DialAccess {
 		if len(entry) != 2 {

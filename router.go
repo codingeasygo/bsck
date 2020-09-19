@@ -104,6 +104,7 @@ type writeDeadlinable interface {
 type RawConn struct {
 	//the raw connection
 	io.ReadWriteCloser
+	name         string
 	sid          uint64
 	uri          string
 	connected    chan int
@@ -116,9 +117,10 @@ type RawConn struct {
 }
 
 // NewRawConn returns a new RawConn by raw connection/session id/uri
-func NewRawConn(raw io.ReadWriteCloser, bufferSize int, sid uint64, uri string) (conn *RawConn) {
+func NewRawConn(name string, raw io.ReadWriteCloser, bufferSize int, sid uint64, uri string) (conn *RawConn) {
 	conn = &RawConn{
 		ReadWriteCloser: raw,
+		name:            name,
 		sid:             sid,
 		uri:             uri,
 		connected:       make(chan int, 1),
@@ -217,7 +219,7 @@ func (r *RawConn) ID() uint64 {
 
 //Name is an implementation of Conn
 func (r *RawConn) Name() string {
-	return ""
+	return r.name
 }
 
 //Index is an implementation of Conn
@@ -766,7 +768,7 @@ func (r *Router) DialConn(uri string, raw io.ReadWriteCloser) (sid uint64, conn 
 	}
 	DebugLog("Router(%v) start dail to %v on channel(%v)", r.Name, uri, channel)
 	sid = atomic.AddUint64(&r.connectSequence, 1)
-	conn = NewRawConn(raw, r.BufferSize, sid, uri)
+	conn = NewRawConn(fmt.Sprintf("%v", sid), raw, r.BufferSize, sid, uri)
 	r.addTable(channel, sid, conn, sid)
 	err = writeCmd(channel, nil, CmdDial, sid, []byte(fmt.Sprintf("%v@%v", parts[0], parts[1])))
 	if err != nil {
