@@ -14,31 +14,32 @@ import (
 	"time"
 
 	"github.com/codingeasygo/util/xio/frame"
+	"github.com/codingeasygo/util/xmap"
 )
 
-//AuthOption is a pojo struct to login auth.
-type AuthOption struct {
-	//the channel index
-	Index int `json:"index"`
-	//the chnnale name
-	Name string `json:"name"`
-	//the auth token
-	Token string `json:"token"`
-}
+// //AuthOption is a pojo struct to login auth.
+// type AuthOption struct {
+// 	//the channel index
+// 	Index int `json:"index"`
+// 	//the chnnale name
+// 	Name string `json:"name"`
+// 	//the auth token
+// 	Token string `json:"token"`
+// }
 
-//ChannelOption is a pojo struct for adding channel to Router
-type ChannelOption struct {
-	//enable
-	Enable bool `json:"enable"`
-	//the auth token
-	Token string `json:"token"`
-	//local tcp address to connection master
-	Local string `json:"local"`
-	//the remote address to login
-	Remote string `json:"remote"`
-	//the channel index
-	Index int `json:"index"`
-}
+// //ChannelOption is a pojo struct for adding channel to Router
+// type ChannelOption struct {
+// 	//enable
+// 	Enable bool `json:"enable"`
+// 	//the auth token
+// 	Token string `json:"token"`
+// 	//local tcp address to connection master
+// 	Local string `json:"local"`
+// 	//the remote address to login
+// 	Remote string `json:"remote"`
+// 	//the channel index
+// 	Index int `json:"index"`
+// }
 
 //DialRawF is a function type to dial raw connection.
 type DialRawF func(sid uint64, uri string) (raw Conn, err error)
@@ -86,39 +87,43 @@ func (n *NormalAcessHandler) DialRaw(sid uint64, uri string) (raw Conn, err erro
 
 //OnConnLogin is proxy handler to handle login
 func (n *NormalAcessHandler) OnConnLogin(channel Conn, args string) (name string, index int, err error) {
-	var option = &AuthOption{}
-	err = json.Unmarshal([]byte(args), option)
+	fmt.Println("--->")
+	var option = xmap.M{}
+	err = json.Unmarshal([]byte(args), &option)
 	if err != nil {
 		ErrorLog("Proxy(%v) unmarshal login option fail with %v", n.Name, err)
 		err = fmt.Errorf("parse login opiton fail with " + err.Error())
 		return
 	}
-	if len(option.Name) < 1 || len(option.Token) < 1 {
+	var having string
+	err = option.ValidFormat(`
+		index,R|I,R:-1;
+		name,R|S,L:0;
+		token,R|S,L:0;
+	`, &index, &name, &having)
+	if err != nil {
 		ErrorLog("Proxy(%v) login option fail with name/token is required", n.Name)
-		err = fmt.Errorf("name/token is requried")
 		return
 	}
 	n.loginLocker.RLock()
-	var token string
+	var mustbe string
 	for access, t := range n.LoginAccess {
 		reg, err := regexp.Compile(access)
 		if err != nil {
 			WarnLog("Proxy(%v) compile acl name regexp(%v) fail with %v", n.Name, n, err)
 			continue
 		}
-		if reg.MatchString(option.Name) {
-			token = t
+		if reg.MatchString(name) {
+			mustbe = t
 		}
 	}
 	n.loginLocker.RUnlock()
-	if len(token) < 1 || token != option.Token {
+	if len(mustbe) < 1 || having != mustbe {
 		WarnLog("Proxy(%v) login fail with auth fail", n.Name)
 		err = fmt.Errorf("access denied ")
 		return
 	}
-	name = option.Name
-	index = option.Index
-	// InfoLog("Proxy(%v) channel %v login success on %v ", p.Name, name, channel)
+	InfoLog("Proxy(%v) channel %v login success on %v ", n.Name, name, channel)
 	channel.SetContext(option)
 	return
 }
@@ -332,7 +337,7 @@ func (p *Proxy) Close() (err error) {
 	return
 }
 
-func (p *Proxy) runReconnect(args *ChannelOption) {
+func (p *Proxy) runReconnect(args xmap.M) {
 	for p.Running {
 		_, err := p.Login(args)
 		if err == nil {
@@ -381,7 +386,7 @@ func (p *Proxy) OnConnClose(conn Conn) (err error) {
 	if !p.Running || !ok {
 		return
 	}
-	option, ok := channel.Context().(*ChannelOption)
+	option, ok := channel.Context().(xmap.M)
 	if !p.Running || !ok {
 		return
 	}
@@ -398,9 +403,9 @@ func (p *Proxy) OnConnClose(conn Conn) (err error) {
 }
 
 //LoginChannel will login all channel by options.
-func (p *Proxy) LoginChannel(reconnect bool, channels ...*ChannelOption) (err error) {
+func (p *Proxy) LoginChannel(reconnect bool, channels ...xmap.M) (err error) {
 	for _, channel := range channels {
-		if !channel.Enable {
+		if channel.Int("enable") < 1 {
 			continue
 		}
 		_, err = p.Login(channel)
@@ -417,40 +422,53 @@ func (p *Proxy) LoginChannel(reconnect bool, channels ...*ChannelOption) (err er
 }
 
 //Login will add channel by local address, master address, auth token, channel index.
-func (p *Proxy) Login(option *ChannelOption) (channel *Channel, err error) {
+func (p *Proxy) Login(option xmap.M) (channel *Channel, err error) {
+	var index int
+	var local, remote, tlsCert, tlsKey string
+	err = option.ValidFormat(`
+		index,R|I,R:-1;
+		local,O|S,L:0;
+		remote,R|S,L:0;
+		tls_cert,O|S,L:0;
+		tls_key,O|S,L:0;
+	`, &index, &local, &remote, &tlsCert, &tlsKey)
+	if err != nil {
+		return
+	}
 	var dialer net.Dialer
-	if len(option.Local) > 0 {
-		dialer.LocalAddr, err = net.ResolveTCPAddr("tcp", option.Local)
+	if len(local) > 0 {
+		dialer.LocalAddr, err = net.ResolveTCPAddr("tcp", local)
 		if err != nil {
 			return
 		}
 	}
 	var conn net.Conn
-	if len(p.Cert) > 0 {
-		InfoLog("Proxy(%v) start dial to %v by x509 cert:%v,key:%v", p.Name, option.Remote, p.Cert, p.Key)
+	if len(tlsCert) > 0 {
+		InfoLog("Proxy(%v) start dial to %v by x509 cert:%v,key:%v", p.Name, remote, tlsCert, tlsKey)
 		var cert tls.Certificate
-		cert, err = tls.LoadX509KeyPair(p.Cert, p.Key)
+		cert, err = tls.LoadX509KeyPair(tlsCert, tlsKey)
 		if err != nil {
 			ErrorLog("Proxy(%v) load cert fail with %v", p.Name, err)
 			return
 		}
 		config := &tls.Config{Certificates: []tls.Certificate{cert}, InsecureSkipVerify: true}
 		config.Rand = rand.Reader
-		conn, err = tls.DialWithDialer(&dialer, "tcp", option.Remote, config)
+		conn, err = tls.DialWithDialer(&dialer, "tcp", remote, config)
 	} else {
-		InfoLog("Router(%v) start dial to %v", p.Name, option.Remote)
-		conn, err = dialer.Dial("tcp", option.Remote)
+		InfoLog("Router(%v) start dial to %v", p.Name, remote)
+		conn, err = dialer.Dial("tcp", remote)
 	}
 	if err != nil {
-		WarnLog("Proxy(%v) dial to %v fail with %v", p.Name, option.Remote, err)
+		WarnLog("Proxy(%v) dial to %v fail with %v", p.Name, remote, err)
 		return
 	}
-	auth := &AuthOption{
-		Index: option.Index,
-		Name:  p.Name,
-		Token: option.Token,
+	auth := xmap.M{}
+	for key, val := range option {
+		auth[key] = val
 	}
-	channel, err = p.JoinConn(NewInfoRWC(frame.NewReadWriteCloser(conn, p.BufferSize), conn.RemoteAddr().String()), option.Index, auth)
+	auth["index"] = index
+	auth["name"] = p.Name
+	channel, err = p.JoinConn(NewInfoRWC(frame.NewReadWriteCloser(conn, p.BufferSize), conn.RemoteAddr().String()), index, auth)
 	if err == nil {
 		channel.SetContext(option)
 	}

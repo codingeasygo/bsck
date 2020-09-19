@@ -13,6 +13,7 @@ import (
 	"github.com/codingeasygo/util/converter"
 	"github.com/codingeasygo/util/xio"
 	"github.com/codingeasygo/util/xio/frame"
+	"github.com/codingeasygo/util/xmap"
 )
 
 func init() {
@@ -108,10 +109,10 @@ func TestProxy(t *testing.T) {
 	slaver1 := NewProxy("slaver1", slaver1Handler)
 	// slaver1.Heartbeat = 50 * time.Millisecond
 	// slaver1.StartHeartbeat()
-	_, err = slaver1.Login(&ChannelOption{
-		Remote: "localhost:9232",
-		Token:  "abc",
-		Index:  0,
+	_, err = slaver1.Login(xmap.M{
+		"remote": "localhost:9232",
+		"token":  "abc",
+		"index":  0,
 	})
 	if err != nil {
 		t.Error(err)
@@ -119,10 +120,10 @@ func TestProxy(t *testing.T) {
 	}
 	defer slaver1.Close()
 	slaver2 := NewProxy("slaver2", nil)
-	_, err = slaver2.Login(&ChannelOption{
-		Remote: "localhost:9232",
-		Token:  "abc",
-		Index:  0,
+	_, err = slaver2.Login(xmap.M{
+		"remote": "localhost:9232",
+		"token":  "abc",
+		"index":  0,
 	})
 	if err != nil {
 		t.Error(err)
@@ -194,19 +195,19 @@ func TestProxy(t *testing.T) {
 		}))
 		ms0Handler.DialAccess = [][]string{{".*", ".*"}}
 		ms0 := NewProxy("ms", ms0Handler)
-		err = ms0.LoginChannel(false, &ChannelOption{
-			Enable: true,
-			Token:  "abc",
-			Local:  "0.0.0.0:0",
-			Remote: "localhost:9232",
-			Index:  0,
-		}, &ChannelOption{
-			Enable: true,
-			Token:  "abc",
-			Local:  "0.0.0.0:0",
-			Remote: "localhost:9232",
-			Index:  1,
-		})
+		err = ms0.LoginChannel(false,
+			xmap.M{
+				"enable": 1,
+				"remote": "localhost:9232",
+				"token":  "abc",
+				"index":  0,
+			}, xmap.M{
+				"enable": 1,
+				"remote": "localhost:9232",
+				"token":  "abc",
+				"index":  1,
+			},
+		)
 		if err != nil {
 			t.Error(err)
 			return
@@ -247,11 +248,10 @@ func TestProxy(t *testing.T) {
 		}))
 		slaver3Handler.DialAccess = [][]string{{".*", ".*"}}
 		slaver3 := NewProxy("slaver3", slaver3Handler)
-		slaver3.Login(&ChannelOption{
-			Enable: true,
-			Remote: "localhost:9232",
-			Token:  "abc",
-			Index:  0,
+		slaver3.Login(xmap.M{
+			"remote": "localhost:9232",
+			"token":  "abc",
+			"index":  0,
 		})
 		slaver2Echo := NewEcho("client")
 		_, err = slaver2.Dial("master->slaver3->xx", slaver2Echo)
@@ -298,19 +298,20 @@ func TestProxy(t *testing.T) {
 		begin := time.Now()
 		fmt.Printf("\n\n\ntest login channel fail\n")
 		slaver4 := NewProxy("slaver4", nil)
-		err := slaver4.LoginChannel(false, &ChannelOption{
-			Enable: false,
-			Token:  "abc",
-			Local:  "0.0.0.0:0",
-			Remote: "localhost:9232",
-			Index:  0,
-		}, &ChannelOption{
-			Enable: true,
-			Token:  "abc",
-			Local:  "0.0.0.0:0",
-			Remote: "localhost:0",
-			Index:  0,
-		})
+		err := slaver4.LoginChannel(false,
+			xmap.M{
+				"enable": 0,
+				"remote": "localhost:9232",
+				"token":  "abc",
+				"index":  0,
+			},
+			xmap.M{
+				"enable": 1,
+				"remote": "localhost:0",
+				"token":  "abc",
+				"index":  0,
+			},
+		)
 		if err == nil {
 			t.Error(err)
 			return
@@ -360,22 +361,22 @@ func TestProxyError(t *testing.T) {
 	{ //test login error
 		fmt.Printf("\n\n\ntest login error\n")
 		slaverErr := NewProxy("error", nil)
-		_, err = slaverErr.Login(&ChannelOption{
-			Enable: true,
-			Remote: "localhost:9232",
-			Token:  "abc",
-			Index:  0,
+		_, err = slaverErr.Login(xmap.M{
+			"enable": 1,
+			"remote": "localhost:9232",
+			"token":  "abc",
+			"index":  0,
 		})
 		if err == nil {
-			t.Error("error")
+			t.Error(err)
 			return
 		}
 		slaverErr = NewProxy("error", nil)
-		_, err = slaverErr.Login(&ChannelOption{
-			Enable: true,
-			Remote: "localhost:9232",
-			Token:  "",
-			Index:  0,
+		_, err = slaverErr.Login(xmap.M{
+			"enable": 1,
+			"remote": "localhost:9232",
+			"token":  "abc",
+			"index":  0,
 		})
 		if err == nil {
 			t.Error("error")
@@ -467,31 +468,32 @@ func TestProxyError(t *testing.T) {
 		//
 		//test login error
 		slaver := NewProxy("slaver", nil)
-		err = slaver.LoginChannel(false, &ChannelOption{
-			Enable: true,
-			Token:  "abc",
-			Remote: "loclahost:12",
+		err = slaver.LoginChannel(false, xmap.M{
+			"enable": 1,
+			"remote": "localhost:12",
+			"token":  "abc",
+			"index":  0,
 		})
 		if err == nil {
 			t.Error(err)
 			return
 		}
-		_, err = slaver.Login(&ChannelOption{
-			Enable: true,
-			Local:  "xxx",
-			Remote: "localhost:9232",
-			Token:  "abc",
-			Index:  0,
+		_, err = slaver.Login(xmap.M{
+			"enable": 1,
+			"local":  "xxx",
+			"remote": "localhost:9232",
+			"token":  "abc",
+			"index":  0,
 		})
 		if err == nil {
 			t.Error(err)
 			return
 		}
-		_, err = slaver.Login(&ChannelOption{
-			Enable: true,
-			Remote: "localhost:12",
-			Token:  "abc",
-			Index:  0,
+		_, err = slaver.Login(xmap.M{
+			"enable": 1,
+			"remote": "localhost:12",
+			"token":  "abc",
+			"index":  0,
 		})
 		if err == nil {
 			t.Error(err)
@@ -499,22 +501,22 @@ func TestProxyError(t *testing.T) {
 		}
 		merr := NewErrReadWriteCloser([]byte("abc"), 10)
 		merr.ErrType = 10
-		_, err = slaver.JoinConn(frame.NewReadWriteCloser(merr, 1024), 0, &ChannelOption{
-			Enable: true,
-			Remote: "",
-			Token:  "abc",
-			Index:  0,
+		_, err = slaver.JoinConn(frame.NewReadWriteCloser(merr, 1024), 0, xmap.M{
+			"enable": 1,
+			"remote": "",
+			"token":  "abc",
+			"index":  0,
 		})
 		if err == nil {
 			t.Error(err)
 			return
 		}
 		merr.ErrType = 20
-		_, err = slaver.JoinConn(frame.NewReadWriteCloser(merr, 1024), 0, &ChannelOption{
-			Enable: true,
-			Remote: "",
-			Token:  "abc",
-			Index:  0,
+		_, err = slaver.JoinConn(frame.NewReadWriteCloser(merr, 1024), 0, xmap.M{
+			"enable": 1,
+			"remote": "",
+			"token":  "abc",
+			"index":  0,
 		})
 		if err == nil {
 			t.Error(err)
@@ -634,10 +636,10 @@ func TestReconnect(t *testing.T) {
 	defer master.Close()
 	slaver := NewProxy("slaver", nil)
 	slaver.ReconnectDelay = 100 * time.Millisecond
-	slaver.Login(&ChannelOption{
-		Remote: "localhost:9232",
-		Token:  "abc",
-		Index:  0,
+	slaver.Login(xmap.M{
+		"remote": "localhost:9232",
+		"token":  "abc",
+		"index":  0,
 	})
 	c, _ := slaver.SelectChannel("master")
 	c.Close()
@@ -682,17 +684,17 @@ func TestProxyForward(t *testing.T) {
 	}))
 	slaverHandler.DialAccess = [][]string{{".*", ".*"}}
 	slaver := NewProxy("slaver", slaverHandler)
-	slaver.Login(&ChannelOption{
-		Remote: "localhost:9232",
-		Token:  "abc",
-		Index:  0,
+	slaver.Login(xmap.M{
+		"remote": "localhost:9232",
+		"token":  "abc",
+		"index":  0,
 	})
 	//
 	client := NewProxy("client", nil)
-	_, err = client.Login(&ChannelOption{
-		Remote: "localhost:9232",
-		Token:  "abc",
-		Index:  0,
+	_, err = client.Login(xmap.M{
+		"remote": "localhost:9232",
+		"token":  "abc",
+		"index":  0,
 	})
 	if err != nil {
 		t.Error(err)
@@ -853,17 +855,17 @@ func TestSocketProxyForward(t *testing.T) {
 	}))
 	slaverHandler.DialAccess = [][]string{{".*", ".*"}}
 	slaver := NewProxy("slaver", slaverHandler)
-	slaver.Login(&ChannelOption{
-		Remote: "localhost:9232",
-		Token:  "abc",
-		Index:  0,
+	slaver.Login(xmap.M{
+		"remote": "localhost:9232",
+		"token":  "abc",
+		"index":  0,
 	})
 	//
 	client := NewProxy("client", nil)
-	_, err = client.Login(&ChannelOption{
-		Remote: "localhost:9232",
-		Token:  "abc",
-		Index:  0,
+	_, err = client.Login(xmap.M{
+		"remote": "localhost:9232",
+		"token":  "abc",
+		"index":  0,
 	})
 	if err != nil {
 		t.Error(err)
@@ -949,21 +951,21 @@ func TestProxyTLS(t *testing.T) {
 	}))
 	slaverHandler.DialAccess = [][]string{{".*", ".*"}}
 	slaver := NewProxy("slaver", slaverHandler)
-	slaver.Cert = "bsrouter/bsrouter.pem"
-	slaver.Key = "bsrouter/bsrouter.key"
-	slaver.Login(&ChannelOption{
-		Remote: "localhost:9232",
-		Token:  "abc",
-		Index:  0,
+	slaver.Login(xmap.M{
+		"remote":   "localhost:9232",
+		"token":    "abc",
+		"index":    0,
+		"tls_cert": "bsrouter/bsrouter.pem",
+		"tls_key":  "bsrouter/bsrouter.key",
 	})
 	//
 	client := NewProxy("client", nil)
-	client.Cert = "bsrouter/bsrouter.pem"
-	client.Key = "bsrouter/bsrouter.key"
-	_, err = client.Login(&ChannelOption{
-		Remote: "localhost:9232",
-		Token:  "abc",
-		Index:  0,
+	_, err = client.Login(xmap.M{
+		"remote":   "localhost:9232",
+		"token":    "abc",
+		"index":    0,
+		"tls_cert": "bsrouter/bsrouter.pem",
+		"tls_key":  "bsrouter/bsrouter.key",
 	})
 	if err != nil {
 		t.Error(err)
@@ -975,12 +977,12 @@ func TestProxyTLS(t *testing.T) {
 	//
 	//
 	client = NewProxy("client", nil)
-	client.Cert = "bsrouter/bsrouter.xxx"
-	client.Key = "bsrouter/bsrouter.xxx"
-	_, err = client.Login(&ChannelOption{
-		Remote: "localhost:9232",
-		Token:  "abc",
-		Index:  0,
+	_, err = client.Login(xmap.M{
+		"remote":   "localhost:9232",
+		"token":    "abc",
+		"index":    0,
+		"tls_cert": "bsrouter/bsrouter.pem",
+		"tls_key":  "bsrouter/bsrouter.key",
 	})
 	if err == nil {
 		t.Error(err)
@@ -1041,17 +1043,17 @@ func TestProxyDialSync(t *testing.T) {
 	}))
 	slaverHandler.DialAccess = [][]string{{".*", ".*"}}
 	slaver := NewProxy("slaver", slaverHandler)
-	slaver.Login(&ChannelOption{
-		Remote: "localhost:9232",
-		Token:  "abc",
-		Index:  0,
+	slaver.Login(xmap.M{
+		"remote": "localhost:9232",
+		"token":  "abc",
+		"index":  0,
 	})
 	//
 	client := NewProxy("client", nil)
-	_, err = client.Login(&ChannelOption{
-		Remote: "localhost:9232",
-		Token:  "abc",
-		Index:  0,
+	_, err = client.Login(xmap.M{
+		"remote": "localhost:9232",
+		"token":  "abc",
+		"index":  0,
 	})
 	if err != nil {
 		t.Error(err)
