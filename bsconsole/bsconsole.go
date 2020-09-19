@@ -34,7 +34,7 @@ type Web struct {
 	Listen string `json:"listen"`
 }
 
-//Web is pojo for configure
+//Config is pojo for configure
 type Config struct {
 	Name   string `json:"name"`
 	Listen string `json:"listen"`

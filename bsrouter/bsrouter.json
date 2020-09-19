@@ -1,0 +1,21 @@
+{
+    "name": "r0",
+    "listen": ":5023",
+    "cert": "bsrouter.pem",
+    "key": "bsrouter.key",
+    "web": {
+        "listen": ":5024",
+        "suffix": ".test.loc:5024",
+        "auth": ""
+    },
+    "socks5": ":5081",
+    "forwards": {
+        "t0~web://": "http://127.0.0.1:80",
+        "t1~web://": "http://web?dir=/tmp",
+        "t2~tcp://:2332": "http://web?dir=/tmp"
+    },
+    "channels": [],
+    "dialer":{
+        "standard": 1
+    }
+}

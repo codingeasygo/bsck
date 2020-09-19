@@ -120,6 +120,7 @@ func (web *WebDialer) String() string {
 }
 
 func (web *WebDialer) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
+	DebugLog("WebDialer access %v from %v", req.URL.RequestURI(), req.RemoteAddr)
 	cid := req.RemoteAddr
 	web.consLck.Lock()
 	conn := web.cons[cid]

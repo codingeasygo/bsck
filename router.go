@@ -132,11 +132,15 @@ func NewRawConn(name string, raw io.ReadWriteCloser, bufferSize int, sid uint64,
 }
 
 func (r *RawConn) Write(p []byte) (n int, err error) {
-	panic("not supported")
+	// panic("not supported")
+	n, err = r.ReadWriteCloser.Write(p)
+	return
 }
 
 func (r *RawConn) Read(b []byte) (n int, err error) {
-	panic("not supported")
+	// panic("not supported")
+	n, err = r.ReadWriteCloser.Read(b)
+	return
 }
 
 //ReadFrame will read frame from raw
@@ -749,17 +753,32 @@ func (r *Router) Dial(uri string, raw io.ReadWriteCloser) (sid uint64, err error
 //SyncDial will dial to remote by uri and wait dial successs
 func (r *Router) SyncDial(uri string, raw io.ReadWriteCloser) (sid uint64, err error) {
 	sid, conn, err := r.DialConn(uri, raw)
-	if err == nil && !conn.Wait() {
-		err = fmt.Errorf("connect reseted")
+	if err == nil {
+		if waiter, ok := conn.(*RawConn); ok && !waiter.Wait() {
+			err = fmt.Errorf("connect reseted")
+		}
 	}
 	return
 }
 
 //DialConn will dial to remote by uri and bind channel to raw connection and return raw connection
-func (r *Router) DialConn(uri string, raw io.ReadWriteCloser) (sid uint64, conn *RawConn, err error) {
+func (r *Router) DialConn(uri string, raw io.ReadWriteCloser) (sid uint64, conn Conn, err error) {
 	parts := strings.SplitN(uri, "->", 2)
 	if len(parts) < 2 {
-		err = fmt.Errorf("invalid uri(%v), it must like x->y", uri)
+		sid = r.UniqueSid()
+		conn, err = r.Handler.DialRaw(sid, uri)
+		if err != nil {
+			return
+		}
+		go func() {
+			io.CopyN(raw, conn, int64(r.BufferSize))
+			raw.Close()
+		}()
+		go func() {
+			io.CopyN(conn, raw, int64(r.BufferSize))
+			conn.Close()
+		}()
+		// err = fmt.Errorf("invalid uri(%v), it must like x->y", uri)
 		return
 	}
 	channel, err := r.SelectChannel(parts[0])

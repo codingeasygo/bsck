@@ -99,16 +99,19 @@ func (p *Pool) Bootstrap(options xmap.M) error {
 		echo := NewEchoDialer()
 		echo.Bootstrap(options.Map("echo"))
 		p.Dialers = append(p.Dialers, echo)
+		InfoLog("Pool add echo dialer to pool")
 	}
 	if options.Value("web") != nil || options.IntDef(0, "standard") > 0 || options.IntDef(0, "std") > 0 {
 		web := NewWebDialer()
 		web.Bootstrap(options.MapDef(xmap.M{}, "web"))
 		p.Dialers = append(p.Dialers, web)
+		InfoLog("Pool add web dialer to pool")
 	}
 	if options.Value("tcp") != nil || options.IntDef(0, "standard") > 0 || options.IntDef(0, "std") > 0 {
 		tcp := NewTCPDialer()
 		tcp.Bootstrap(options.MapDef(xmap.M{}, "tcp"))
 		p.Dialers = append(p.Dialers, tcp)
+		InfoLog("Pool add tcp dialer to pool")
 	}
 	return nil
 }
