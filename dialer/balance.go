@@ -8,8 +8,9 @@ import (
 	"sort"
 	"time"
 
-	"github.com/Centny/gwf/log"
-	"github.com/Centny/gwf/util"
+	"github.com/codingeasygo/util/converter"
+	"github.com/codingeasygo/util/xmap"
+	"github.com/codingeasygo/util/xtime"
 )
 
 type MapIntSorter struct {
@@ -62,7 +63,7 @@ type BalancedDialer struct {
 	Filters         []*BalancedFilter
 	Delay           int64
 	Timeout         int64
-	Conf            util.Map
+	Conf            xmap.M
 	matcher         *regexp.Regexp
 }
 
@@ -74,7 +75,7 @@ func NewBalancedDialer() *BalancedDialer {
 		dialersLock:     make(chan int, 1),
 		Delay:           500,
 		Timeout:         3000,
-		Conf:            util.Map{},
+		Conf:            xmap.M{},
 		matcher:         regexp.MustCompile(".*"),
 	}
 	dialer.dialersLock <- 1
@@ -130,29 +131,29 @@ func (b *BalancedDialer) Name() string {
 }
 
 //initial dialer
-func (b *BalancedDialer) Bootstrap(options util.Map) (err error) {
+func (b *BalancedDialer) Bootstrap(options xmap.M) (err error) {
 	b.Conf = options
-	b.ID = options.StrVal("id")
+	b.ID = options.Str("id")
 	if len(b.ID) < 1 {
 		err = fmt.Errorf("the dialer id is required")
 		return
 	}
-	matcher := options.StrVal("matcher")
+	matcher := options.Str("matcher")
 	if len(matcher) > 0 {
 		b.matcher, err = regexp.Compile(matcher)
 	}
-	b.Timeout = options.IntValV("timeout", 3000)
-	b.Delay = options.IntValV("delay", 500)
-	policy := options.AryMapVal("policy")
+	b.Timeout = options.Int64Def(3000, "timeout")
+	b.Delay = options.Int64Def(500, "delay")
+	policy := options.ArrayMapDef(nil, "policy")
 	for _, p := range policy {
-		err = b.AddPolicy(p.StrVal("matcher"), p.AryInt64Val("limit"))
+		err = b.AddPolicy(p.Str("matcher"), p.ArrayInt64Def([]int64{}, "limit"))
 		if err != nil {
 			return
 		}
 	}
-	filter := options.AryMapVal("filter")
+	filter := options.ArrayMapDef(nil, "filter")
 	for _, f := range filter {
-		err = b.AddFilter(f.StrVal("matcher"), int(f.IntVal("access")))
+		err = b.AddFilter(f.Str("matcher"), int(f.Int64("access")))
 		if err != nil {
 			return
 		}
@@ -161,12 +162,12 @@ func (b *BalancedDialer) Bootstrap(options util.Map) (err error) {
 	defer func() {
 		b.dialersLock <- 1
 	}()
-	dialerOptions := options.AryMapVal("dialers")
+	dialerOptions := options.ArrayMapDef(nil, "dialers")
 	for _, option := range dialerOptions {
-		dtype := option.StrVal("type")
+		dtype := option.Str("type")
 		dialer := NewDialer(dtype)
 		if dialer == nil {
-			return fmt.Errorf("create dialer fail with type(%v) not supported by %v", dtype, util.S2Json(option))
+			return fmt.Errorf("create dialer fail with type(%v) not supported by %v", dtype, converter.JSON(option))
 		}
 		err := dialer.Bootstrap(option)
 		if err != nil {
@@ -176,13 +177,13 @@ func (b *BalancedDialer) Bootstrap(options util.Map) (err error) {
 		b.dialers[name] = dialer
 		b.dialersUsed[name] = []int64{0, 0, 0}
 		b.dialersHostUsed[name] = map[string][]int64{}
-		log.D("BalancedDialer add dialer(%v) to pool success", dialer)
+		DebugLog("BalancedDialer add dialer(%v) to pool success", dialer)
 	}
 	return nil
 }
 
 //Options
-func (b *BalancedDialer) Options() util.Map {
+func (b *BalancedDialer) Options() xmap.M {
 	return b.Conf
 }
 
@@ -206,11 +207,11 @@ func (b *BalancedDialer) Dial(sid uint64, uri string, pipe io.ReadWriteCloser) (
 		return
 	}
 	//
-	begin := util.Now()
+	begin := xtime.Now()
 	var showed int64
 	failed := map[string]int{}
 	for {
-		now := util.Now()
+		now := xtime.Now()
 		if now-begin >= b.Timeout {
 			err = fmt.Errorf("dial to %v timeout", uri)
 			break
@@ -219,14 +220,14 @@ func (b *BalancedDialer) Dial(sid uint64, uri string, pipe io.ReadWriteCloser) (
 		//do dialer limit
 		sortedNames := b.sortedDialer(1)
 		var limitedNames []string
-		now = util.Now()
+		now = xtime.Now()
 		for _, name := range sortedNames {
 			if failed[name] > 2 {
 				continue
 			}
 			dialer := b.dialers[name]
 			used := b.dialersUsed[name]
-			limit := dialer.Options().AryInt64Val("limit")
+			limit := dialer.Options().ArrayInt64Def(nil, "limit")
 			if len(limit) < 2 {
 				limitedNames = append(limitedNames, name)
 				used[1] = 0
@@ -280,10 +281,10 @@ func (b *BalancedDialer) Dial(sid uint64, uri string, pipe io.ReadWriteCloser) (
 				b.dialersHostUsed[name][target.Host] = hostUsed
 			}
 			if used[1] == 0 {
-				used[0] = util.Now()
+				used[0] = xtime.Now()
 			}
 			if hostUsed[1] == 0 {
-				hostUsed[0] = util.Now()
+				hostUsed[0] = xtime.Now()
 			}
 			used[1]++
 			hostUsed[1]++
@@ -294,25 +295,25 @@ func (b *BalancedDialer) Dial(sid uint64, uri string, pipe io.ReadWriteCloser) (
 				used[2] = 0
 				hostUsed[2] = 0
 				b.dialersLock <- 1
-				log.D("BalancedDialer dail to %v with dialer(%v) success", uri, dialer)
+				DebugLog("BalancedDialer dail to %v with dialer(%v) success", uri, dialer)
 				return
 			}
 			failed[name]++
 			used[2]++
 			hostUsed[2]++
-			log.D("BalancedDialer using %v and dial to %v fail with %v", dialer, uri, err)
-			failRemove := dialer.Options().IntValV("fail_remove", 0)
+			DebugLog("BalancedDialer using %v and dial to %v fail with %v", dialer, uri, err)
+			failRemove := dialer.Options().Int64Def(0, "fail_remove")
 			if failRemove > 0 && used[2] >= failRemove {
-				log.D("BalancedDialer remove dialer(%v) by %v fail count", dialer, used[2])
+				DebugLog("BalancedDialer remove dialer(%v) by %v fail count", dialer, used[2])
 				delete(b.dialers, name)
 				delete(b.dialersUsed, name)
 				delete(b.dialersHostUsed, name)
 			}
 		}
 		b.dialersLock <- 1
-		now = util.Now()
+		now = xtime.Now()
 		if now-showed > 3000 {
-			log.D("BalancedDialer dial to %v is waiting to connect", uri)
+			DebugLog("BalancedDialer dial to %v is waiting to connect", uri)
 			showed = now
 		}
 		time.Sleep(time.Duration(b.Delay) * time.Millisecond)

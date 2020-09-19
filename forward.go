@@ -12,7 +12,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/sutils/bsck/dialer"
+	"github.com/codingeasygo/bsck/dialer"
 	"golang.org/x/net/websocket"
 )
 

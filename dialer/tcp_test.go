@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/Centny/gwf/util"
+	"github.com/codingeasygo/util/xmap"
 )
 
 func TestTCPDialer(t *testing.T) {
@@ -52,7 +52,7 @@ func TestTCPDialer(t *testing.T) {
 	//
 	//test bind configure
 	tcp = NewTCPDialer()
-	tcp.Bootstrap(util.Map{
+	tcp.Bootstrap(xmap.M{
 		"bind": "0.0.0.0:0",
 	})
 	con, err = tcp.Dial(10, "http://localhost", nil)

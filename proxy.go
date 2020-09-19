@@ -1,46 +1,172 @@
 package bsck
 
 import (
-	"bufio"
 	"crypto/rand"
 	"crypto/tls"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
 	"net/url"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/codingeasygo/util/xio/frame"
 )
 
-//BufferConn is an implementation of buffer connecton
-type BufferConn struct {
-	*bufio.Reader                    //the buffer reader.
-	io.Writer                        //the writer.
-	Raw           io.ReadWriteCloser //the raw connection
+//AuthOption is a pojo struct to login auth.
+type AuthOption struct {
+	//the channel index
+	Index int `json:"index"`
+	//the chnnale name
+	Name string `json:"name"`
+	//the auth token
+	Token string `json:"token"`
 }
 
-//NewBufferConn will return new BufferConn
-func NewBufferConn(raw io.ReadWriteCloser, bufferSize int) (buf *BufferConn) {
-	buf = &BufferConn{
-		Reader: bufio.NewReaderSize(raw, bufferSize),
-		Writer: raw,
-		Raw:    raw,
+//ChannelOption is a pojo struct for adding channel to Router
+type ChannelOption struct {
+	//enable
+	Enable bool `json:"enable"`
+	//the auth token
+	Token string `json:"token"`
+	//local tcp address to connection master
+	Local string `json:"local"`
+	//the remote address to login
+	Remote string `json:"remote"`
+	//the channel index
+	Index int `json:"index"`
+}
+
+//DialRawF is a function type to dial raw connection.
+type DialRawF func(sid uint64, uri string) (raw Conn, err error)
+
+//DialRaw will dial raw connection
+func (d DialRawF) DialRaw(sid uint64, uri string) (raw Conn, err error) {
+	raw, err = d(sid, uri)
+	return
+}
+
+//RawDialer is dialer to dial raw by uri
+type RawDialer interface {
+	DialRaw(sid uint64, uri string) (raw Conn, err error)
+}
+
+//NormalAcessHandler is normal access handler for proxy handler
+type NormalAcessHandler struct {
+	Name        string            //the access name
+	LoginAccess map[string]string //the access control
+	loginLocker sync.RWMutex      //the access control
+	DialAccess  [][]string
+	Dialer      RawDialer
+}
+
+//NewNormalAcessHandler will return new handler
+func NewNormalAcessHandler(name string, dialer RawDialer) (handler *NormalAcessHandler) {
+	handler = &NormalAcessHandler{
+		Name:        name,
+		LoginAccess: map[string]string{},
+		loginLocker: sync.RWMutex{},
+		Dialer:      dialer,
 	}
 	return
 }
 
-//Close will close raw.
-func (b *BufferConn) Close() (err error) {
-	err = b.Raw.Close()
+//DialRaw is proxy handler to dail remove
+func (n *NormalAcessHandler) DialRaw(sid uint64, uri string) (raw Conn, err error) {
+	if n.Dialer == nil {
+		err = fmt.Errorf("not supported")
+		return
+	}
+	raw, err = n.Dialer.DialRaw(sid, uri)
 	return
 }
 
-func (b *BufferConn) String() string {
-	if conn, ok := b.Raw.(net.Conn); ok {
-		return conn.RemoteAddr().String()
+//OnConnLogin is proxy handler to handle login
+func (n *NormalAcessHandler) OnConnLogin(channel Conn, args string) (name string, index int, err error) {
+	var option = &AuthOption{}
+	err = json.Unmarshal([]byte(args), option)
+	if err != nil {
+		ErrorLog("Proxy(%v) unmarshal login option fail with %v", n.Name, err)
+		err = fmt.Errorf("parse login opiton fail with " + err.Error())
+		return
 	}
-	return fmt.Sprintf("%v", b.Raw)
+	if len(option.Name) < 1 || len(option.Token) < 1 {
+		ErrorLog("Proxy(%v) login option fail with name/token is required", n.Name)
+		err = fmt.Errorf("name/token is requried")
+		return
+	}
+	n.loginLocker.RLock()
+	var token string
+	for access, t := range n.LoginAccess {
+		reg, err := regexp.Compile(access)
+		if err != nil {
+			WarnLog("Proxy(%v) compile acl name regexp(%v) fail with %v", n.Name, n, err)
+			continue
+		}
+		if reg.MatchString(option.Name) {
+			token = t
+		}
+	}
+	n.loginLocker.RUnlock()
+	if len(token) < 1 || token != option.Token {
+		WarnLog("Proxy(%v) login fail with auth fail", n.Name)
+		err = fmt.Errorf("access denied ")
+		return
+	}
+	name = option.Name
+	index = option.Index
+	// InfoLog("Proxy(%v) channel %v login success on %v ", p.Name, name, channel)
+	channel.SetContext(option)
+	return
+}
+
+//OnConnDialURI is proxy handler to handle dial uri
+func (n *NormalAcessHandler) OnConnDialURI(channel Conn, conn string, parts []string) (err error) {
+	name := channel.Name()
+	for _, entry := range n.DialAccess {
+		if len(entry) != 2 {
+			WarnLog("Proxy(%v) compile dial access fail with entry must be [<source>,<target>], but %v", n.Name, entry)
+			continue
+		}
+		source, xerr := regexp.Compile(entry[0])
+		if xerr != nil {
+			WarnLog("Proxy(%v) compile dial access fail with %v by entry source %v", n.Name, xerr, entry[0])
+			continue
+		}
+		if !source.MatchString(name) {
+			continue
+		}
+		target, xerr := regexp.Compile(entry[1])
+		if xerr != nil {
+			WarnLog("Proxy(%v) compile dial access fail with %v by entry target %v", n.Name, xerr, entry[1])
+			continue
+		}
+		if target.MatchString(name) {
+			return nil
+		}
+	}
+	err = fmt.Errorf("not access")
+	return
+}
+
+//OnConnClose is proxy handler when connection is closed
+func (n *NormalAcessHandler) OnConnClose(conn Conn) (err error) {
+	return nil
+}
+
+//ProxyHandler is proxy handler
+type ProxyHandler interface {
+	//DialRaw will dial raw connection by uri
+	DialRaw(sid uint64, uri string) (raw Conn, err error)
+	//OnConnLogin is event on connection login
+	OnConnLogin(channel Conn, args string) (name string, index int, err error)
+	//OnConnDialURI is event on connection dial to remote
+	OnConnDialURI(channel Conn, conn string, parts []string) (err error)
+	//OnConnLogin is event on connection close
+	OnConnClose(conn Conn) (err error)
 }
 
 //ForwardEntry is the forward entry
@@ -56,16 +182,16 @@ type Proxy struct {
 	master         net.Listener
 	forwards       map[string]ForwardEntry
 	forwardsLck    sync.RWMutex
-	Handler        RouterHandler
+	Handler        ProxyHandler
 }
 
 //NewProxy will return new Proxy by name
-func NewProxy(name string) (proxy *Proxy) {
+func NewProxy(name string, handler Handler) (proxy *Proxy) {
 	proxy = &Proxy{
 		Router:         NewRouter(name),
 		forwards:       map[string]ForwardEntry{},
 		forwardsLck:    sync.RWMutex{},
-		Handler:        nil,
+		Handler:        handler,
 		Running:        true,
 		ReconnectDelay: 3 * time.Second,
 	}
@@ -155,7 +281,7 @@ func (p *Proxy) loopMaster(l net.Listener) {
 			break
 		}
 		DebugLog("Proxy(%v) master accepting connection from %v", p.Name, conn.RemoteAddr())
-		p.Router.Accept(NewBufferConn(conn, 4096))
+		p.Router.Accept(NewInfoRWC(frame.NewReadWriteCloser(conn, p.BufferSize), conn.RemoteAddr().String()))
 	}
 	l.Close()
 	InfoLog("Proxy(%v) master aceept on %v is stopped", p.Name, l.Addr())
@@ -189,22 +315,26 @@ func (p *Proxy) loopForward(l net.Listener, name string, listen *url.URL, uri st
 
 //Close will close the tcp listen
 func (p *Proxy) Close() (err error) {
+	InfoLog("Proxy(%v) is closing", p.Name)
 	p.Running = false
 	if p.master != nil {
 		err = p.master.Close()
+		InfoLog("Proxy(%v) master is closed", p.Name)
 	}
 	p.forwardsLck.RLock()
-	for _, f := range p.forwards {
+	for key, f := range p.forwards {
 		f[0].(net.Listener).Close()
+		InfoLog("Proxy(%v) forwad %v is closed", p.Name, key)
 	}
 	p.forwardsLck.RUnlock()
 	p.Router.Close()
+	InfoLog("Proxy(%v) router is closed", p.Name)
 	return
 }
 
-func (p *Proxy) runReconnect(option *ChannelOption) {
+func (p *Proxy) runReconnect(args *ChannelOption) {
 	for p.Running {
-		err := p.Login(option)
+		_, err := p.Login(args)
 		if err == nil {
 			break
 		}
@@ -212,19 +342,59 @@ func (p *Proxy) runReconnect(option *ChannelOption) {
 	}
 }
 
-//OnConnClose will be called when connection is closed
-func (p *Proxy) OnConnClose(conn Conn) error {
-	if channel, ok := conn.(*Channel); ok && p.Running && channel.Option != nil && channel.Option.Remote != "" {
-		InfoLog("Proxy(%v) the chnnale(%v) is closed, will reconect it", p.Name, channel)
-		go p.runReconnect(channel.Option)
-	}
-	return nil
-}
-
 //DialRaw will dial raw connection
 func (p *Proxy) DialRaw(sid uint64, uri string) (raw Conn, err error) {
+	if p.Handler == nil {
+		err = fmt.Errorf("not supported")
+		return
+	}
 	raw, err = p.Handler.DialRaw(sid, uri)
 	return
+}
+
+//OnConnDialURI is on connection dial uri
+func (p *Proxy) OnConnDialURI(channel Conn, conn string, parts []string) (err error) {
+	if p.Handler == nil {
+		err = fmt.Errorf("not supported")
+		return
+	}
+	err = p.Handler.OnConnDialURI(channel, conn, parts)
+	return
+}
+
+//OnConnLogin is on connection login
+func (p *Proxy) OnConnLogin(channel Conn, args string) (name string, index int, err error) {
+	if p.Handler == nil {
+		err = fmt.Errorf("not supported")
+		return
+	}
+	name, index, err = p.Handler.OnConnLogin(channel, args)
+	return
+}
+
+//OnConnClose will be called when connection is closed
+func (p *Proxy) OnConnClose(conn Conn) (err error) {
+	if !p.Running {
+		return
+	}
+	channel, ok := conn.(*Channel)
+	if !p.Running || !ok {
+		return
+	}
+	option, ok := channel.Context().(*ChannelOption)
+	if !p.Running || !ok {
+		return
+	}
+	if p.Handler != nil {
+		err = p.Handler.OnConnClose(conn)
+	}
+	if err == nil {
+		go p.runReconnect(option)
+		InfoLog("Proxy(%v) the chnnale(%v) is closed, will reconect it", p.Name, channel)
+	} else {
+		InfoLog("Proxy(%v) the chnnale(%v) is closed by %v, remove it", p.Name, channel, err)
+	}
+	return nil
 }
 
 //LoginChannel will login all channel by options.
@@ -233,7 +403,7 @@ func (p *Proxy) LoginChannel(reconnect bool, channels ...*ChannelOption) (err er
 		if !channel.Enable {
 			continue
 		}
-		err = p.Login(channel)
+		_, err = p.Login(channel)
 		if err == nil {
 			continue
 		}
@@ -247,7 +417,7 @@ func (p *Proxy) LoginChannel(reconnect bool, channels ...*ChannelOption) (err er
 }
 
 //Login will add channel by local address, master address, auth token, channel index.
-func (p *Proxy) Login(option *ChannelOption) (err error) {
+func (p *Proxy) Login(option *ChannelOption) (channel *Channel, err error) {
 	var dialer net.Dialer
 	if len(option.Local) > 0 {
 		dialer.LocalAddr, err = net.ResolveTCPAddr("tcp", option.Local)
@@ -257,7 +427,7 @@ func (p *Proxy) Login(option *ChannelOption) (err error) {
 	}
 	var conn net.Conn
 	if len(p.Cert) > 0 {
-		InfoLog("Router(%v) start dial to %v by x509 cert:%v,key:%v", p.Name, option.Remote, p.Cert, p.Key)
+		InfoLog("Proxy(%v) start dial to %v by x509 cert:%v,key:%v", p.Name, option.Remote, p.Cert, p.Key)
 		var cert tls.Certificate
 		cert, err = tls.LoadX509KeyPair(p.Cert, p.Key)
 		if err != nil {
@@ -275,18 +445,26 @@ func (p *Proxy) Login(option *ChannelOption) (err error) {
 		WarnLog("Proxy(%v) dial to %v fail with %v", p.Name, option.Remote, err)
 		return
 	}
-	err = p.JoinConn(NewInfoRWC(conn, conn.RemoteAddr().String()), option)
+	auth := &AuthOption{
+		Index: option.Index,
+		Name:  p.Name,
+		Token: option.Token,
+	}
+	channel, err = p.JoinConn(NewInfoRWC(frame.NewReadWriteCloser(conn, p.BufferSize), conn.RemoteAddr().String()), option.Index, auth)
+	if err == nil {
+		channel.SetContext(option)
+	}
 	return
 }
 
 //InfoRWC is external ReadWriteCloser to get info to String
 type InfoRWC struct {
-	io.ReadWriteCloser
+	frame.ReadWriteCloser
 	Info string
 }
 
 //NewInfoRWC will return new nfoRWC
-func NewInfoRWC(raw io.ReadWriteCloser, info string) *InfoRWC {
+func NewInfoRWC(raw frame.ReadWriteCloser, info string) *InfoRWC {
 	return &InfoRWC{ReadWriteCloser: raw, Info: info}
 }
 

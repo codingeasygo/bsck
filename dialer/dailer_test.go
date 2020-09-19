@@ -5,20 +5,17 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/Centny/gwf/util"
+	"github.com/codingeasygo/util/xmap"
 )
 
 func TestPool(t *testing.T) {
 	pool := NewPool()
-	err := pool.Bootstrap(util.Map{
-		"dialers": []util.Map{
+	err := pool.Bootstrap(xmap.M{
+		"dialers": []xmap.M{
 			{
 				"id":      "t0",
 				"type":    "balance",
 				"matcher": "^proxy://.*$",
-			},
-			{
-				"type": "cmd",
 			},
 			{
 				"type": "echo",
@@ -54,14 +51,14 @@ func TestPool(t *testing.T) {
 		return
 	}
 	pool.AddDialer(NewTCPDialer())
-	pool.Bootstrap(util.Map{
+	pool.Bootstrap(xmap.M{
 		"standard": 1,
 	})
 	//
 	//test error
 	//dialer type error
-	err = pool.Bootstrap(util.Map{
-		"dialers": []util.Map{
+	err = pool.Bootstrap(xmap.M{
+		"dialers": []xmap.M{
 			{
 				"type": "xx",
 			},
@@ -72,8 +69,8 @@ func TestPool(t *testing.T) {
 		return
 	}
 	//dialer bootstrap error
-	err = pool.Bootstrap(util.Map{
-		"dialers": []util.Map{
+	err = pool.Bootstrap(xmap.M{
+		"dialers": []xmap.M{
 			{
 				"type": "balance",
 			},

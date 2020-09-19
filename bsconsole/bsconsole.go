@@ -12,17 +12,14 @@ import (
 	"net"
 	"net/url"
 	"os"
-	"os/signal"
 	"os/user"
 	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
-	"github.com/Centny/gwf/util"
-	"github.com/sutils/readkey"
+	"github.com/codingeasygo/util/xmap"
 	"golang.org/x/net/websocket"
 )
 
@@ -51,19 +48,14 @@ var proxy bool
 var ping bool
 var state string
 var help bool
-var bash string
 
-func appendSize(uri string) string {
-	if proxy {
-		return uri
-	}
-	cols, rows := readkey.GetSize()
-	if strings.Contains(uri, "?") {
-		uri += fmt.Sprintf("&cols=%v&rows=%v", cols, rows)
-	} else {
-		uri += fmt.Sprintf("?cols=%v&rows=%v", cols, rows)
-	}
-	return uri
+func usage() {
+	fmt.Fprintf(os.Stderr, "Bond Socket Console Version %v\n", Version)
+	fmt.Fprintf(os.Stderr, "Usage:  %v [option] <forward uri>\n", "bsconsole")
+	fmt.Fprintf(os.Stderr, "        %v 'x->y->tcp://127.0.0.1:80'\n", "bsconsole")
+	fmt.Fprintf(os.Stderr, "bsrouter options:\n")
+	fmt.Fprintf(os.Stderr, "        srv\n")
+	fmt.Fprintf(os.Stderr, "             the remote bsrouter listen address, eg: ws://127.0.0.1:1082, tcp://127.0.0.1:2023\n")
 }
 
 func main() {
@@ -75,7 +67,6 @@ func main() {
 	flag.BoolVar(&help, "help", false, "show help")
 	flag.BoolVar(&help, "h", false, "show help")
 	flag.StringVar(&state, "state", "", "state mode")
-	flag.StringVar(&bash, "bash", "", "bash mode")
 	flag.BoolVar(&showVersion, "version", false, "show version")
 	flag.BoolVar(&showVersion, "v", false, "show version")
 	flag.Parse()
@@ -90,18 +81,9 @@ func main() {
 		ping = true
 	case "bs-state":
 		state = "router"
-	case "bs-bash":
-		bash = "bash"
-	case "bs-sh":
-		bash = "sh"
 	}
 	if help {
-		fmt.Fprintf(os.Stderr, "Bond Socket Console Version %v\n", Version)
-		fmt.Fprintf(os.Stderr, "Usage:  %v [option] <forward uri>\n", "bsconsole")
-		fmt.Fprintf(os.Stderr, "        %v 'x->y->tcp://127.0.0.1:80'\n", "bsconsole")
-		fmt.Fprintf(os.Stderr, "bsrouter options:\n")
-		fmt.Fprintf(os.Stderr, "        srv\n")
-		fmt.Fprintf(os.Stderr, "             the remote bsrouter listen address, eg: ws://127.0.0.1:1082, tcp://127.0.0.1:2023\n")
+		usage()
 		os.Exit(1)
 		return
 	}
@@ -153,9 +135,6 @@ func main() {
 				fullURI += "state://" + state
 			}
 		}
-		if len(bash) > 0 {
-			fullURI += "->tcp://cmd?exec=" + bash
-		}
 		remote = fullURI
 	}
 	//
@@ -172,23 +151,8 @@ func main() {
 		fallthrough
 	case "wss":
 		targetURI := server
-		if len(fullURI) > 0 {
-			if !strings.Contains(fullURI, "->") && !strings.Contains(fullURI, "://") {
-				//for alias forward
-				targetURI += "/" + fullURI
-				targetURI = appendSize(targetURI)
-			} else {
-				//for full forward
-				fullURI = appendSize(fullURI)
-				targetURI += "/?router=" + url.QueryEscape(fullURI)
-			}
-		} else {
-			//for command full uri.
-			targetURI = appendSize(targetURI)
-		}
 		conn, err = websocket.Dial(targetURI, "", rurl.Scheme+"://"+rurl.Host)
 	case "socks5":
-		fullURI = appendSize(fullURI)
 		conn, err = net.Dial("tcp", rurl.Host)
 		if err == nil {
 			buf := make([]byte, 1024*64)
@@ -223,14 +187,13 @@ func main() {
 	}
 	if ping {
 		runPing(conn, remote, dialBeg)
-	} else if win32 {
-		runWinConsole(conn)
 	} else if proxy {
 		runProxy(conn)
 	} else if len(state) > 0 {
 		runState(conn)
 	} else {
-		runUnixConsole(conn)
+		usage()
+		os.Exit(1)
 	}
 }
 
@@ -243,7 +206,7 @@ func runPing(conn io.ReadWriteCloser, remote string, dialBeg time.Time) {
 	for {
 		pingBeg := time.Now()
 		c++
-		binary.BigEndian.PutUint64(buf, c)
+		fmt.Fprintf(bytes.NewBuffer(buf), "%v", c)
 		buf[64] = '\n'
 		_, err = conn.Write(buf)
 		if err != nil {
@@ -265,92 +228,6 @@ func runPing(conn io.ReadWriteCloser, remote string, dialBeg time.Time) {
 	// fmt.Printf("Ping to %v %v\n   Avg:\t\t%v\n   Count:\t\t%v\n   Used:\t%v\n\n", remote, status, pingUsed/time.Duration(i), i, totalUsed)
 }
 
-func runWinConsole(conn io.ReadWriteCloser) {
-	last := 0
-	lastLck := sync.RWMutex{}
-	stopc := 0
-	go func() {
-		buf := make([]byte, 1024)
-		for {
-			readed, err := os.Stdin.Read(buf)
-			if err != nil {
-				break
-			}
-			stopc = 0
-			lastLck.Lock()
-			fmt.Fprintf(os.Stdout, "\033[%dA", 1)
-			fmt.Fprintf(os.Stdout, "\033[%dC", last)
-			_, err = conn.Write(buf[:readed])
-			lastLck.Unlock()
-			if err != nil {
-				break
-			}
-		}
-	}()
-	go func() {
-		buf := make([]byte, 1024)
-		for {
-			readed, err := conn.Read(buf)
-			if err != nil {
-				break
-			}
-			lastLck.Lock()
-			parts := bytes.Split(buf[:readed], []byte("\n"))
-			last = len(parts[len(parts)-1])
-			_, err = os.Stdout.Write(buf[:readed])
-			lastLck.Unlock()
-			if err != nil {
-				break
-			}
-		}
-	}()
-	wc := make(chan os.Signal)
-	signal.Notify(wc, os.Interrupt, os.Kill)
-	for {
-		<-wc
-		stopc++
-		if stopc >= 5 {
-			break
-		}
-	}
-	conn.Close()
-	return
-}
-
-func runUnixConsole(conn io.ReadWriteCloser) {
-	readkey.Open()
-	defer func() {
-		conn.Close()
-		readkey.Close()
-		os.Exit(1)
-	}()
-	go func() {
-		io.Copy(os.Stdout, conn)
-		fmt.Printf("connection is closed\n")
-		readkey.Close()
-		os.Exit(1)
-	}()
-	stopc := 0
-	for {
-		key, err := readkey.Read()
-		if err != nil {
-			break
-		}
-		if bytes.Equal(key, CharTerm) {
-			stopc++
-			if stopc > 5 {
-				break
-			}
-		} else {
-			stopc = 0
-		}
-		_, err = conn.Write(key)
-		if err != nil {
-			break
-		}
-	}
-}
-
 func runProxy(conn io.ReadWriteCloser) {
 	go io.Copy(os.Stdout, conn)
 	io.Copy(conn, os.Stdin)
@@ -364,7 +241,7 @@ func runState(conn io.ReadWriteCloser) {
 		return
 	}
 	data, _ := ioutil.ReadAll(conn)
-	vals := util.Map{}
+	vals := xmap.M{}
 	err := json.Unmarshal(data, &vals)
 	if err != nil {
 		fmt.Println(err)
@@ -373,20 +250,20 @@ func runState(conn io.ReadWriteCloser) {
 	switch state {
 	case "router":
 		fmt.Printf("[Channels]\n")
-		channels := vals.MapVal("channels")
+		channels := vals.Map("channels")
 		for name := range channels {
 			fmt.Printf(" ->%v\n", name)
-			bond := channels.MapVal(name)
+			bond := channels.Map(name)
 			for idx := range bond {
-				val := bond.MapVal(idx)
+				val := bond.Map(idx)
 				idxVal, _ := strconv.ParseInt(strings.Replace(idx, "_", "", -1), 10, 64)
-				heartbeat := val.IntValV("heartbeat", 0)
+				heartbeat := val.Int64Def(0, "heartbeat")
 				hs := time.Unix(0, heartbeat*1e6).Format("2006-01-02 15:04:05")
 				fmt.Printf("   %d % 4d   %v   %v\n", idxVal, int(val["used"].(float64)), hs, val["connect"])
 			}
 		}
 		fmt.Printf("\n\n[Table]\n")
-		table := vals.AryStrVal("table")
+		table := vals.ArrayStrDef(nil, "table")
 		for _, t := range table {
 			fmt.Printf(" %v\n", t)
 		}

@@ -7,13 +7,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Centny/gwf/util"
+	"github.com/codingeasygo/util/xmap"
+	"github.com/codingeasygo/util/xtime"
 )
 
 type OnceDialer struct {
 	ID     string
 	dialed int
-	conf   util.Map
+	conf   xmap.M
 }
 
 func (o *OnceDialer) Name() string {
@@ -21,8 +22,8 @@ func (o *OnceDialer) Name() string {
 }
 
 //initial dialer
-func (o *OnceDialer) Bootstrap(options util.Map) error {
-	o.ID = options.StrVal("id")
+func (o *OnceDialer) Bootstrap(options xmap.M) error {
+	o.ID = options.Str("id")
 	if len(o.ID) < 1 {
 		return fmt.Errorf("id is required")
 	}
@@ -31,7 +32,7 @@ func (o *OnceDialer) Bootstrap(options util.Map) error {
 }
 
 //
-func (o *OnceDialer) Options() util.Map {
+func (o *OnceDialer) Options() xmap.M {
 	return o.conf
 }
 
@@ -75,12 +76,12 @@ func TestBalancedDialerDefaul(t *testing.T) {
 		return &OnceDialer{}
 	}
 	dialer := NewBalancedDialer()
-	err := dialer.Bootstrap(util.Map{
+	err := dialer.Bootstrap(xmap.M{
 		"id":      "t1",
 		"matcher": ".*",
 		"timeout": 500,
 		"delay":   100,
-		"dialers": []util.Map{
+		"dialers": []xmap.M{
 			{
 				"id":          "i0",
 				"type":        "once",
@@ -131,15 +132,15 @@ func TestBalancedDialerDefaul(t *testing.T) {
 	//test error
 
 	//id not found
-	err = dialer.Bootstrap(util.Map{})
+	err = dialer.Bootstrap(xmap.M{})
 	if err == nil {
 		t.Error(err)
 		return
 	}
 	//policy error
-	err = dialer.Bootstrap(util.Map{
+	err = dialer.Bootstrap(xmap.M{
 		"id": "t0",
-		"policy": []util.Map{
+		"policy": []xmap.M{
 			{
 				"matcher": "[",
 				"limit":   []int64{},
@@ -151,9 +152,9 @@ func TestBalancedDialerDefaul(t *testing.T) {
 		return
 	}
 	//dialer type error
-	err = dialer.Bootstrap(util.Map{
+	err = dialer.Bootstrap(xmap.M{
 		"id": "t0",
-		"dialers": []util.Map{
+		"dialers": []xmap.M{
 			{
 				"type": "xx",
 			},
@@ -164,9 +165,9 @@ func TestBalancedDialerDefaul(t *testing.T) {
 		return
 	}
 	//dialer bootstrap error
-	err = dialer.Bootstrap(util.Map{
+	err = dialer.Bootstrap(xmap.M{
 		"id": "t0",
-		"dialers": []util.Map{
+		"dialers": []xmap.M{
 			{
 				"type": "balance",
 			},
@@ -199,7 +200,7 @@ func TestBalancedDialerDefaul(t *testing.T) {
 type TimeDialer struct {
 	ID     string
 	dialed int
-	conf   util.Map
+	conf   xmap.M
 	last   int64
 }
 
@@ -208,8 +209,8 @@ func (t *TimeDialer) Name() string {
 }
 
 //initial dialer
-func (t *TimeDialer) Bootstrap(options util.Map) error {
-	t.ID = options.StrVal("id")
+func (t *TimeDialer) Bootstrap(options xmap.M) error {
+	t.ID = options.Str("id")
 	if len(t.ID) < 1 {
 		return fmt.Errorf("id is required")
 	}
@@ -218,7 +219,7 @@ func (t *TimeDialer) Bootstrap(options util.Map) error {
 }
 
 //
-func (t *TimeDialer) Options() util.Map {
+func (t *TimeDialer) Options() xmap.M {
 	return t.conf
 }
 
@@ -229,11 +230,11 @@ func (t *TimeDialer) Matched(uri string) bool {
 
 //dial raw connection
 func (t *TimeDialer) Dial(sid uint64, uri string, pipe io.ReadWriteCloser) (r Conn, err error) {
-	if util.Now()-t.last < 100 {
+	if xtime.Now()-t.last < 100 {
 		panic("too fast")
 	}
 	r = t
-	t.last = util.Now()
+	t.last = xtime.Now()
 	time.Sleep(10 * time.Millisecond)
 	return
 }
@@ -266,12 +267,12 @@ func TestBalancedDialerPolicy(t *testing.T) {
 		NewDialer = DefaultDialerCreator
 	}()
 	dialer := NewBalancedDialer()
-	err := dialer.Bootstrap(util.Map{
+	err := dialer.Bootstrap(xmap.M{
 		"id":      "t1",
 		"matcher": ".*",
 		"timeout": 10000,
 		"delay":   1,
-		"dialers": []util.Map{
+		"dialers": []xmap.M{
 			{
 				"id":          "i0",
 				"type":        "time",
@@ -288,7 +289,7 @@ func TestBalancedDialerPolicy(t *testing.T) {
 				"fail_remove": 4,
 			},
 		},
-		"policy": []util.Map{
+		"policy": []xmap.M{
 			{
 				"matcher": ".*",
 				"limit":   []int{110, 1},
@@ -334,12 +335,12 @@ func TestBalancedDialerLimit(t *testing.T) {
 		NewDialer = DefaultDialerCreator
 	}()
 	dialer := NewBalancedDialer()
-	err := dialer.Bootstrap(util.Map{
+	err := dialer.Bootstrap(xmap.M{
 		"id":      "t1",
 		"matcher": ".*",
 		"timeout": 10000,
 		"delay":   1,
-		"dialers": []util.Map{
+		"dialers": []xmap.M{
 			{
 				"id":          "i0",
 				"type":        "time",
@@ -399,12 +400,12 @@ func TestBalancedDialerFilter(t *testing.T) {
 		NewDialer = DefaultDialerCreator
 	}()
 	dialer := NewBalancedDialer()
-	err := dialer.Bootstrap(util.Map{
+	err := dialer.Bootstrap(xmap.M{
 		"id":      "t1",
 		"matcher": ".*",
 		"timeout": 10000,
 		"delay":   1,
-		"filter": []util.Map{
+		"filter": []xmap.M{
 			{
 				"matcher": "time-[0-2]",
 				"access":  0,
@@ -414,7 +415,7 @@ func TestBalancedDialerFilter(t *testing.T) {
 				"access":  1,
 			},
 		},
-		"dialers": []util.Map{
+		"dialers": []xmap.M{
 			{
 				"id":    "i0",
 				"type":  "time",
@@ -440,18 +441,18 @@ func TestBalancedDialerFilter(t *testing.T) {
 	//
 	//test bootstrap error
 	dialer = NewBalancedDialer()
-	err = dialer.Bootstrap(util.Map{
+	err = dialer.Bootstrap(xmap.M{
 		"id":      "t1",
 		"matcher": ".*",
 		"timeout": 10000,
 		"delay":   1,
-		"filter": []util.Map{
+		"filter": []xmap.M{
 			{
 				"matcher": "tim[e-[0-2]",
 				"access":  0,
 			},
 		},
-		"dialers": []util.Map{
+		"dialers": []xmap.M{
 			{
 				"id":    "i0",
 				"type":  "time",

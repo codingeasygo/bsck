@@ -9,8 +9,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Centny/gwf/util"
-	"github.com/sutils/bsck/dialer"
+	"github.com/codingeasygo/bsck/dialer"
+	"github.com/codingeasygo/util/converter"
+	"github.com/codingeasygo/util/xio"
+	"github.com/codingeasygo/util/xio/frame"
 )
 
 func init() {
@@ -48,7 +50,7 @@ func (e *Echo) Write(p []byte) (n int, err error) {
 }
 
 func (e *Echo) Read(b []byte) (n int, err error) {
-	fmt.Println("Echo.Read-->started", e)
+	fmt.Println("Echo.Read-->started", e.Data)
 	if e.Err != nil {
 		err = e.Err
 		return
@@ -57,7 +59,7 @@ func (e *Echo) Read(b []byte) (n int, err error) {
 	copy(b, []byte(e.Data))
 	n = len(e.Data)
 	e.Send++
-	fmt.Println("Echo.Read-->done", e)
+	fmt.Println("Echo.Read-->done", e.Data)
 	return
 }
 
@@ -71,60 +73,64 @@ func (e *Echo) Close() error {
 	return nil
 }
 
+func (e *Echo) String() string {
+	return fmt.Sprintf("Echo(%v)", e.Data)
+}
+
 func TestProxy(t *testing.T) {
-	master := NewProxy("master")
-	master.Router.ACL["ms"] = "abc"
-	master.Router.ACL["slaver"] = "abc"
-	master.Router.ACL["slaver2"] = "abc"
-	master.Router.ACL["slaver3"] = "abc"
-	master.Router.ACL["err[slaver3"] = "abc"
-	master.Heartbeat = 10 * time.Millisecond
-	master.StartHeartbeat()
 	var masterEcho *Echo
-	master.Handler = DialRawF(func(sid uint64, uri string) (conn Conn, err error) {
+	handler := NewNormalAcessHandler("master", DialRawF(func(sid uint64, uri string) (conn Conn, err error) {
 		fmt.Println("master test dail to ", uri)
-		if uri == "error" {
-			err = fmt.Errorf("error")
-		} else {
-			conn = NewRawConn(masterEcho, sid, uri)
-		}
-		// err = fmt.Errorf("error")
+		conn = NewRawConn(masterEcho, 1024, sid, uri)
 		return
-	})
+	}))
+	handler.LoginAccess["slaver1"] = "abc"
+	handler.LoginAccess["slaver2"] = "abc"
+	handler.LoginAccess["slaver3"] = "abc"
+	handler.LoginAccess["ms"] = "abc"
+	handler.DialAccess = [][]string{{".*", ".*"}}
+	master := NewProxy("master", handler)
+	master.Heartbeat = 1000 * time.Millisecond
+	master.StartHeartbeat()
 	err := master.ListenMaster(":9232")
 	if err != nil {
 		t.Error(err)
 		return
 	}
-	defer func() {
-		master.Close()
-		time.Sleep(time.Second)
-	}()
-	//
-	slaver := NewProxy("slaver")
-	slaver.Heartbeat = 10 * time.Millisecond
-	slaver.StartHeartbeat()
-	var slaverEcho *Echo
-	slaver.Handler = DialRawF(func(sid uint64, uri string) (conn Conn, err error) {
+	defer master.Close()
+	var slaver1Echo *Echo
+	slaver1Handler := NewNormalAcessHandler("master", DialRawF(func(sid uint64, uri string) (conn Conn, err error) {
 		fmt.Println("slaver test dail to ", uri)
-		conn = NewRawConn(slaverEcho, sid, uri)
-		// err = fmt.Errorf("error")
+		conn = NewRawConn(slaver1Echo, 1024, sid, uri)
 		return
-	})
-	slaver.Login(&ChannelOption{
+	}))
+	slaver1Handler.DialAccess = [][]string{{".*", ".*"}}
+	slaver1 := NewProxy("slaver1", slaver1Handler)
+	// slaver1.Heartbeat = 50 * time.Millisecond
+	// slaver1.StartHeartbeat()
+	_, err = slaver1.Login(&ChannelOption{
 		Remote: "localhost:9232",
 		Token:  "abc",
 		Index:  0,
 	})
-	//
-	slaver2 := NewProxy("slaver2")
-	slaver2.Login(&ChannelOption{
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	defer slaver1.Close()
+	slaver2 := NewProxy("slaver2", nil)
+	_, err = slaver2.Login(&ChannelOption{
 		Remote: "localhost:9232",
 		Token:  "abc",
 		Index:  0,
 	})
-
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	defer slaver2.Close()
 	{ //test slaver2->master->server
+		begin := time.Now()
 		fmt.Printf("\n\n\ntest slaver2->master->server\n")
 		masterEcho = NewEcho("master")
 		slaver2Echo := NewEcho("client")
@@ -146,39 +152,48 @@ func TestProxy(t *testing.T) {
 		//close
 		slaver2Echo.Close()
 		<-masterEcho.R
+		fmt.Printf("test slaver2->master->server use %v\n", time.Now().Sub(begin))
 	}
 	{ //test slaver2->master->slaver->server
-		fmt.Printf("\n\n\ntest slaver2->master->slaver->server\n")
-		slaverEcho = NewEcho("slaver")
+		begin := time.Now()
+		fmt.Printf("\n\n\ntest slaver2->master->slaver1->server\n")
+		slaver1Echo = NewEcho("slaver1")
 		slaver2Echo := NewEcho("client")
-		_, err = slaver2.Dial("master->slaver->xx", slaver2Echo)
+		_, err = slaver2.Dial("master->slaver1->xx", slaver2Echo)
 		if err != nil {
 			t.Error(err)
 			return
 		}
 		//client->server
 		slaver2Echo.W <- 1
-		<-slaverEcho.R
+		<-slaver1Echo.R
 		slaver2Echo.W <- 1
-		<-slaverEcho.R
+		<-slaver1Echo.R
 		// server->client
-		slaverEcho.W <- 1
+		slaver1Echo.W <- 1
 		<-slaver2Echo.R
-		slaverEcho.W <- 1
+		slaver1Echo.W <- 1
 		<-slaver2Echo.R
 		//close
 		slaver2Echo.Close()
-		<-slaverEcho.R
+		<-slaver1Echo.R
+		fmt.Printf("test slaver2->master->slaver1->server use %v\n", time.Now().Sub(begin))
 	}
 	{ //multi channel
+		begin := time.Now()
 		fmt.Printf("\n\n\ntest multi channel\n")
 		var msEcho *Echo
-		ms0 := NewProxy("ms")
-		ms0.Handler = DialRawF(func(sid uint64, uri string) (conn Conn, err error) {
+		ms0Handler := NewNormalAcessHandler("ms", DialRawF(func(sid uint64, uri string) (conn Conn, err error) {
+			if uri == "error" {
+				err = fmt.Errorf("test error")
+				return
+			}
 			fmt.Println("ms test dail to ", uri)
-			conn = NewRawConn(msEcho, sid, uri)
+			conn = NewRawConn(msEcho, 1024, sid, uri)
 			return
-		})
+		}))
+		ms0Handler.DialAccess = [][]string{{".*", ".*"}}
+		ms0 := NewProxy("ms", ms0Handler)
 		err = ms0.LoginChannel(false, &ChannelOption{
 			Enable: true,
 			Token:  "abc",
@@ -218,16 +233,20 @@ func TestProxy(t *testing.T) {
 			slaver2Echo.Close()
 			<-msEcho.R
 		}
+		ms0.Close()
+		fmt.Printf("test multi channel use %v\n", time.Now().Sub(begin))
 	}
 	{ //channel close
+		begin := time.Now()
 		fmt.Printf("\n\n\ntest channel close\n")
 		slaver3Echo := NewEcho("slaver3")
-		slaver3 := NewProxy("slaver3")
-		slaver3.Handler = DialRawF(func(sid uint64, uri string) (conn Conn, err error) {
+		slaver3Handler := NewNormalAcessHandler("slaver3", DialRawF(func(sid uint64, uri string) (conn Conn, err error) {
 			fmt.Println("slaver3 test dail to ", uri)
-			conn = NewRawConn(slaver3Echo, sid, uri)
+			conn = NewRawConn(slaver3Echo, 1024, sid, uri)
 			return
-		})
+		}))
+		slaver3Handler.DialAccess = [][]string{{".*", ".*"}}
+		slaver3 := NewProxy("slaver3", slaver3Handler)
 		slaver3.Login(&ChannelOption{
 			Enable: true,
 			Remote: "localhost:9232",
@@ -255,8 +274,11 @@ func TestProxy(t *testing.T) {
 		c.Close()
 		<-slaver3Echo.R
 		<-slaver2Echo.R
+		slaver3.Close()
+		fmt.Printf("test channel close use %v\n", time.Now().Sub(begin))
 	}
 	{ //dial remote fail
+		begin := time.Now()
 		fmt.Printf("\n\n\ntest dial remote fail\n")
 		slaver2Echo := NewEcho("client")
 		_, err = slaver2.Dial("master->error", slaver2Echo)
@@ -269,11 +291,14 @@ func TestProxy(t *testing.T) {
 			t.Error("error")
 			return
 		}
+		fmt.Printf("test dial remote fail use %v\n", time.Now().Sub(begin))
 	}
 	{ //login channel fail
+		time.Sleep(3 * time.Second)
+		begin := time.Now()
 		fmt.Printf("\n\n\ntest login channel fail\n")
-		slaver4 := NewProxy("slaver4")
-		err := slaver4.LoginChannel(true, &ChannelOption{
+		slaver4 := NewProxy("slaver4", nil)
+		err := slaver4.LoginChannel(false, &ChannelOption{
 			Enable: false,
 			Token:  "abc",
 			Local:  "0.0.0.0:0",
@@ -283,7 +308,7 @@ func TestProxy(t *testing.T) {
 			Enable: true,
 			Token:  "abc",
 			Local:  "0.0.0.0:0",
-			Remote: "localhost:92",
+			Remote: "localhost:0",
 			Index:  0,
 		})
 		if err == nil {
@@ -292,23 +317,26 @@ func TestProxy(t *testing.T) {
 		}
 		time.Sleep(time.Millisecond)
 		slaver4.Close()
+		fmt.Printf("test login channel fail use %v\n", time.Now().Sub(begin))
 	}
+	fmt.Printf("\n\n\nall test done\n")
 }
 
 func TestProxyError(t *testing.T) {
-	master := NewProxy("master")
-	master.Router.ACL["ms"] = "abc"
 	var masterEcho *Echo
-	master.Router.Handler = DialRawF(func(sid uint64, uri string) (conn Conn, err error) {
+	handler := NewNormalAcessHandler("master", DialRawF(func(sid uint64, uri string) (conn Conn, err error) {
 		fmt.Println("master test dail to ", uri)
 		if uri == "error" {
 			err = fmt.Errorf("error")
 		} else {
-			conn = NewRawConn(masterEcho, sid, uri)
+			conn = NewRawConn(masterEcho, 1024, sid, uri)
 		}
 		// err = fmt.Errorf("error")
 		return
-	})
+	}))
+	handler.LoginAccess["ms"] = "abc"
+	handler.DialAccess = [][]string{{".*", ".*"}}
+	master := NewProxy("master", handler)
 	err := master.ListenMaster(":9232")
 	if err != nil {
 		t.Error(err)
@@ -331,8 +359,8 @@ func TestProxyError(t *testing.T) {
 	//
 	{ //test login error
 		fmt.Printf("\n\n\ntest login error\n")
-		slaverErr := NewProxy("error")
-		err = slaverErr.Login(&ChannelOption{
+		slaverErr := NewProxy("error", nil)
+		_, err = slaverErr.Login(&ChannelOption{
 			Enable: true,
 			Remote: "localhost:9232",
 			Token:  "abc",
@@ -342,8 +370,8 @@ func TestProxyError(t *testing.T) {
 			t.Error("error")
 			return
 		}
-		slaverErr = NewProxy("error")
-		err = slaverErr.Login(&ChannelOption{
+		slaverErr = NewProxy("error", nil)
+		_, err = slaverErr.Login(&ChannelOption{
 			Enable: true,
 			Remote: "localhost:9232",
 			Token:  "",
@@ -359,21 +387,21 @@ func TestProxyError(t *testing.T) {
 		//configer error
 		masterEcho = NewEcho("master")
 		testc := &Channel{
-			ReadWriteCloser: NewEcho("testing"),
+			ReadWriteCloser: frame.NewReadWriteCloser(NewEcho("testing"), 1024),
 			name:            "xx",
 		}
 		testc.Close()
 		master.Router.addChannel(testc)
 		//
 		//test proc login fail
-		err = master.Router.procLogin(NewRawConn(NewEcho("data"), 0, "ur"), make([]byte, 1024), 1024)
+		err = master.Router.procLogin(NewRawConn(NewEcho("data"), 1024, 0, "ur"), make([]byte, 1024))
 		if err == nil {
 			t.Error("error")
 			return
 		}
 		//
 		echo := NewEcho("data")
-		err = master.Router.procLogin(&Channel{ReadWriteCloser: echo}, make([]byte, 1024), 1024)
+		err = master.Router.procLogin(&Channel{ReadWriteCloser: frame.NewReadWriteCloser(echo, 1024)}, make([]byte, 1024))
 		if err != nil || echo.Recv != 1 {
 			t.Error(err)
 			return
@@ -386,7 +414,7 @@ func TestProxyError(t *testing.T) {
 		data = []byte("url")
 		copy(buf[13:], data)
 		echo = NewEcho("data")
-		err = master.Router.procDial(&Channel{ReadWriteCloser: echo}, buf, 16)
+		err = master.Router.procDial(&Channel{ReadWriteCloser: frame.NewReadWriteCloser(echo, 16)}, buf)
 		if err != nil || echo.Recv != 1 {
 			t.Error(err)
 			return
@@ -395,7 +423,7 @@ func TestProxyError(t *testing.T) {
 		data = []byte("x@error")
 		copy(buf[13:], data)
 		echo = NewEcho("data")
-		err = master.Router.procDial(&Channel{ReadWriteCloser: echo}, buf, uint32(len(data)+13))
+		err = master.Router.procDial(&Channel{ReadWriteCloser: frame.NewReadWriteCloser(echo, len(data)+13)}, buf)
 		time.Sleep(time.Second) //wait for go
 		if err != nil || echo.Recv != 1 {
 			t.Error(err)
@@ -405,7 +433,7 @@ func TestProxyError(t *testing.T) {
 		data = []byte("x@not->error")
 		copy(buf[13:], data)
 		echo = NewEcho("data")
-		err = master.Router.procDial(&Channel{ReadWriteCloser: echo}, buf, uint32(len(data)+13))
+		err = master.Router.procDial(&Channel{ReadWriteCloser: frame.NewReadWriteCloser(echo, len(data)+13)}, buf)
 		if err != nil || echo.Recv != 1 {
 			t.Error(err)
 			return
@@ -414,7 +442,7 @@ func TestProxyError(t *testing.T) {
 		data = []byte("x@xx->error")
 		copy(buf[13:], data)
 		echo = NewEcho("data")
-		err = master.Router.procDial(&Channel{ReadWriteCloser: echo}, buf, uint32(len(data)+13))
+		err = master.Router.procDial(&Channel{ReadWriteCloser: frame.NewReadWriteCloser(echo, len(data)+13)}, buf)
 		if err != nil || echo.Recv != 1 {
 			t.Error(err)
 			return
@@ -438,7 +466,7 @@ func TestProxyError(t *testing.T) {
 		}
 		//
 		//test login error
-		slaver := NewProxy("slaver")
+		slaver := NewProxy("slaver", nil)
 		err = slaver.LoginChannel(false, &ChannelOption{
 			Enable: true,
 			Token:  "abc",
@@ -448,7 +476,7 @@ func TestProxyError(t *testing.T) {
 			t.Error(err)
 			return
 		}
-		err = slaver.Login(&ChannelOption{
+		_, err = slaver.Login(&ChannelOption{
 			Enable: true,
 			Local:  "xxx",
 			Remote: "localhost:9232",
@@ -459,7 +487,7 @@ func TestProxyError(t *testing.T) {
 			t.Error(err)
 			return
 		}
-		err = slaver.Login(&ChannelOption{
+		_, err = slaver.Login(&ChannelOption{
 			Enable: true,
 			Remote: "localhost:12",
 			Token:  "abc",
@@ -471,7 +499,7 @@ func TestProxyError(t *testing.T) {
 		}
 		merr := NewErrReadWriteCloser([]byte("abc"), 10)
 		merr.ErrType = 10
-		err = slaver.JoinConn(merr, &ChannelOption{
+		_, err = slaver.JoinConn(frame.NewReadWriteCloser(merr, 1024), 0, &ChannelOption{
 			Enable: true,
 			Remote: "",
 			Token:  "abc",
@@ -482,7 +510,7 @@ func TestProxyError(t *testing.T) {
 			return
 		}
 		merr.ErrType = 20
-		err = slaver.JoinConn(merr, &ChannelOption{
+		_, err = slaver.JoinConn(frame.NewReadWriteCloser(merr, 1024), 0, &ChannelOption{
 			Enable: true,
 			Remote: "",
 			Token:  "abc",
@@ -498,22 +526,22 @@ func TestProxyError(t *testing.T) {
 		//
 		//test dial fail
 		srcRaw := NewErrReadWriteCloser([]byte("error"), 10)
-		src := &Channel{ReadWriteCloser: srcRaw}
+		src := &Channel{ReadWriteCloser: frame.NewReadWriteCloser(srcRaw, 1024)}
 		dstRaw := NewErrReadWriteCloser([]byte("error"), 10)
-		dst := &Channel{ReadWriteCloser: dstRaw}
+		dst := &Channel{ReadWriteCloser: frame.NewReadWriteCloser(dstRaw, 1024)}
 		master.Router.addTable(src, 1000, dst, 1001)
 		buf := make([]byte, 1024)
 		copy(buf[13:], []byte("error"))
 		//
 		binary.BigEndian.PutUint64(buf[5:], 1000)
-		err = master.Router.procDialBack(src, buf, 18)
+		err = master.Router.procDialBack(src, buf)
 		if err != srcRaw.Err {
 			t.Error(err)
 			return
 		}
 		//
 		binary.BigEndian.PutUint64(buf[5:], 2000)
-		err = master.Router.procDialBack(src, buf, 18)
+		err = master.Router.procDialBack(src, buf)
 		if err != srcRaw.Err {
 			t.Error(err)
 			return
@@ -524,21 +552,21 @@ func TestProxyError(t *testing.T) {
 		//length error
 		binary.BigEndian.PutUint32(buf, 6)
 		srcRaw := NewErrReadWriteCloser(buf[0:10], 0)
-		src := &Channel{ReadWriteCloser: srcRaw}
-		master.Router.loopReadRaw(src, 10240)
+		src := &Channel{ReadWriteCloser: frame.NewReadWriteCloser(srcRaw, 1024)}
+		master.Router.loopReadRaw(src)
 		//read cmd error
 		binary.BigEndian.PutUint32(buf, 100)
 		srcRaw = NewErrReadWriteCloser(buf[0:104], 0)
-		src = &Channel{ReadWriteCloser: srcRaw}
-		master.Router.loopReadRaw(src, 50)
+		src = &Channel{ReadWriteCloser: frame.NewReadWriteCloser(srcRaw, 50)}
+		master.Router.loopReadRaw(src)
 		//cmd error
 		binary.BigEndian.PutUint32(buf, 100)
 		srcRaw = NewErrReadWriteCloser(buf[0:104], 0)
-		src = &Channel{ReadWriteCloser: srcRaw}
-		master.Router.loopReadRaw(src, 10240)
+		src = &Channel{ReadWriteCloser: frame.NewReadWriteCloser(srcRaw, 1024)}
+		master.Router.loopReadRaw(src)
 	}
 	{ //test for cover
-		rawConn := NewRawConn(NewEcho("data"), 0, "")
+		rawConn := NewRawConn(NewEcho("data"), 1024, 0, "")
 		rawConn.Index()
 		func() {
 			defer func() {
@@ -548,7 +576,7 @@ func TestProxyError(t *testing.T) {
 		}()
 		cmdString(CmdLoginBack)
 		echo := NewErrReadWriteCloser([]byte("data"), 0)
-		fullBuf(echo, make([]byte, 1024), 8, nil)
+		xio.FullBuffer(echo, make([]byte, 1024), 8, nil)
 		// master.DialRaw(0, "122:11")
 	}
 }
@@ -594,14 +622,17 @@ func (e *ErrReadWriteCloser) Close() (err error) {
 
 func TestReconnect(t *testing.T) {
 	// ShowLog = 0
-	master := NewProxy("master")
-	master.Router.ACL["slaver"] = "abc"
+	handler := NewNormalAcessHandler("master", nil)
+	handler.LoginAccess["slaver"] = "abc"
+	handler.DialAccess = [][]string{{".*", ".*"}}
+	master := NewProxy("master", handler)
 	err := master.ListenMaster(":9232")
 	if err != nil {
 		t.Error(err)
 		return
 	}
-	slaver := NewProxy("slaver")
+	defer master.Close()
+	slaver := NewProxy("slaver", nil)
 	slaver.ReconnectDelay = 100 * time.Millisecond
 	slaver.Login(&ChannelOption{
 		Remote: "localhost:9232",
@@ -610,7 +641,7 @@ func TestReconnect(t *testing.T) {
 	})
 	c, _ := slaver.SelectChannel("master")
 	c.Close()
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(200 * time.Millisecond)
 	if _, err = slaver.SelectChannel("master"); err != nil {
 		t.Error(err)
 		return
@@ -622,41 +653,43 @@ func TestReconnect(t *testing.T) {
 }
 
 func TestProxyForward(t *testing.T) {
-	master := NewProxy("master")
-	master.Router.ACL["slaver"] = "abc"
-	master.Router.ACL["client"] = "abc"
 	var masterEcho *Echo
-	master.Router.Handler = DialRawF(func(sid uint64, uri string) (conn Conn, err error) {
+	handler := NewNormalAcessHandler("master", DialRawF(func(sid uint64, uri string) (conn Conn, err error) {
 		fmt.Println("master test dail to ", uri)
 		if uri == "error" {
 			err = fmt.Errorf("error")
 		} else {
-			conn = NewRawConn(masterEcho, sid, uri)
+			conn = NewRawConn(masterEcho, 1024, sid, uri)
 		}
 		// err = fmt.Errorf("error")
 		return
-	})
+	}))
+	handler.LoginAccess["slaver"] = "abc"
+	handler.LoginAccess["client"] = "abc"
+	handler.DialAccess = [][]string{{".*", ".*"}}
+	master := NewProxy("master", handler)
 	err := master.ListenMaster(":9232")
 	if err != nil {
 		t.Error(err)
 		return
 	}
-	slaver := NewProxy("slaver")
 	var slaverEcho = NewEcho("slaver")
-	slaver.Handler = DialRawF(func(sid uint64, uri string) (conn Conn, err error) {
+	slaverHandler := NewNormalAcessHandler("slaver", DialRawF(func(sid uint64, uri string) (conn Conn, err error) {
 		fmt.Println("slaver test dail to ", uri)
-		conn = NewRawConn(slaverEcho, sid, uri)
+		conn = NewRawConn(slaverEcho, 1024, sid, uri)
 		// err = fmt.Errorf("error")
 		return
-	})
+	}))
+	slaverHandler.DialAccess = [][]string{{".*", ".*"}}
+	slaver := NewProxy("slaver", slaverHandler)
 	slaver.Login(&ChannelOption{
 		Remote: "localhost:9232",
 		Token:  "abc",
 		Index:  0,
 	})
 	//
-	client := NewProxy("client")
-	err = client.Login(&ChannelOption{
+	client := NewProxy("client", nil)
+	_, err = client.Login(&ChannelOption{
 		Remote: "localhost:9232",
 		Token:  "abc",
 		Index:  0,
@@ -744,7 +777,7 @@ func dialProxyConn(proxy, remote string, port uint16) (conn net.Conn, err error)
 		return
 	}
 	buf := make([]byte, 1024*64)
-	err = fullBuf(conn, buf, 2, nil)
+	err = xio.FullBuffer(conn, buf, 2, nil)
 	if err != nil {
 		conn.Close()
 		return
@@ -765,18 +798,18 @@ func dialProxyConn(proxy, remote string, port uint16) (conn net.Conn, err error)
 		conn.Close()
 		return
 	}
-	err = fullBuf(conn, buf, 5, nil)
+	err = xio.FullBuffer(conn, buf, 5, nil)
 	if err != nil {
 		conn.Close()
 		return
 	}
 	switch buf[3] {
 	case 0x01:
-		err = fullBuf(conn, buf[5:], 5, nil)
+		err = xio.FullBuffer(conn, buf[5:], 5, nil)
 	case 0x03:
-		err = fullBuf(conn, buf[5:], uint32(buf[4])+2, nil)
+		err = xio.FullBuffer(conn, buf[5:], uint32(buf[4])+2, nil)
 	case 0x04:
-		err = fullBuf(conn, buf[5:], 17, nil)
+		err = xio.FullBuffer(conn, buf[5:], 17, nil)
 	default:
 		err = fmt.Errorf("reply address type is not supported:%v", buf[3])
 	}
@@ -791,11 +824,7 @@ func dialProxyConn(proxy, remote string, port uint16) (conn net.Conn, err error)
 }
 
 func TestSocketProxyForward(t *testing.T) {
-	master := NewProxy("master")
-	master.Router.ACL["slaver"] = "abc"
-	master.Router.ACL["client"] = "abc"
-	// var masterEcho = NewEcho("master")
-	master.Router.Handler = DialRawF(func(sid uint64, uri string) (conn Conn, err error) {
+	handler := NewNormalAcessHandler("master", DialRawF(func(sid uint64, uri string) (conn Conn, err error) {
 		fmt.Println("master test dail to", uri)
 		if uri == "error" {
 			err = fmt.Errorf("error")
@@ -804,28 +833,34 @@ func TestSocketProxyForward(t *testing.T) {
 		}
 		// err = fmt.Errorf("error")
 		return
-	})
+	}))
+	handler.LoginAccess["slaver"] = "abc"
+	handler.LoginAccess["client"] = "abc"
+	handler.DialAccess = [][]string{{".*", ".*"}}
+	master := NewProxy("master", handler)
+	// var masterEcho = NewEcho("master")
 	err := master.ListenMaster(":9232")
 	if err != nil {
 		t.Error(err)
 		return
 	}
-	slaver := NewProxy("slaver")
 	var slaverEcho = NewEcho("slaver")
-	slaver.Handler = DialRawF(func(sid uint64, uri string) (conn Conn, err error) {
+	slaverHandler := NewNormalAcessHandler("slaver", DialRawF(func(sid uint64, uri string) (conn Conn, err error) {
 		fmt.Println("slaver test dail to ", uri)
-		conn = NewRawConn(slaverEcho, sid, uri)
+		conn = NewRawConn(slaverEcho, 1024, sid, uri)
 		// err = fmt.Errorf("error")
 		return
-	})
+	}))
+	slaverHandler.DialAccess = [][]string{{".*", ".*"}}
+	slaver := NewProxy("slaver", slaverHandler)
 	slaver.Login(&ChannelOption{
 		Remote: "localhost:9232",
 		Token:  "abc",
 		Index:  0,
 	})
 	//
-	client := NewProxy("client")
-	err = client.Login(&ChannelOption{
+	client := NewProxy("client", nil)
+	_, err = client.Login(&ChannelOption{
 		Remote: "localhost:9232",
 		Token:  "abc",
 		Index:  0,
@@ -884,12 +919,7 @@ func TestSocketProxyForward(t *testing.T) {
 }
 
 func TestProxyTLS(t *testing.T) {
-	master := NewProxy("master")
-	master.Cert = "bsrouter/bsrouter.pem"
-	master.Key = "bsrouter/bsrouter.key"
-	master.Router.ACL["slaver"] = "abc"
-	master.Router.ACL["client"] = "abc"
-	master.Router.Handler = DialRawF(func(sid uint64, uri string) (conn Conn, err error) {
+	handler := NewNormalAcessHandler("master", DialRawF(func(sid uint64, uri string) (conn Conn, err error) {
 		fmt.Println("master test dail to ", uri)
 		if uri == "error" {
 			err = fmt.Errorf("error")
@@ -898,32 +928,39 @@ func TestProxyTLS(t *testing.T) {
 		}
 		// err = fmt.Errorf("error")
 		return
-	})
+	}))
+	handler.LoginAccess["slaver"] = "abc"
+	handler.LoginAccess["client"] = "abc"
+	handler.DialAccess = [][]string{{".*", ".*"}}
+	master := NewProxy("master", handler)
+	master.Cert = "bsrouter/bsrouter.pem"
+	master.Key = "bsrouter/bsrouter.key"
 	err := master.ListenMaster(":9232")
 	if err != nil {
 		t.Error(err)
 		return
 	}
-	slaver := NewProxy("slaver")
-	slaver.Cert = "bsrouter/bsrouter.pem"
-	slaver.Key = "bsrouter/bsrouter.key"
 	var slaverEcho = NewEcho("slaver")
-	slaver.Handler = DialRawF(func(sid uint64, uri string) (conn Conn, err error) {
+	slaverHandler := NewNormalAcessHandler("slaver", DialRawF(func(sid uint64, uri string) (conn Conn, err error) {
 		fmt.Println("slaver test dail to ", uri)
-		conn = NewRawConn(slaverEcho, sid, uri)
+		conn = NewRawConn(slaverEcho, 1024, sid, uri)
 		// err = fmt.Errorf("error")
 		return
-	})
+	}))
+	slaverHandler.DialAccess = [][]string{{".*", ".*"}}
+	slaver := NewProxy("slaver", slaverHandler)
+	slaver.Cert = "bsrouter/bsrouter.pem"
+	slaver.Key = "bsrouter/bsrouter.key"
 	slaver.Login(&ChannelOption{
 		Remote: "localhost:9232",
 		Token:  "abc",
 		Index:  0,
 	})
 	//
-	client := NewProxy("client")
+	client := NewProxy("client", nil)
 	client.Cert = "bsrouter/bsrouter.pem"
 	client.Key = "bsrouter/bsrouter.key"
-	err = client.Login(&ChannelOption{
+	_, err = client.Login(&ChannelOption{
 		Remote: "localhost:9232",
 		Token:  "abc",
 		Index:  0,
@@ -937,10 +974,10 @@ func TestProxyTLS(t *testing.T) {
 	master.Close()
 	//
 	//
-	client = NewProxy("client")
+	client = NewProxy("client", nil)
 	client.Cert = "bsrouter/bsrouter.xxx"
 	client.Key = "bsrouter/bsrouter.xxx"
-	err = client.Login(&ChannelOption{
+	_, err = client.Login(&ChannelOption{
 		Remote: "localhost:9232",
 		Token:  "abc",
 		Index:  0,
@@ -950,7 +987,7 @@ func TestProxyTLS(t *testing.T) {
 		return
 	}
 	//
-	master = NewProxy("master")
+	master = NewProxy("master", nil)
 	master.Cert = "bsrouter/bsrouter.xxx"
 	master.Key = "bsrouter/bsrouter.xxx"
 	err = master.ListenMaster(":9232")
@@ -964,7 +1001,7 @@ func TestProxyTLS(t *testing.T) {
 
 func TestProxyClose(t *testing.T) {
 	for i := 0; i < 10; i++ {
-		master := NewProxy("master")
+		master := NewProxy("master", nil)
 		err := master.ListenMaster(":9232")
 		if err != nil {
 			t.Error(err)
@@ -975,41 +1012,43 @@ func TestProxyClose(t *testing.T) {
 }
 
 func TestProxyDialSync(t *testing.T) {
-	master := NewProxy("master")
-	master.Router.ACL["slaver"] = "abc"
-	master.Router.ACL["client"] = "abc"
 	var masterEcho *Echo
-	master.Router.Handler = DialRawF(func(sid uint64, uri string) (conn Conn, err error) {
+	handler := NewNormalAcessHandler("master", DialRawF(func(sid uint64, uri string) (conn Conn, err error) {
 		fmt.Println("master test dail to ", uri)
 		if uri == "error" {
 			err = fmt.Errorf("error")
 		} else {
-			conn = NewRawConn(masterEcho, sid, uri)
+			conn = NewRawConn(masterEcho, 1024, sid, uri)
 		}
 		// err = fmt.Errorf("error")
 		return
-	})
+	}))
+	handler.DialAccess = [][]string{{".*", ".*"}}
+	handler.LoginAccess["slaver"] = "abc"
+	handler.LoginAccess["client"] = "abc"
+	master := NewProxy("master", handler)
 	err := master.ListenMaster(":9232")
 	if err != nil {
 		t.Error(err)
 		return
 	}
-	slaver := NewProxy("slaver")
 	var slaverEcho = NewEcho("slaver")
-	slaver.Handler = DialRawF(func(sid uint64, uri string) (conn Conn, err error) {
+	slaverHandler := NewNormalAcessHandler("slaver", DialRawF(func(sid uint64, uri string) (conn Conn, err error) {
 		fmt.Println("slaver test dail to ", uri)
-		conn = NewRawConn(slaverEcho, sid, uri)
+		conn = NewRawConn(slaverEcho, 1024, sid, uri)
 		// err = fmt.Errorf("error")
 		return
-	})
+	}))
+	slaverHandler.DialAccess = [][]string{{".*", ".*"}}
+	slaver := NewProxy("slaver", slaverHandler)
 	slaver.Login(&ChannelOption{
 		Remote: "localhost:9232",
 		Token:  "abc",
 		Index:  0,
 	})
 	//
-	client := NewProxy("client")
-	err = client.Login(&ChannelOption{
+	client := NewProxy("client", nil)
+	_, err = client.Login(&ChannelOption{
 		Remote: "localhost:9232",
 		Token:  "abc",
 		Index:  0,
@@ -1043,9 +1082,9 @@ func TestProxyDialSync(t *testing.T) {
 		t.Error("error")
 		return
 	}
-	fmt.Printf("master-->\n%v\n\n", util.S2Json(master.State()))
-	fmt.Printf("slaver-->\n%v\n\n", util.S2Json(slaver.State()))
-	fmt.Printf("client-->\n%v\n\n", util.S2Json(client.State()))
+	fmt.Printf("master-->\n%v\n\n", converter.JSON(master.State()))
+	fmt.Printf("slaver-->\n%v\n\n", converter.JSON(slaver.State()))
+	fmt.Printf("client-->\n%v\n\n", converter.JSON(client.State()))
 	_, err = client.SyncDial("master->error", connb)
 	if err == nil {
 		t.Error("error")

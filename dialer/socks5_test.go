@@ -5,7 +5,7 @@ import (
 	"net"
 	"testing"
 
-	"github.com/Centny/gwf/util"
+	"github.com/codingeasygo/util/xmap"
 )
 
 type ErroPool string
@@ -21,9 +21,9 @@ func (e ErroPool) Done(address, uri string, err error) {
 
 func TestSocksProxy(t *testing.T) {
 	dailer := NewSocksProxyDialer()
-	dailer.Bootstrap(util.Map{
+	dailer.Bootstrap(xmap.M{
 		"id":      "testing",
-		"address": "127.0.0.1:1080",
+		"address": "127.0.0.1:1105",
 	})
 	remote := "tcp://www.google.com:80"
 	if !dailer.Matched(remote) {
@@ -66,7 +66,7 @@ func TestSocksProxy(t *testing.T) {
 	}
 	//bootstrap error
 	dailer2 := NewSocksProxyDialer()
-	err = dailer2.Bootstrap(util.Map{})
+	err = dailer2.Bootstrap(xmap.M{})
 	if err == nil {
 		t.Error(err)
 		return
@@ -74,7 +74,7 @@ func TestSocksProxy(t *testing.T) {
 	fmt.Printf("-->%v\n", dailer)
 	//server error
 	dailer2 = NewSocksProxyDialer()
-	err = dailer2.Bootstrap(util.Map{
+	err = dailer2.Bootstrap(xmap.M{
 		"id":      "testing",
 		"address": "127.0.0.1:12210",
 	})

@@ -5,14 +5,14 @@ import (
 	"io/ioutil"
 	"testing"
 
-	"github.com/Centny/gwf/util"
+	"github.com/codingeasygo/util/xmap"
 )
 
 type StateData struct {
 }
 
-func (s *StateData) State() util.Map {
-	return util.Map{
+func (s *StateData) State() xmap.M {
+	return xmap.M{
 		"a": 1,
 		"b": 2,
 	}

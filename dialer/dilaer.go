@@ -6,7 +6,8 @@ import (
 	"net"
 	"sync/atomic"
 
-	"github.com/Centny/gwf/util"
+	"github.com/codingeasygo/util/converter"
+	"github.com/codingeasygo/util/xmap"
 )
 
 type Pipable interface {
@@ -54,9 +55,9 @@ func (c *CopyPipable) String() string {
 type Dialer interface {
 	Name() string
 	//initial dialer
-	Bootstrap(options util.Map) error
+	Bootstrap(options xmap.M) error
 	//
-	Options() util.Map
+	Options() xmap.M
 	//match uri
 	Matched(uri string) bool
 	//dial raw connection
@@ -80,13 +81,13 @@ func (p *Pool) AddDialer(dialers ...Dialer) (err error) {
 	return
 }
 
-func (p *Pool) Bootstrap(options util.Map) error {
-	dialerOptions := options.AryMapVal("dialers")
+func (p *Pool) Bootstrap(options xmap.M) error {
+	dialerOptions := options.ArrayMapDef(nil, "dialers")
 	for _, option := range dialerOptions {
-		dtype := option.StrVal("type")
+		dtype := option.Str("type")
 		dialer := NewDialer(dtype)
 		if dialer == nil {
-			return fmt.Errorf("create dialer fail by %v", util.S2Json(option))
+			return fmt.Errorf("create dialer fail by %v", converter.JSON(option))
 		}
 		err := dialer.Bootstrap(option)
 		if err != nil {
@@ -94,24 +95,19 @@ func (p *Pool) Bootstrap(options util.Map) error {
 		}
 		p.Dialers = append(p.Dialers, dialer)
 	}
-	if options.Val("cmd") != nil || options.IntValV("standard", 0) > 0 || options.IntValV("std", 0) > 0 {
-		cmd := NewCmdDialer()
-		cmd.Bootstrap(options.MapValV("cmd", util.Map{}))
-		p.Dialers = append(p.Dialers, cmd)
-	}
-	if options.Val("echo") != nil || options.IntValV("standard", 0) > 0 || options.IntValV("std", 0) > 0 {
+	if options.Value("echo") != nil || options.IntDef(0, "standard") > 0 || options.IntDef(0, "std") > 0 {
 		echo := NewEchoDialer()
-		echo.Bootstrap(options.MapValV("echo", util.Map{}))
+		echo.Bootstrap(options.Map("echo"))
 		p.Dialers = append(p.Dialers, echo)
 	}
-	if options.Val("web") != nil || options.IntValV("standard", 0) > 0 || options.IntValV("std", 0) > 0 {
+	if options.Value("web") != nil || options.IntDef(0, "standard") > 0 || options.IntDef(0, "std") > 0 {
 		web := NewWebDialer()
-		web.Bootstrap(options.MapValV("web", util.Map{}))
+		web.Bootstrap(options.MapDef(xmap.M{}, "web"))
 		p.Dialers = append(p.Dialers, web)
 	}
-	if options.Val("tcp") != nil || options.IntValV("standard", 0) > 0 || options.IntValV("std", 0) > 0 {
+	if options.Value("tcp") != nil || options.IntDef(0, "standard") > 0 || options.IntDef(0, "std") > 0 {
 		tcp := NewTCPDialer()
-		tcp.Bootstrap(options.MapValV("tcp", util.Map{}))
+		tcp.Bootstrap(options.MapDef(xmap.M{}, "tcp"))
 		p.Dialers = append(p.Dialers, tcp)
 	}
 	return nil
@@ -133,8 +129,6 @@ func DefaultDialerCreator(t string) (dialer Dialer) {
 	switch t {
 	case "balance":
 		dialer = NewBalancedDialer()
-	case "cmd":
-		dialer = NewCmdDialer()
 	case "echo":
 		dialer = NewEchoDialer()
 	case "socks":

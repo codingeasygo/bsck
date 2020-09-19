@@ -11,8 +11,8 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/Centny/gwf/util"
-	"github.com/sutils/dialer"
+	"github.com/codingeasygo/bsck/dialer"
+	"github.com/codingeasygo/util/xmap"
 
 	"golang.org/x/net/websocket"
 )
@@ -39,7 +39,7 @@ func hget(format string, args ...interface{}) (data string, err error) {
 
 func TestForward(t *testing.T) {
 	dialerPool := dialer.NewPool()
-	dialerPool.Bootstrap(util.Map{
+	dialerPool.Bootstrap(xmap.M{
 		"standard": 1,
 	})
 	//
@@ -67,7 +67,7 @@ func TestForward(t *testing.T) {
 			t.Error(err)
 			return
 		}
-		err = forward.AddForward("web://loctest2", "https://www.baidu.com:443")
+		err = forward.AddForward("web://loctest2", "https://www.qq.com:443")
 		if err != nil {
 			t.Error(err)
 			return
@@ -121,7 +121,7 @@ func TestForward(t *testing.T) {
 		forward.WebAuth = ""
 		//
 		data, err = hget("%v/web/loctest2", ts.URL)
-		if err != nil {
+		if err == nil {
 			t.Errorf("%v-%v", err, data)
 			return
 		}
