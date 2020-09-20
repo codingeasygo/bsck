@@ -101,16 +101,21 @@ func (s *SocksProxyDialer) Dial(sid uint64, uri string, pipe io.ReadWriteCloser)
 	if err != nil {
 		return
 	}
+	var host string
+	var port int64
 	parts := strings.SplitN(remote.Host, ":", 2)
 	if len(parts) < 2 {
-		err = fmt.Errorf("not supported address:%v", remote.Host)
-		return
-	}
-	host := parts[0]
-	port, err := strconv.ParseInt(parts[1], 10, 64)
-	if err != nil {
-		err = fmt.Errorf("parse address:%v error:%v", remote.Host, err)
-		return
+		// err = fmt.Errorf("not supported address:%v", remote.Host)
+		// return
+		host = parts[0]
+		port = 0
+	} else {
+		host = parts[0]
+		port, err = strconv.ParseInt(parts[1], 10, 64)
+		if err != nil {
+			err = fmt.Errorf("parse address:%v error:%v", remote.Host, err)
+			return
+		}
 	}
 	address, err := s.Pooler.Get(uri)
 	if err != nil {

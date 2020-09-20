@@ -765,6 +765,7 @@ func (r *Router) SyncDial(uri string, raw io.ReadWriteCloser) (sid uint64, err e
 func (r *Router) DialConn(uri string, raw io.ReadWriteCloser) (sid uint64, conn Conn, err error) {
 	parts := strings.SplitN(uri, "->", 2)
 	if len(parts) < 2 {
+		DebugLog("Router(%v) start raw dail to %v", r.Name, uri)
 		sid = r.UniqueSid()
 		conn, err = r.Handler.DialRaw(sid, uri)
 		if err != nil {

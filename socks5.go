@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"reflect"
+	"runtime"
 	"sync/atomic"
 
 	"github.com/codingeasygo/util/xio"
@@ -84,7 +86,8 @@ func NewSocksProxy() (socks *SocksProxy) {
 func (s *SocksProxy) Start(addr string) (err error) {
 	s.Listener, err = net.Listen("tcp", addr)
 	if err == nil {
-		InfoLog("SocksProxy listen socks5 proxy on %v", addr)
+		dialerName := runtime.FuncForPC(reflect.ValueOf(s.Dialer).Pointer()).Name()
+		InfoLog("SocksProxy listen socks5 proxy on %v using dialer %v", addr, dialerName)
 		go s.loopAccept(s.Listener)
 	}
 	return

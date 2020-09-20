@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/http"
 	"sync/atomic"
 
 	"github.com/codingeasygo/util/converter"
@@ -67,6 +68,7 @@ type Dialer interface {
 //Pool is the set of Dialer
 type Pool struct {
 	Dialers []Dialer
+	Web     http.Handler
 }
 
 //NewPool will return new Pool
@@ -101,8 +103,14 @@ func (p *Pool) Bootstrap(options xmap.M) error {
 		p.Dialers = append(p.Dialers, echo)
 		InfoLog("Pool add echo dialer to pool")
 	}
-	if options.Value("web") != nil || options.IntDef(0, "standard") > 0 || options.IntDef(0, "std") > 0 {
-		web := NewWebDialer()
+	if options.Value("dav") != nil || options.IntDef(0, "standard") > 0 || options.IntDef(0, "std") > 0 {
+		web := NewWebDialer("dav", NewWebdavHandler())
+		web.Bootstrap(options.MapDef(xmap.M{}, "dav"))
+		p.Dialers = append(p.Dialers, web)
+		InfoLog("Pool add dav dialer to pool")
+	}
+	if p.Web != nil && (options.Value("web") != nil || options.IntDef(0, "standard") > 0 || options.IntDef(0, "std") > 0) {
+		web := NewWebDialer("web", p.Web)
 		web.Bootstrap(options.MapDef(xmap.M{}, "web"))
 		p.Dialers = append(p.Dialers, web)
 		InfoLog("Pool add web dialer to pool")
@@ -138,8 +146,8 @@ func DefaultDialerCreator(t string) (dialer Dialer) {
 		dialer = NewSocksProxyDialer()
 	case "tcp":
 		dialer = NewTCPDialer()
-	case "web":
-		dialer = NewWebDialer()
+	case "dav":
+		dialer = NewWebDialer("dav", NewWebdavHandler())
 	}
 	return
 }

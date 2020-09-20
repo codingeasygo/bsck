@@ -19,13 +19,13 @@ func TestWebDialer(t *testing.T) {
 		t.Error(err)
 		return
 	}
-	dialer := NewWebDialer()
+	dialer := NewWebDialer("dav", NewWebdavHandler())
 	dialer.Bootstrap(nil)
-	if dialer.Matched("tcp://web?dir=/tmp") {
+	if dialer.Matched("tcp://dav?dir=/tmp") {
 		t.Error("error")
 		return
 	}
-	if !dialer.Matched("http://web?dir=/tmp") {
+	if !dialer.Matched("http://dav?dir=/tmp") {
 		t.Error("error")
 		return
 	}
@@ -37,7 +37,7 @@ func TestWebDialer(t *testing.T) {
 			if err != nil {
 				break
 			}
-			raw, err := dialer.Dial(cid, "http://web?dir=/tmp", nil)
+			raw, err := dialer.Dial(cid, "http://dav?dir=/tmp", nil)
 			if err != nil {
 				panic(err)
 			}
@@ -60,7 +60,7 @@ func TestWebDialer(t *testing.T) {
 	//
 	//test pipe
 	cona, conb, _ := CreatePipedConn()
-	_, err = dialer.Dial(100, "http://web?dir=/tmp", conb)
+	_, err = dialer.Dial(100, "http://dav?dir=/tmp", conb)
 	if err != nil {
 		t.Error(err)
 		return
@@ -72,7 +72,7 @@ func TestWebDialer(t *testing.T) {
 	//for cover
 	fmt.Printf("%v,%v\n", dialer.Addr(), dialer.Network())
 	//test web conn
-	conn, _, err := PipeWebDialerConn(100, "http://web?dir=/tmp")
+	conn, _, err := PipeWebDialerConn(100, "http://dav?dir=/tmp")
 	if err != nil {
 		t.Error(err)
 		return
@@ -82,19 +82,9 @@ func TestWebDialer(t *testing.T) {
 	conn.SetWriteDeadline(time.Now())
 	fmt.Printf("%v,%v,%v\n", conn.LocalAddr(), conn.RemoteAddr(), conn.Network())
 	//test error
-	_, _, err = PipeWebDialerConn(100, "://")
-	if err == nil {
-		t.Error(err)
-		return
-	}
-	_, _, err = PipeWebDialerConn(100, "http://web")
-	if err == nil {
-		t.Error(err)
-		return
-	}
 	//
 	ts := httptest.NewHandlerFuncServer(func(hs *web.Session) web.Result {
-		dialer.ServeHTTP(hs.W, hs.R)
+		dialer.Handler.ServeHTTP(hs.W, hs.R)
 		return web.Return
 	})
 	data, err := ts.GetText("/")

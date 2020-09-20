@@ -20,33 +20,33 @@ type WebDialer struct {
 	accept  chan net.Conn
 	consLck sync.RWMutex
 	cons    map[string]*WebDialerConn
-	davsLck sync.RWMutex
-	davs    map[string]*WebdavHandler
 	conf    xmap.M
+	host    string
+	Handler http.Handler
 }
 
 //NewWebDialer will return new WebDialer
-func NewWebDialer() (dialer *WebDialer) {
+func NewWebDialer(host string, handler http.Handler) (dialer *WebDialer) {
 	dialer = &WebDialer{
 		accept:  make(chan net.Conn, 10),
 		consLck: sync.RWMutex{},
 		cons:    map[string]*WebDialerConn{},
-		davsLck: sync.RWMutex{},
-		davs:    map[string]*WebdavHandler{},
 		conf:    xmap.M{},
+		host:    host,
+		Handler: handler,
 	}
 	return
 }
 
 //Name will return dialer name
 func (web *WebDialer) Name() string {
-	return "web"
+	return web.host
 }
 
 //Bootstrap the web dialer
 func (web *WebDialer) Bootstrap(options xmap.M) error {
 	go func() {
-		http.Serve(web, web)
+		http.Serve(web, web.Handler)
 		web.consLck.Lock()
 		close(web.accept)
 		web.stopped = true
@@ -55,6 +55,7 @@ func (web *WebDialer) Bootstrap(options xmap.M) error {
 	return nil
 }
 
+//Options is options getter
 func (web *WebDialer) Options() xmap.M {
 	return web.conf
 }
@@ -68,7 +69,7 @@ func (web *WebDialer) Shutdown() error {
 //Matched will return whether the uri is a invalid uri
 func (web *WebDialer) Matched(uri string) bool {
 	target, err := url.Parse(uri)
-	return err == nil && target.Scheme == "http" && target.Host == "web"
+	return err == nil && target.Scheme == "http" && target.Host == web.host
 }
 
 //Dial to web server
@@ -77,6 +78,7 @@ func (web *WebDialer) Dial(sid uint64, uri string, pipe io.ReadWriteCloser) (raw
 	defer web.consLck.Unlock()
 	if web.stopped {
 		err = fmt.Errorf("stopped")
+		return
 	}
 	conn, basic, err := PipeWebDialerConn(sid, uri)
 	if err != nil {
@@ -100,6 +102,14 @@ func (web *WebDialer) Accept() (conn net.Conn, err error) {
 	return
 }
 
+//FindConn will find connection by id
+func (web *WebDialer) FindConn(sid string) (conn *WebDialerConn) {
+	web.consLck.Lock()
+	conn, _ = web.cons[sid]
+	web.consLck.Unlock()
+	return
+}
+
 //Close is not used
 func (web *WebDialer) Close() error {
 	return nil
@@ -119,50 +129,18 @@ func (web *WebDialer) String() string {
 	return "WebDialer(0:0)"
 }
 
-func (web *WebDialer) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
-	DebugLog("WebDialer access %v from %v", req.URL.RequestURI(), req.RemoteAddr)
-	cid := req.RemoteAddr
-	web.consLck.Lock()
-	conn := web.cons[cid]
-	web.consLck.Unlock()
-	if conn == nil {
-		resp.WriteHeader(404)
-		fmt.Fprintf(resp, "WebDialConn is not exist by cid(%v)", cid)
-		return
-	}
-	web.davsLck.Lock()
-	dav := web.davs[conn.DIR]
-	if dav == nil {
-		dav = NewWebdavHandler(conn.DIR)
-		web.davs[conn.DIR] = dav
-	}
-	web.davsLck.Unlock()
-	dav.ServeHTTP(resp, req)
-}
-
 //WebDialerConn is an implementation of the net.Conn interface for pipe WebDialerConn to raw connection.
 type WebDialerConn struct {
 	*PipedConn        //the piped connection
 	SID        uint64 //session id
 	URI        string //target uri
-	DIR        string //work directory
 }
 
 //PipeWebDialerConn will return new WebDialerConn and piped raw connection.
 func PipeWebDialerConn(sid uint64, uri string) (conn *WebDialerConn, raw io.ReadWriteCloser, err error) {
-	args, err := url.Parse(uri)
-	if err != nil {
-		return
-	}
-	dir := args.Query().Get("dir")
-	if len(dir) < 1 {
-		err = fmt.Errorf("the dir arguemnt is required")
-		return
-	}
 	conn = &WebDialerConn{
 		SID: sid,
 		URI: uri,
-		DIR: dir,
 	}
 	conn.PipedConn, raw, err = CreatePipedConn()
 	return
@@ -170,12 +148,12 @@ func PipeWebDialerConn(sid uint64, uri string) (conn *WebDialerConn, raw io.Read
 
 //LocalAddr return self
 func (w *WebDialerConn) LocalAddr() net.Addr {
-	return w
+	return NewWebDialerAddr(fmt.Sprintf("%v", w.SID), w.URI)
 }
 
 //RemoteAddr return self
 func (w *WebDialerConn) RemoteAddr() net.Addr {
-	return w
+	return NewWebDialerAddr(fmt.Sprintf("%v", w.SID), w.URI)
 }
 
 //Network return WebDialerConn
@@ -183,35 +161,31 @@ func (w *WebDialerConn) Network() string {
 	return "WebDialerConn"
 }
 
-//
+//String will info
 func (w *WebDialerConn) String() string {
 	return fmt.Sprintf("%v", w.SID)
 }
 
-//WebdavHandler is an implementation of the http.Handler interface for handling web GET/DAV
-type WebdavHandler struct {
-	dav webdav.Handler
-	fs  http.Handler
+//WebDialerAddr is net.Addr implement
+type WebDialerAddr struct {
+	Net  string
+	Info string
 }
 
-//NewWebdavHandler will return new WebdavHandler
-func NewWebdavHandler(dir string) *WebdavHandler {
-	return &WebdavHandler{
-		dav: webdav.Handler{
-			FileSystem: webdav.Dir(dir),
-			LockSystem: webdav.NewMemLS(),
-		},
-		fs: http.FileServer(http.Dir(dir)),
-	}
+//NewWebDialerAddr will return new web dialer address
+func NewWebDialerAddr(net, info string) (addr *WebDialerAddr) {
+	addr = &WebDialerAddr{Net: net, Info: info}
+	return
 }
 
-func (w *WebdavHandler) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
-	DebugLog("WebdavHandler proc %v", req.RequestURI)
-	if req.Method == "GET" {
-		w.fs.ServeHTTP(resp, req)
-	} else {
-		w.dav.ServeHTTP(resp, req)
-	}
+//Network return WebDialerConn
+func (w *WebDialerAddr) Network() string {
+	return w.Net
+}
+
+//String will info
+func (w *WebDialerAddr) String() string {
+	return w.Info
 }
 
 //PipedConn is an implementation of the net.Conn interface for piped two connection.
@@ -295,4 +269,71 @@ func (p *PipedConn) Network() string {
 
 func (p *PipedConn) String() string {
 	return "piped"
+}
+
+//WebdavHandler is webdav handler
+type WebdavHandler struct {
+	davsLck sync.RWMutex
+	davs    map[string]*WebdavFileHandler
+}
+
+//NewWebdavHandler will return new WebdavHandler
+func NewWebdavHandler() (handler *WebdavHandler) {
+	handler = &WebdavHandler{
+		davsLck: sync.RWMutex{},
+		davs:    map[string]*WebdavFileHandler{},
+	}
+	return
+}
+
+func (web *WebdavHandler) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
+	DebugLog("WebdavHandler access %v from %v", req.URL.RequestURI(), req.RemoteAddr)
+	args, err := url.Parse(req.RemoteAddr)
+	if err != nil {
+		WarnLog("WebdavHandler parset remote address %v fail with %v", req.RemoteAddr, err)
+		resp.WriteHeader(404)
+		fmt.Fprintf(resp, "%v", err)
+		return
+	}
+	dir := args.Query().Get("dir")
+	if len(dir) < 1 {
+		err = fmt.Errorf("the dir arguemnt is required")
+		WarnLog("WebdavHandler parset remote address %v fail with %v", req.RemoteAddr, err)
+		fmt.Fprintf(resp, "%v", err)
+		return
+	}
+	web.davsLck.Lock()
+	dav := web.davs[dir]
+	if dav == nil {
+		dav = NewWebdavFileHandler(dir)
+		web.davs[dir] = dav
+	}
+	web.davsLck.Unlock()
+	dav.ServeHTTP(resp, req)
+}
+
+//WebdavFileHandler is an implementation of the http.Handler interface for handling web GET/DAV
+type WebdavFileHandler struct {
+	dav webdav.Handler
+	fs  http.Handler
+}
+
+//NewWebdavFileHandler will return new WebdavHandler
+func NewWebdavFileHandler(dir string) *WebdavFileHandler {
+	return &WebdavFileHandler{
+		dav: webdav.Handler{
+			FileSystem: webdav.Dir(dir),
+			LockSystem: webdav.NewMemLS(),
+		},
+		fs: http.FileServer(http.Dir(dir)),
+	}
+}
+
+func (w *WebdavFileHandler) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
+	DebugLog("WebdavFileHandler proc %v", req.RequestURI)
+	if req.Method == "GET" {
+		w.fs.ServeHTTP(resp, req)
+	} else {
+		w.dav.ServeHTTP(resp, req)
+	}
 }

@@ -379,10 +379,10 @@ func (s *Service) Start() (err error) {
 		s.Handler = handler
 	}
 	s.Node = NewProxy(s.Config.Name, s.Handler)
-	if !filepath.IsAbs(s.Config.Cert) {
+	if len(s.Config.Cert) > 0 && !filepath.IsAbs(s.Config.Cert) {
 		s.Config.Cert = filepath.Join(filepath.Dir(s.ConfigPath), s.Config.Cert)
 	}
-	if !filepath.IsAbs(s.Config.Key) {
+	if len(s.Config.Key) > 0 && !filepath.IsAbs(s.Config.Key) {
 		s.Config.Key = filepath.Join(filepath.Dir(s.ConfigPath), s.Config.Key)
 	}
 	s.Node.Cert, s.Node.Key = s.Config.Cert, s.Config.Key
@@ -395,7 +395,7 @@ func (s *Service) Start() (err error) {
 	if err != nil {
 		return
 	}
-	s.Socks.Dialer = s.SocksDialer
+	// s.Socks.Dialer = s.SocksDialer
 	s.Forward.Dialer = s.DialerAll
 	if len(s.Config.Listen) > 0 {
 		err = s.Node.ListenMaster(s.Config.Listen)
