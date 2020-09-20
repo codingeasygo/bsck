@@ -118,6 +118,11 @@ func ReadConfig(path string) (config *Config, last int64, err error) {
 	return
 }
 
+//ForwardFinder is forward finder
+type ForwardFinder interface {
+	FindForward(uri string) (target string, err error)
+}
+
 //Service is bound socket service
 type Service struct {
 	Node       *Proxy
@@ -126,6 +131,7 @@ type Service struct {
 	Forward    *Forward
 	Dialer     *dialer.Pool
 	Handler    ProxyHandler
+	Finder     ForwardFinder
 	Config     *Config
 	ConfigPath string
 	Client     *xhttp.Client
@@ -364,11 +370,16 @@ func (s *Service) dialerAll(uri string, raw io.ReadWriteCloser) (sid uint64, err
 	s.aliasLock.Unlock()
 	if !ok {
 		router := s.Forward.FindForward(parts[0])
-		if len(router) < 2 {
+		if len(router) > 1 {
+			target = router[1]
+		} else if s.Finder != nil {
+			target, err = s.Finder.FindForward(parts[0])
+		} else {
 			err = fmt.Errorf("forward not found by %v", uri)
+		}
+		if err != nil {
 			return
 		}
-		target = router[1]
 	}
 	dialURI := target
 	if len(parts) > 1 {
