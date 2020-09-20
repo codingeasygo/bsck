@@ -118,6 +118,9 @@ func ReadConfig(path string) (config *Config, last int64, err error) {
 	return
 }
 
+//ErrForwardNotExist is foward is not exist error
+var ErrForwardNotExist = fmt.Errorf("%v", "forward not exist")
+
 //ForwardFinder is forward finder
 type ForwardFinder interface {
 	FindForward(uri string) (target string, err error)
@@ -352,9 +355,21 @@ func (s *Service) RemoveFoward(loc string) (err error) {
 
 //DialerAll will dial uri by raw
 func (s *Service) DialerAll(uris string, raw io.ReadWriteCloser) (sid uint64, err error) {
-	DebugLog("Service start dial all to %v", uris)
+	sid, err = s.dialerAll(uris, raw)
+	if err == nil || err != ErrForwardNotExist || s.Finder == nil {
+		return
+	}
+	uris, err = s.Finder.FindForward(uris)
+	if err == nil {
+		sid, err = s.dialerAll(uris, raw)
+	}
+	return
+}
+
+func (s *Service) dialerAll(uris string, raw io.ReadWriteCloser) (sid uint64, err error) {
+	DebugLog("Service try dial all to %v", uris)
 	for _, uri := range strings.Split(uris, ",") {
-		sid, err = s.dialerAll(uri, raw)
+		sid, err = s.dialerOne(uri, raw)
 		if err == nil {
 			break
 		}
@@ -362,7 +377,7 @@ func (s *Service) DialerAll(uris string, raw io.ReadWriteCloser) (sid uint64, er
 	return
 }
 
-func (s *Service) dialerAll(uri string, raw io.ReadWriteCloser) (sid uint64, err error) {
+func (s *Service) dialerOne(uri string, raw io.ReadWriteCloser) (sid uint64, err error) {
 	DebugLog("Service try dial to %v", uri)
 	if strings.Contains(uri, "->") {
 		sid, err = s.Node.Dial(uri, raw)
@@ -379,16 +394,11 @@ func (s *Service) dialerAll(uri string, raw io.ReadWriteCloser) (sid uint64, err
 	s.aliasLock.Unlock()
 	if !ok {
 		router := s.Forward.FindForward(parts[0])
-		if len(router) > 1 {
-			target = router[1]
-		} else if s.Finder != nil {
-			target, err = s.Finder.FindForward(parts[0])
-		} else {
-			err = fmt.Errorf("forward not found by %v", uri)
-		}
-		if err != nil {
+		if len(router) < 2 {
+			err = ErrForwardNotExist
 			return
 		}
+		target = router[1]
 	}
 	dialURI := target
 	if len(parts) > 1 {
