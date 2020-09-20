@@ -605,7 +605,7 @@ func (r *Router) procLogin(conn Conn, buf []byte) (err error) {
 	name, index, result, err := r.Handler.OnConnLogin(channel, string(buf[13:]))
 	if err != nil {
 		ErrorLog("Router(%v) proc login fail with %v", r.Name, err)
-		message := converter.JSON(xmap.M{"code": 10, "message": err.Error})
+		message := converter.JSON(xmap.M{"code": 10, "message": err.Error()})
 		err = writeCmd(conn, nil, CmdLoginBack, 0, []byte(message))
 		conn.Close()
 		return
