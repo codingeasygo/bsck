@@ -166,6 +166,11 @@ func (n *NormalAcessHandler) OnConnClose(conn Conn) (err error) {
 	return nil
 }
 
+//OnConnJoin is proxy handler when channel join
+func (n *NormalAcessHandler) OnConnJoin(channel *Channel, option, result xmap.M) (err error) {
+	return
+}
+
 //ProxyHandler is proxy handler
 type ProxyHandler interface {
 	//DialRaw will dial raw connection by uri
@@ -176,6 +181,8 @@ type ProxyHandler interface {
 	OnConnDialURI(channel Conn, conn string, parts []string) (err error)
 	//OnConnLogin is event on connection close
 	OnConnClose(conn Conn) (err error)
+	//OnConnJoin is event on channel join
+	OnConnJoin(channel *Channel, option, result xmap.M) (err error)
 }
 
 //ForwardEntry is the forward entry
@@ -195,7 +202,7 @@ type Proxy struct {
 }
 
 //NewProxy will return new Proxy by name
-func NewProxy(name string, handler Handler) (proxy *Proxy) {
+func NewProxy(name string, handler ProxyHandler) (proxy *Proxy) {
 	proxy = &Proxy{
 		Router:         NewRouter(name),
 		forwards:       map[string]ForwardEntry{},
@@ -475,6 +482,7 @@ func (p *Proxy) Login(option xmap.M) (channel *Channel, result xmap.M, err error
 	channel, result, err = p.JoinConn(NewInfoRWC(frame.NewReadWriteCloser(conn, p.BufferSize), conn.RemoteAddr().String()), index, auth)
 	if err == nil {
 		channel.SetContext(option)
+		p.Handler.OnConnJoin(channel, option, result)
 	}
 	return
 }
