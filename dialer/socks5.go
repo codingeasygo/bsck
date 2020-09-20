@@ -85,6 +85,7 @@ func (s *SocksProxyDialer) Bootstrap(options xmap.M) (err error) {
 	return nil
 }
 
+//Options is options getter
 func (s *SocksProxyDialer) Options() xmap.M {
 	return s.conf
 }
@@ -183,6 +184,11 @@ func (s *SocksProxyDialer) Dial(sid uint64, uri string, pipe io.ReadWriteCloser)
 	if pipe != nil {
 		assert(raw.Pipe(pipe) == nil)
 	}
+	return
+}
+
+//Shutdown will shutdown dial
+func (s *SocksProxyDialer) Shutdown() (err error) {
 	return
 }
 

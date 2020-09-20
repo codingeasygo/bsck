@@ -320,3 +320,8 @@ func (b *BalancedDialer) Dial(sid uint64, uri string, pipe io.ReadWriteCloser) (
 	}
 	return
 }
+
+//Shutdown will shutdown dial
+func (b *BalancedDialer) Shutdown() (err error) {
+	return
+}

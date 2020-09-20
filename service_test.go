@@ -3,11 +3,14 @@ package bsck
 import (
 	"fmt"
 	"io/ioutil"
+	"net/http"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/codingeasygo/bsck/dialer"
+	"github.com/codingeasygo/util/xhttp"
 	"github.com/codingeasygo/util/xio"
 	"github.com/codingeasygo/util/xmap"
 )
@@ -43,13 +46,15 @@ var configTest2 = `
     "socks5": ":5081",
     "forwards": {
         "t0~web://": "http://127.0.0.1:80",
-        "t1~web://": "http://web?dir=/tmp",
-        "t2~tcp://:2332": "http://web?dir=/tmp",
+        "t1~web://": "http://web?dir=.",
+        "t2~tcp://:2332": "http://dav?dir=.",
         "t3~socks://localhost:10322": "tcp://echo",
         "t4~rdp://localhost:0": "tcp://127.0.0.1:22",
 		"t5~vnc://localhost:0": "tcp://127.0.0.1:22",
 		"w1~web://": "tcp://echo?abc=1",
-		"w2~web://": "tcp://echo"
+		"w2~web://": "tcp://echo",
+		"w3~web://": "http://dav?dir=.",
+		"w4~web://": "http://test1"
     },
     "channels": [],
     "dialer":{
@@ -63,6 +68,11 @@ func TestService(t *testing.T) {
 	defer os.Remove("/tmp/test.json")
 	service := NewService()
 	service.ConfigPath = "/tmp/test.json"
+	service.Webs = map[string]http.Handler{
+		"test1": http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			fmt.Fprintf(w, "abc")
+		}),
+	}
 	err := service.Start()
 	if err != nil {
 		t.Error(err)
@@ -95,7 +105,6 @@ func TestService(t *testing.T) {
 			return
 		}
 	}
-	//
 	{ //socks test
 		echoa, echob, _ := xio.Pipe()
 		dialer := dialer.NewSocksProxyDialer()
@@ -146,10 +155,34 @@ func TestService(t *testing.T) {
 		}
 		runTestEcho("socks4", echoa, echob)
 	}
-	// time.Sleep(1000 * time.Millisecond)
+	{ //web test
+		data, err := xhttp.GetText("http://:2332?abc=123")
+		if err != nil || !strings.Contains(data, "router.go") {
+			t.Error(err)
+			return
+		}
+		fmt.Printf("%v\n", data)
+	}
+	{ //web test
+		data, err := service.Client.GetText("http://w3?abc=123")
+		if err != nil || !strings.Contains(data, "router.go") {
+			t.Error(err)
+			return
+		}
+		fmt.Printf("%v\n", data)
+	}
+	{ //web test
+		data, err := service.Client.GetText("http://w4")
+		if err != nil || data != "abc" {
+			t.Error(err)
+			return
+		}
+		fmt.Printf("%v\n", data)
+	}
 	//
 	ioutil.WriteFile("/tmp/test.json", []byte(configTest1), os.ModePerm)
 	err = service.ReloadConfig()
 	time.Sleep(10 * time.Millisecond)
 	service.Stop()
+	time.Sleep(10 * time.Millisecond)
 }

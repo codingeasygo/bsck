@@ -95,3 +95,8 @@ func (s *StateDialer) Dial(sid uint64, uri string, raw io.ReadWriteCloser) (conn
 	}
 	return
 }
+
+//Shutdown will shutdown dial
+func (s *StateDialer) Shutdown() (err error) {
+	return
+}

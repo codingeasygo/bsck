@@ -34,6 +34,7 @@ func (t *TCPDialer) Bootstrap(options xmap.M) error {
 	return nil
 }
 
+//Options is options getter
 func (t *TCPDialer) Options() xmap.M {
 	return t.conf
 }
@@ -85,4 +86,9 @@ func (t *TCPDialer) Dial(sid uint64, uri string, pipe io.ReadWriteCloser) (raw C
 
 func (t *TCPDialer) String() string {
 	return "TCPDialer"
+}
+
+//Shutdown will shutdown dial
+func (t *TCPDialer) Shutdown() (err error) {
+	return
 }

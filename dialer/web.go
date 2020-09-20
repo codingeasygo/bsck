@@ -337,3 +337,20 @@ func (w *WebdavFileHandler) ServeHTTP(resp http.ResponseWriter, req *http.Reques
 		w.dav.ServeHTTP(resp, req)
 	}
 }
+
+// type ResponseWriter struct {
+// 	http.ResponseWriter
+// }
+
+// func (r *ResponseWriter) Write(p []byte) (n int, err error) {
+// 	n, err = r.ResponseWriter.Write(p)
+// 	if err == nil {
+// 		os.Stdout.Write(p)
+// 	}
+// 	return
+// }
+
+// func (r *ResponseWriter) WriteHeader(statusCode int) {
+// 	r.ResponseWriter.WriteHeader(statusCode)
+// 	fmt.Printf("--->%v\n%v\n", r.ResponseWriter.Header(), statusCode)
+// }

@@ -5,6 +5,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"sync"
 	"sync/atomic"
 
 	"github.com/codingeasygo/util/converter"
@@ -57,6 +58,8 @@ type Dialer interface {
 	Name() string
 	//initial dialer
 	Bootstrap(options xmap.M) error
+	//shutdown
+	Shutdown() error
 	//
 	Options() xmap.M
 	//match uri
@@ -67,13 +70,18 @@ type Dialer interface {
 
 //Pool is the set of Dialer
 type Pool struct {
-	Dialers []Dialer
-	Web     http.Handler
+	Dialers     []Dialer
+	Webs        map[string]http.Handler
+	conns       map[string]Conn
+	connsLocker sync.RWMutex
 }
 
 //NewPool will return new Pool
 func NewPool() (pool *Pool) {
-	pool = &Pool{}
+	pool = &Pool{
+		conns:       map[string]Conn{},
+		connsLocker: sync.RWMutex{},
+	}
 	return
 }
 
@@ -83,6 +91,7 @@ func (p *Pool) AddDialer(dialers ...Dialer) (err error) {
 	return
 }
 
+//Bootstrap will bootstrap all supported dialer
 func (p *Pool) Bootstrap(options xmap.M) error {
 	dialerOptions := options.ArrayMapDef(nil, "dialers")
 	for _, option := range dialerOptions {
@@ -109,11 +118,13 @@ func (p *Pool) Bootstrap(options xmap.M) error {
 		p.Dialers = append(p.Dialers, web)
 		InfoLog("Pool add dav dialer to pool")
 	}
-	if p.Web != nil && (options.Value("web") != nil || options.IntDef(0, "standard") > 0 || options.IntDef(0, "std") > 0) {
-		web := NewWebDialer("web", p.Web)
-		web.Bootstrap(options.MapDef(xmap.M{}, "web"))
-		p.Dialers = append(p.Dialers, web)
-		InfoLog("Pool add web dialer to pool")
+	if options.Value("web") != nil || options.IntDef(0, "standard") > 0 || options.IntDef(0, "std") > 0 {
+		for n, w := range p.Webs {
+			web := NewWebDialer(n, w)
+			web.Bootstrap(options.MapDef(xmap.M{}, n))
+			p.Dialers = append(p.Dialers, web)
+			InfoLog("Pool add web/%v dialer to pool", n)
+		}
 	}
 	if options.Value("tcp") != nil || options.IntDef(0, "standard") > 0 || options.IntDef(0, "std") > 0 {
 		tcp := NewTCPDialer()
@@ -136,6 +147,12 @@ func (p *Pool) Dial(sid uint64, uri string, pipe io.ReadWriteCloser) (r Conn, er
 	return
 }
 
+//Shutdown will shutdown all dialer
+func (p *Pool) Shutdown() (err error) {
+	return
+}
+
+//DefaultDialerCreator is default all dialer creator
 func DefaultDialerCreator(t string) (dialer Dialer) {
 	switch t {
 	case "balance":
@@ -152,4 +169,5 @@ func DefaultDialerCreator(t string) (dialer Dialer) {
 	return
 }
 
+//NewDialer is default all dialer creator
 var NewDialer = DefaultDialerCreator

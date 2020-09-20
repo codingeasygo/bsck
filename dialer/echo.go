@@ -32,6 +32,7 @@ func (e *EchoDialer) Bootstrap(options xmap.M) error {
 	return nil
 }
 
+//Options is options getter
 func (e *EchoDialer) Options() xmap.M {
 	return e.conf
 }
@@ -48,6 +49,11 @@ func (e *EchoDialer) Dial(sid uint64, uri string, pipe io.ReadWriteCloser) (r Co
 	if pipe != nil {
 		err = r.Pipe(pipe)
 	}
+	return
+}
+
+//Shutdown will shutdown dial
+func (e *EchoDialer) Shutdown() (err error) {
 	return
 }
 
@@ -101,6 +107,7 @@ func (e *EchoReadWriteCloser) Close() (err error) {
 	return
 }
 
+//Pipe is Pipable implment
 func (e *EchoReadWriteCloser) Pipe(raw io.ReadWriteCloser) (err error) {
 	go e.copyAndClose(e, raw)
 	go e.copyAndClose(raw, e)

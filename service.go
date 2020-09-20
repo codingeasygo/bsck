@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/codingeasygo/bsck/dialer"
+	"github.com/codingeasygo/util/xhttp"
 	"github.com/codingeasygo/util/xmap"
 )
 
@@ -126,6 +127,8 @@ type Service struct {
 	Handler    ProxyHandler
 	Config     *Config
 	ConfigPath string
+	Client     *xhttp.Client
+	Webs       map[string]http.Handler
 	configLock sync.RWMutex
 	configLast int64
 }
@@ -135,6 +138,12 @@ func NewService() (s *Service) {
 	s = &Service{
 		configLock: sync.RWMutex{},
 	}
+	client := &http.Client{
+		Transport: &http.Transport{
+			Dial: s.DialNet,
+		},
+	}
+	s.Client = xhttp.NewClient(client)
 	return
 }
 
@@ -305,6 +314,7 @@ func (s *Service) RemoveFoward(loc string) (err error) {
 
 //DialerAll will dial uri by raw
 func (s *Service) DialerAll(uri string, raw io.ReadWriteCloser) (sid uint64, err error) {
+	DebugLog("Service start dial to %v", uri)
 	if strings.Contains(uri, "->") {
 		sid, err = s.Node.Dial(uri, raw)
 		return
@@ -352,6 +362,17 @@ func (s *Service) DialRaw(sid uint64, uri string) (conn Conn, err error) {
 	return
 }
 
+//DialNet is net dialer to router
+func (s *Service) DialNet(network, addr string) (conn net.Conn, err error) {
+	conn, raw, err := dialer.CreatePipedConn()
+	if err == nil {
+		addr = strings.TrimSuffix(addr, ":80")
+		addr = strings.TrimSuffix(addr, ":443")
+		_, err = s.DialerAll(addr, raw)
+	}
+	return
+}
+
 //Start will start service
 func (s *Service) Start() (err error) {
 	if len(s.ConfigPath) > 0 {
@@ -391,6 +412,7 @@ func (s *Service) Start() (err error) {
 	}
 	s.Dialer = dialer.NewPool()
 	s.Dialer.AddDialer(dialer.NewStateDialer("router", s.Node.Router))
+	s.Dialer.Webs = s.Webs
 	err = s.Dialer.Bootstrap(s.Config.Dialer)
 	if err != nil {
 		return

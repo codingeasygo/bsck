@@ -362,6 +362,8 @@ type Router struct {
 	channelLck      sync.RWMutex
 	table           map[string]TableRouter
 	tableLck        sync.RWMutex
+	rawConn         map[string][]io.ReadWriteCloser
+	rawLck          sync.RWMutex
 }
 
 //NewRouter will return new Router by name
@@ -372,6 +374,8 @@ func NewRouter(name string) (router *Router) {
 		channelLck: sync.RWMutex{},
 		table:      map[string]TableRouter{},
 		tableLck:   sync.RWMutex{},
+		rawConn:    map[string][]io.ReadWriteCloser{},
+		rawLck:     sync.RWMutex{},
 		BufferSize: 1024,
 		Heartbeat:  5 * time.Second,
 		Handler:    nil,
@@ -769,17 +773,27 @@ func (r *Router) DialConn(uri string, raw io.ReadWriteCloser) (sid uint64, conn 
 		sid = r.UniqueSid()
 		conn, err = r.Handler.DialRaw(sid, uri)
 		if err != nil {
+			raw.Close()
 			return
 		}
+		r.rawLck.Lock()
+		r.rawConn[fmt.Sprintf("%p", raw)] = []io.ReadWriteCloser{raw, conn}
+		r.rawConn[fmt.Sprintf("%p", conn)] = []io.ReadWriteCloser{conn, raw}
+		r.rawLck.Unlock()
 		go func() {
-			io.CopyN(raw, conn, int64(r.BufferSize))
+			_, err = io.CopyBuffer(raw, conn, make([]byte, r.BufferSize))
 			raw.Close()
+			r.rawLck.Lock()
+			delete(r.rawConn, fmt.Sprintf("%p", raw))
+			r.rawLck.Unlock()
 		}()
 		go func() {
-			io.CopyN(conn, raw, int64(r.BufferSize))
+			_, err = io.CopyBuffer(conn, raw, make([]byte, r.BufferSize))
 			conn.Close()
+			r.rawLck.Lock()
+			delete(r.rawConn, fmt.Sprintf("%p", conn))
+			r.rawLck.Unlock()
 		}()
-		// err = fmt.Errorf("invalid uri(%v), it must like x->y", uri)
 		return
 	}
 	channel, err := r.SelectChannel(parts[0])
@@ -841,6 +855,23 @@ func (r *Router) Close() (err error) {
 		bond.channelLck.Unlock()
 	}
 	r.channelLck.Unlock()
+	r.tableLck.Lock()
+	for _, table := range r.table {
+		if closer, ok := table[0].(io.Closer); ok {
+			closer.Close()
+		}
+		if closer, ok := table[2].(io.Closer); ok {
+			closer.Close()
+		}
+	}
+	r.tableLck.Unlock()
+	r.rawLck.Lock()
+	for _, entry := range r.rawConn {
+		if entry[0] != nil {
+			entry[0].Close()
+		}
+	}
+	r.rawLck.Unlock()
 	return
 }
 

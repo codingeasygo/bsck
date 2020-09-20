@@ -51,6 +51,10 @@ func (o *OnceDialer) Dial(sid uint64, uri string, pipe io.ReadWriteCloser) (r Co
 	return
 }
 
+func (o *OnceDialer) Shutdown() (err error) {
+	return
+}
+
 func (o *OnceDialer) Read(p []byte) (n int, err error) {
 	return
 }
@@ -236,6 +240,10 @@ func (t *TimeDialer) Dial(sid uint64, uri string, pipe io.ReadWriteCloser) (r Co
 	r = t
 	t.last = xtime.Now()
 	time.Sleep(10 * time.Millisecond)
+	return
+}
+
+func (t *TimeDialer) Shutdown() (err error) {
 	return
 }
 
