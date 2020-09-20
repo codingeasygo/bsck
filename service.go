@@ -24,6 +24,7 @@ import (
 	"github.com/codingeasygo/bsck/dialer"
 	"github.com/codingeasygo/util/xhttp"
 	"github.com/codingeasygo/util/xmap"
+	"golang.org/x/crypto/ssh"
 )
 
 //ShowLog will show more log.
@@ -131,12 +132,16 @@ type Service struct {
 	Webs       map[string]http.Handler
 	configLock sync.RWMutex
 	configLast int64
+	alias      map[string]string
+	aliasLock  sync.RWMutex
 }
 
 //NewService will return new Service
 func NewService() (s *Service) {
 	s = &Service{
 		configLock: sync.RWMutex{},
+		alias:      map[string]string{},
+		aliasLock:  sync.RWMutex{},
 	}
 	client := &http.Client{
 		Transport: &http.Transport{
@@ -193,7 +198,16 @@ func (s *Service) ReloadConfig() (err error) {
 func (s *Service) AddFoward(loc, uri string) (err error) {
 	locParts := strings.SplitN(loc, "~", 2)
 	if len(locParts) < 2 {
-		err = fmt.Errorf("local uri must be alias~*://*, but %v", loc)
+		s.aliasLock.Lock()
+		_, having := s.alias[loc]
+		if !having {
+			s.alias[loc] = uri
+		}
+		s.aliasLock.Unlock()
+		if having {
+			err = fmt.Errorf("local uri is exeists %v", loc)
+		}
+		// err = fmt.Errorf("local uri must be alias~*://*, but %v", loc)
 		return
 	}
 	target, err := url.Parse(locParts[1])
@@ -265,7 +279,16 @@ func (s *Service) AddFoward(loc, uri string) (err error) {
 func (s *Service) RemoveFoward(loc string) (err error) {
 	locParts := strings.SplitN(loc, "~", 2)
 	if len(locParts) < 2 {
-		err = fmt.Errorf("local uri must be alias~*://*, but %v", loc)
+		s.aliasLock.Lock()
+		_, having := s.alias[loc]
+		if having {
+			delete(s.alias, loc)
+		}
+		s.aliasLock.Unlock()
+		if !having {
+			err = fmt.Errorf("local uri is not exeists %v", loc)
+		}
+		// err = fmt.Errorf("local uri must be alias~*://*, but %v", loc)
 		return
 	}
 	target, err := url.Parse(locParts[1])
@@ -325,12 +348,18 @@ func (s *Service) DialerAll(uri string, raw io.ReadWriteCloser) (sid uint64, err
 		return
 	}
 	parts := strings.SplitN(uri, "?", 2)
-	router := s.Forward.FindForward(parts[0])
-	if len(router) < 1 {
-		err = fmt.Errorf("forward not found by %v", uri)
-		return
+	s.aliasLock.Lock()
+	target, ok := s.alias[parts[0]]
+	s.aliasLock.Unlock()
+	if !ok {
+		router := s.Forward.FindForward(parts[0])
+		if len(router) < 2 {
+			err = fmt.Errorf("forward not found by %v", uri)
+			return
+		}
+		target = router[1]
 	}
-	dialURI := router[1]
+	dialURI := target
 	if len(parts) > 1 {
 		if strings.Contains(dialURI, "?") {
 			dialURI += "&" + parts[1]
@@ -370,6 +399,23 @@ func (s *Service) DialNet(network, addr string) (conn net.Conn, err error) {
 		addr = strings.TrimSuffix(addr, ":443")
 		_, err = s.DialerAll(addr, raw)
 	}
+	return
+}
+
+//DialSSH is ssh dialer to ssh server
+func (s *Service) DialSSH(uri string, config *ssh.ClientConfig) (client *ssh.Client, err error) {
+	conn, raw, err := dialer.CreatePipedConn()
+	if err == nil {
+		_, err = s.DialerAll(uri, raw)
+	}
+	if err != nil {
+		return
+	}
+	c, chans, reqs, err := ssh.NewClientConn(conn, uri, config)
+	if err != nil {
+		return nil, err
+	}
+	client = ssh.NewClient(c, chans, reqs)
 	return
 }
 

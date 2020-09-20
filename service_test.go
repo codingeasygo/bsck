@@ -1,6 +1,7 @@
 package bsck
 
 import (
+	"bytes"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -13,6 +14,7 @@ import (
 	"github.com/codingeasygo/util/xhttp"
 	"github.com/codingeasygo/util/xio"
 	"github.com/codingeasygo/util/xmap"
+	"golang.org/x/crypto/ssh"
 )
 
 var configTest1 = `
@@ -52,9 +54,10 @@ var configTest2 = `
         "t4~rdp://localhost:0": "tcp://127.0.0.1:22",
 		"t5~vnc://localhost:0": "tcp://127.0.0.1:22",
 		"w1~web://": "tcp://echo?abc=1",
-		"w2~web://": "tcp://echo",
-		"w3~web://": "http://dav?dir=.",
-		"w4~web://": "http://test1"
+		"w2": "tcp://echo",
+		"w3": "http://dav?dir=.",
+		"w4": "http://test1",
+		"w5": "tcp://127.0.0.1:22"
     },
     "channels": [],
     "dialer":{
@@ -178,6 +181,28 @@ func TestService(t *testing.T) {
 			return
 		}
 		fmt.Printf("%v\n", data)
+	}
+	{ //ssh test
+		client, err := service.DialSSH("w5", &ssh.ClientConfig{
+			User:            "cny",
+			HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+			Auth:            []ssh.AuthMethod{ssh.Password("sco")},
+		})
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		ss, err := client.NewSession()
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		ss.Stdin = bytes.NewBufferString("echo -n abc")
+		data, err := ss.Output("bash")
+		if err != nil || string(data) != "abc" {
+			t.Errorf("err:%v,%v", err, string(data))
+			return
+		}
 	}
 	//
 	ioutil.WriteFile("/tmp/test.json", []byte(configTest1), os.ModePerm)
