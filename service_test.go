@@ -56,7 +56,8 @@ var configTest2 = `
 		"w1~web://": "tcp://echo?abc=1",
 		"w2": "tcp://echo",
 		"w3": "http://dav?dir=.",
-		"w4": "http://test1",
+		"w40": "http://test1",
+		"w41": "http://test1",
 		"w5": "tcp://127.0.0.1:22"
     },
     "channels": [],
@@ -175,7 +176,7 @@ func TestService(t *testing.T) {
 		fmt.Printf("%v\n", data)
 	}
 	{ //web test
-		data, err := service.Client.GetText("http://w4")
+		data, err := service.Client.GetText("http://w40,w41")
 		if err != nil || data != "abc" {
 			t.Error(err)
 			return
