@@ -123,6 +123,15 @@ type ForwardFinder interface {
 	FindForward(uri string) (target string, err error)
 }
 
+//ForwardFinderF is func implement ForwardFinder
+type ForwardFinderF func(uri string) (target string, err error)
+
+//FindForward is implement ForwardFinder
+func (f ForwardFinderF) FindForward(uri string) (target string, err error) {
+	target, err = f(uri)
+	return
+}
+
 //Service is bound socket service
 type Service struct {
 	Node       *Proxy

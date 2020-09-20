@@ -77,6 +77,15 @@ func TestService(t *testing.T) {
 			fmt.Fprintf(w, "abc")
 		}),
 	}
+	service.Finder = ForwardFinderF(func(uri string) (target string, err error) {
+		switch uri {
+		case "find0":
+			target = "http://dav?dir=."
+		default:
+			err = fmt.Errorf("not supported %v", uri)
+		}
+		return
+	})
 	err := service.Start()
 	if err != nil {
 		t.Error(err)
@@ -178,6 +187,14 @@ func TestService(t *testing.T) {
 	{ //web test
 		data, err := service.Client.GetText("http://w40,w41")
 		if err != nil || data != "abc" {
+			t.Error(err)
+			return
+		}
+		fmt.Printf("%v\n", data)
+	}
+	{ //finder test
+		data, err := service.Client.GetText("http://find0")
+		if err != nil || !strings.Contains(data, "router.go") {
 			t.Error(err)
 			return
 		}
