@@ -336,8 +336,19 @@ func (s *Service) RemoveFoward(loc string) (err error) {
 }
 
 //DialerAll will dial uri by raw
-func (s *Service) DialerAll(uri string, raw io.ReadWriteCloser) (sid uint64, err error) {
-	DebugLog("Service start dial to %v", uri)
+func (s *Service) DialerAll(uris string, raw io.ReadWriteCloser) (sid uint64, err error) {
+	DebugLog("Service start dial all to %v", uris)
+	for _, uri := range strings.Split(uris, ",") {
+		sid, err = s.dialerAll(uri, raw)
+		if err == nil {
+			break
+		}
+	}
+	return
+}
+
+func (s *Service) dialerAll(uri string, raw io.ReadWriteCloser) (sid uint64, err error) {
+	DebugLog("Service try dial to %v", uri)
 	if strings.Contains(uri, "->") {
 		sid, err = s.Node.Dial(uri, raw)
 		return
