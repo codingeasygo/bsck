@@ -86,7 +86,7 @@ func (n *NormalAcessHandler) DialRaw(sid uint64, uri string) (raw Conn, err erro
 }
 
 //OnConnLogin is proxy handler to handle login
-func (n *NormalAcessHandler) OnConnLogin(channel Conn, args string) (name string, index int, err error) {
+func (n *NormalAcessHandler) OnConnLogin(channel Conn, args string) (name string, index int, result xmap.M, err error) {
 	var option = xmap.M{}
 	err = json.Unmarshal([]byte(args), &option)
 	if err != nil {
@@ -171,7 +171,7 @@ type ProxyHandler interface {
 	//DialRaw will dial raw connection by uri
 	DialRaw(sid uint64, uri string) (raw Conn, err error)
 	//OnConnLogin is event on connection login
-	OnConnLogin(channel Conn, args string) (name string, index int, err error)
+	OnConnLogin(channel Conn, args string) (name string, index int, result xmap.M, err error)
 	//OnConnDialURI is event on connection dial to remote
 	OnConnDialURI(channel Conn, conn string, parts []string) (err error)
 	//OnConnLogin is event on connection close
@@ -343,7 +343,7 @@ func (p *Proxy) Close() (err error) {
 
 func (p *Proxy) runReconnect(args xmap.M) {
 	for p.Running {
-		_, err := p.Login(args)
+		_, _, err := p.Login(args)
 		if err == nil {
 			break
 		}
@@ -372,12 +372,12 @@ func (p *Proxy) OnConnDialURI(channel Conn, conn string, parts []string) (err er
 }
 
 //OnConnLogin is on connection login
-func (p *Proxy) OnConnLogin(channel Conn, args string) (name string, index int, err error) {
+func (p *Proxy) OnConnLogin(channel Conn, args string) (name string, index int, result xmap.M, err error) {
 	if p.Handler == nil {
 		err = fmt.Errorf("not supported")
 		return
 	}
-	name, index, err = p.Handler.OnConnLogin(channel, args)
+	name, index, result, err = p.Handler.OnConnLogin(channel, args)
 	return
 }
 
@@ -412,7 +412,7 @@ func (p *Proxy) LoginChannel(reconnect bool, channels ...xmap.M) (err error) {
 		if channel.Int("enable") < 1 {
 			continue
 		}
-		_, err = p.Login(channel)
+		_, _, err = p.Login(channel)
 		if err == nil {
 			continue
 		}
@@ -426,7 +426,7 @@ func (p *Proxy) LoginChannel(reconnect bool, channels ...xmap.M) (err error) {
 }
 
 //Login will add channel by local address, master address, auth token, channel index.
-func (p *Proxy) Login(option xmap.M) (channel *Channel, err error) {
+func (p *Proxy) Login(option xmap.M) (channel *Channel, result xmap.M, err error) {
 	var index int
 	var local, remote, tlsCert, tlsKey string
 	err = option.ValidFormat(`
@@ -472,7 +472,7 @@ func (p *Proxy) Login(option xmap.M) (channel *Channel, err error) {
 	}
 	auth["index"] = index
 	auth["name"] = p.Name
-	channel, err = p.JoinConn(NewInfoRWC(frame.NewReadWriteCloser(conn, p.BufferSize), conn.RemoteAddr().String()), index, auth)
+	channel, result, err = p.JoinConn(NewInfoRWC(frame.NewReadWriteCloser(conn, p.BufferSize), conn.RemoteAddr().String()), index, auth)
 	if err == nil {
 		channel.SetContext(option)
 	}

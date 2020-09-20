@@ -109,7 +109,7 @@ func TestProxy(t *testing.T) {
 	slaver1 := NewProxy("slaver1", slaver1Handler)
 	// slaver1.Heartbeat = 50 * time.Millisecond
 	// slaver1.StartHeartbeat()
-	_, err = slaver1.Login(xmap.M{
+	_, _, err = slaver1.Login(xmap.M{
 		"remote": "localhost:9232",
 		"token":  "abc",
 		"index":  0,
@@ -120,7 +120,7 @@ func TestProxy(t *testing.T) {
 	}
 	defer slaver1.Close()
 	slaver2 := NewProxy("slaver2", nil)
-	_, err = slaver2.Login(xmap.M{
+	_, _, err = slaver2.Login(xmap.M{
 		"remote": "localhost:9232",
 		"token":  "abc",
 		"index":  0,
@@ -361,7 +361,7 @@ func TestProxyError(t *testing.T) {
 	{ //test login error
 		fmt.Printf("\n\n\ntest login error\n")
 		slaverErr := NewProxy("error", nil)
-		_, err = slaverErr.Login(xmap.M{
+		_, _, err = slaverErr.Login(xmap.M{
 			"enable": 1,
 			"remote": "localhost:9232",
 			"token":  "abc",
@@ -372,7 +372,7 @@ func TestProxyError(t *testing.T) {
 			return
 		}
 		slaverErr = NewProxy("error", nil)
-		_, err = slaverErr.Login(xmap.M{
+		_, _, err = slaverErr.Login(xmap.M{
 			"enable": 1,
 			"remote": "localhost:9232",
 			"token":  "abc",
@@ -478,7 +478,7 @@ func TestProxyError(t *testing.T) {
 			t.Error(err)
 			return
 		}
-		_, err = slaver.Login(xmap.M{
+		_, _, err = slaver.Login(xmap.M{
 			"enable": 1,
 			"local":  "xxx",
 			"remote": "localhost:9232",
@@ -489,7 +489,7 @@ func TestProxyError(t *testing.T) {
 			t.Error(err)
 			return
 		}
-		_, err = slaver.Login(xmap.M{
+		_, _, err = slaver.Login(xmap.M{
 			"enable": 1,
 			"remote": "localhost:12",
 			"token":  "abc",
@@ -501,7 +501,7 @@ func TestProxyError(t *testing.T) {
 		}
 		merr := NewErrReadWriteCloser([]byte("abc"), 10)
 		merr.ErrType = 10
-		_, err = slaver.JoinConn(frame.NewReadWriteCloser(merr, 1024), 0, xmap.M{
+		_, _, err = slaver.JoinConn(frame.NewReadWriteCloser(merr, 1024), 0, xmap.M{
 			"enable": 1,
 			"remote": "",
 			"token":  "abc",
@@ -512,7 +512,7 @@ func TestProxyError(t *testing.T) {
 			return
 		}
 		merr.ErrType = 20
-		_, err = slaver.JoinConn(frame.NewReadWriteCloser(merr, 1024), 0, xmap.M{
+		_, _, err = slaver.JoinConn(frame.NewReadWriteCloser(merr, 1024), 0, xmap.M{
 			"enable": 1,
 			"remote": "",
 			"token":  "abc",
@@ -691,7 +691,7 @@ func TestProxyForward(t *testing.T) {
 	})
 	//
 	client := NewProxy("client", nil)
-	_, err = client.Login(xmap.M{
+	_, _, err = client.Login(xmap.M{
 		"remote": "localhost:9232",
 		"token":  "abc",
 		"index":  0,
@@ -862,7 +862,7 @@ func TestSocketProxyForward(t *testing.T) {
 	})
 	//
 	client := NewProxy("client", nil)
-	_, err = client.Login(xmap.M{
+	_, _, err = client.Login(xmap.M{
 		"remote": "localhost:9232",
 		"token":  "abc",
 		"index":  0,
@@ -960,7 +960,7 @@ func TestProxyTLS(t *testing.T) {
 	})
 	//
 	client := NewProxy("client", nil)
-	_, err = client.Login(xmap.M{
+	_, _, err = client.Login(xmap.M{
 		"remote":   "localhost:9232",
 		"token":    "abc",
 		"index":    0,
@@ -977,7 +977,7 @@ func TestProxyTLS(t *testing.T) {
 	//
 	//
 	client = NewProxy("client", nil)
-	_, err = client.Login(xmap.M{
+	_, _, err = client.Login(xmap.M{
 		"remote":   "localhost:9232",
 		"token":    "abc",
 		"index":    0,
@@ -1050,7 +1050,7 @@ func TestProxyDialSync(t *testing.T) {
 	})
 	//
 	client := NewProxy("client", nil)
-	_, err = client.Login(xmap.M{
+	_, _, err = client.Login(xmap.M{
 		"remote": "localhost:9232",
 		"token":  "abc",
 		"index":  0,

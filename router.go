@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/codingeasygo/util/converter"
 	"github.com/codingeasygo/util/xio/frame"
 	"github.com/codingeasygo/util/xmap"
 )
@@ -346,7 +347,7 @@ type Handler interface {
 	//on connection dial uri
 	OnConnDialURI(channel Conn, conn string, parts []string) (err error)
 	//on connection login
-	OnConnLogin(channel Conn, args string) (name string, index int, err error)
+	OnConnLogin(channel Conn, args string) (name string, index int, result xmap.M, err error)
 	//on connection close
 	OnConnClose(raw Conn) error
 }
@@ -601,18 +602,24 @@ func (r *Router) procLogin(conn Conn, buf []byte) (err error) {
 		conn.Close()
 		return
 	}
-	name, index, err := r.Handler.OnConnLogin(channel, string(buf[13:]))
+	name, index, result, err := r.Handler.OnConnLogin(channel, string(buf[13:]))
 	if err != nil {
 		ErrorLog("Router(%v) proc login fail with %v", r.Name, err)
-		message := []byte(err.Error())
-		err = writeCmd(conn, nil, CmdLoginBack, 0, message)
+		message := converter.JSON(xmap.M{"code": 10, "message": err.Error})
+		err = writeCmd(conn, nil, CmdLoginBack, 0, []byte(message))
 		conn.Close()
 		return
 	}
+	if result == nil {
+		result = xmap.M{}
+	}
 	channel.name = name
 	channel.index = index
+	result["name"] = r.Name
+	result["code"] = 0
 	r.addChannel(channel)
-	writeCmd(channel, nil, CmdLoginBack, 0, []byte("OK:"+r.Name))
+	message := converter.JSON(result)
+	writeCmd(channel, nil, CmdLoginBack, 0, []byte(message))
 	InfoLog("Router(%v) the channel(%v,%v) is login success on %v", r.Name, name, index, channel)
 	return
 }
@@ -812,7 +819,7 @@ func (r *Router) DialConn(uri string, raw io.ReadWriteCloser) (sid uint64, conn 
 }
 
 //JoinConn will add channel by the connected connection
-func (r *Router) JoinConn(conn frame.ReadWriteCloser, index int, args interface{}) (channel *Channel, err error) {
+func (r *Router) JoinConn(conn frame.ReadWriteCloser, index int, args interface{}) (channel *Channel, result xmap.M, err error) {
 	data, _ := json.Marshal(args)
 	err = writeCmd(conn, nil, CmdLogin, 0, data)
 	if err != nil {
@@ -824,13 +831,14 @@ func (r *Router) JoinConn(conn frame.ReadWriteCloser, index int, args interface{
 		WarnLog("Router(%v) read login back from %v fail with %v", r.Name, conn, err)
 		return
 	}
-	msg := string(buf[13:])
-	if !strings.HasPrefix(msg, "OK:") {
-		err = fmt.Errorf("%v", msg)
+	result = xmap.M{}
+	err = json.Unmarshal(buf[13:], &result)
+	if err != nil || result.Int("code") != 0 || len(result.Str("name")) < 1 {
+		err = fmt.Errorf("%v", string(buf[13:]))
 		WarnLog("Router(%v) login to %v fail with %v", r.Name, conn, err)
 		return
 	}
-	remoteName := strings.TrimPrefix(msg, "OK:")
+	remoteName := result.Str("name")
 	channel = &Channel{
 		ReadWriteCloser: conn,
 		cid:             atomic.AddUint64(&r.connectSequence, 1),

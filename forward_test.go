@@ -169,7 +169,7 @@ func TestForward(t *testing.T) {
 			t.Error(err)
 			return
 		}
-		err = forward.AddForward("web://t2", "http://web?dir=./")
+		err = forward.AddForward("web://t2", "http://dav?dir=./")
 		if err != nil {
 			t.Error(err)
 			return
