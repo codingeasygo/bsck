@@ -558,7 +558,7 @@ func (s *Service) Stop() (err error) {
 		s.Node.Close()
 		s.Node = nil
 	}
-	if s.Socks != nil {
+	if s.Socks != nil && s.Socks.Listener != nil {
 		s.Socks.Close()
 		s.Socks = nil
 	}
