@@ -654,6 +654,7 @@ func (r *Router) procDial(channel Conn, buf []byte) (err error) {
 	err = r.Handler.OnConnDialURI(channel, conn, parts)
 	if err != nil {
 		WarnLog("Router(%v) process dial uri event to %v on channel(%v) fail with %v", r.Name, conn, channel, err)
+		err = writeCmd(channel, nil, CmdDialBack, sid, []byte(fmt.Sprintf("%v", err)))
 		return
 	}
 	if len(parts) < 2 {
