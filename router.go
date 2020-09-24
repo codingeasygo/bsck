@@ -885,12 +885,26 @@ func (r *Router) Close() (err error) {
 }
 
 //State return the current state of router
-func (r *Router) State() (state xmap.M) {
+func (r *Router) State(args ...interface{}) (state xmap.M) {
 	state = xmap.M{}
 	//
+	var query = xmap.M{}
+	if len(args) > 0 {
+		query = xmap.Wrap(args[0])
+	}
+	if len(query) < 1 {
+		return
+	}
 	channels := xmap.M{}
 	r.channelLck.RLock()
 	for name, bond := range r.channel {
+		queryType := query.Str(name)
+		if len(queryType) < 1 {
+			queryType = query.Str("*")
+		}
+		if queryType != "info" && queryType != "*" {
+			continue
+		}
 		channel := xmap.M{}
 		for idx, con := range bond.channels {
 			info := xmap.M{
@@ -911,6 +925,16 @@ func (r *Router) State() (state xmap.M) {
 	r.tableLck.RLock()
 	added := map[string]bool{}
 	for _, t := range r.table {
+		queryType := query.Str(t[0].(Conn).Name())
+		if len(queryType) < 1 {
+			queryType = query.Str(t[2].(Conn).Name())
+		}
+		if len(queryType) < 1 {
+			queryType = query.Str("*")
+		}
+		if queryType != "table" && queryType != "*" {
+			continue
+		}
 		key := fmt.Sprintf("%p", t)
 		if added[key] {
 			continue

@@ -11,7 +11,7 @@ import (
 
 //Statable is interface for get current state.
 type Statable interface {
-	State() xmap.M
+	State(args ...interface{}) xmap.M
 }
 
 //StateBuffer is an io.ReadWriteCloser by read from bytes.Buffer and write discard

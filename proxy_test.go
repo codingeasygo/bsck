@@ -51,6 +51,7 @@ func (e *Echo) Write(p []byte) (n int, err error) {
 }
 
 func (e *Echo) Read(b []byte) (n int, err error) {
+	fmt.Printf("Echo--->%p\n", e)
 	fmt.Println("Echo.Read-->started", e.Data)
 	if e.Err != nil {
 		err = e.Err
@@ -119,7 +120,7 @@ func TestProxy(t *testing.T) {
 		return
 	}
 	defer slaver1.Close()
-	slaver2 := NewProxy("slaver2", nil)
+	slaver2 := NewProxy("slaver2", NewNoneHandler())
 	_, _, err = slaver2.Login(xmap.M{
 		"remote": "localhost:9232",
 		"token":  "abc",
@@ -297,7 +298,7 @@ func TestProxy(t *testing.T) {
 		time.Sleep(3 * time.Second)
 		begin := time.Now()
 		fmt.Printf("\n\n\ntest login channel fail\n")
-		slaver4 := NewProxy("slaver4", nil)
+		slaver4 := NewProxy("slaver4", NewNoneHandler())
 		err := slaver4.LoginChannel(false,
 			xmap.M{
 				"enable": 0,
@@ -360,7 +361,7 @@ func TestProxyError(t *testing.T) {
 	//
 	{ //test login error
 		fmt.Printf("\n\n\ntest login error\n")
-		slaverErr := NewProxy("error", nil)
+		slaverErr := NewProxy("error", NewNoneHandler())
 		_, _, err = slaverErr.Login(xmap.M{
 			"enable": 1,
 			"remote": "localhost:9232",
@@ -371,7 +372,7 @@ func TestProxyError(t *testing.T) {
 			t.Error(err)
 			return
 		}
-		slaverErr = NewProxy("error", nil)
+		slaverErr = NewProxy("error", NewNoneHandler())
 		_, _, err = slaverErr.Login(xmap.M{
 			"enable": 1,
 			"remote": "localhost:9232",
@@ -450,11 +451,6 @@ func TestProxyError(t *testing.T) {
 		}
 		//
 		//test dial error
-		_, err = master.Router.Dial("uri", NewEcho("testing"))
-		if err == nil {
-			t.Error(err)
-			return
-		}
 		_, err = master.Router.Dial("not->abc", NewEcho("testing"))
 		if err == nil {
 			t.Error(err)
@@ -467,7 +463,7 @@ func TestProxyError(t *testing.T) {
 		}
 		//
 		//test login error
-		slaver := NewProxy("slaver", nil)
+		slaver := NewProxy("slaver", NewNoneHandler())
 		err = slaver.LoginChannel(false, xmap.M{
 			"enable": 1,
 			"remote": "localhost:12",
@@ -634,7 +630,7 @@ func TestReconnect(t *testing.T) {
 		return
 	}
 	defer master.Close()
-	slaver := NewProxy("slaver", nil)
+	slaver := NewProxy("slaver", NewNoneHandler())
 	slaver.ReconnectDelay = 100 * time.Millisecond
 	slaver.Login(xmap.M{
 		"remote": "localhost:9232",
@@ -690,7 +686,7 @@ func TestProxyForward(t *testing.T) {
 		"index":  0,
 	})
 	//
-	client := NewProxy("client", nil)
+	client := NewProxy("client", NewNoneHandler())
 	_, _, err = client.Login(xmap.M{
 		"remote": "localhost:9232",
 		"token":  "abc",
@@ -861,7 +857,7 @@ func TestSocketProxyForward(t *testing.T) {
 		"index":  0,
 	})
 	//
-	client := NewProxy("client", nil)
+	client := NewProxy("client", NewNoneHandler())
 	_, _, err = client.Login(xmap.M{
 		"remote": "localhost:9232",
 		"token":  "abc",
@@ -959,7 +955,7 @@ func TestProxyTLS(t *testing.T) {
 		"tls_key":  "bsrouter/bsrouter.key",
 	})
 	//
-	client := NewProxy("client", nil)
+	client := NewProxy("client", NewNoneHandler())
 	_, _, err = client.Login(xmap.M{
 		"remote":   "localhost:9232",
 		"token":    "abc",
@@ -976,7 +972,7 @@ func TestProxyTLS(t *testing.T) {
 	master.Close()
 	//
 	//
-	client = NewProxy("client", nil)
+	client = NewProxy("client", NewNoneHandler())
 	_, _, err = client.Login(xmap.M{
 		"remote":   "localhost:9232",
 		"token":    "abc",
@@ -989,7 +985,7 @@ func TestProxyTLS(t *testing.T) {
 		return
 	}
 	//
-	master = NewProxy("master", nil)
+	master = NewProxy("master", NewNoneHandler())
 	master.Cert = "bsrouter/bsrouter.xxx"
 	master.Key = "bsrouter/bsrouter.xxx"
 	err = master.ListenMaster(":9232")
@@ -1003,7 +999,7 @@ func TestProxyTLS(t *testing.T) {
 
 func TestProxyClose(t *testing.T) {
 	for i := 0; i < 10; i++ {
-		master := NewProxy("master", nil)
+		master := NewProxy("master", NewNoneHandler())
 		err := master.ListenMaster(":9232")
 		if err != nil {
 			t.Error(err)
@@ -1049,7 +1045,7 @@ func TestProxyDialSync(t *testing.T) {
 		"index":  0,
 	})
 	//
-	client := NewProxy("client", nil)
+	client := NewProxy("client", NewNoneHandler())
 	_, _, err = client.Login(xmap.M{
 		"remote": "localhost:9232",
 		"token":  "abc",

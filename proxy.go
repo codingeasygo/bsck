@@ -171,6 +171,44 @@ func (n *NormalAcessHandler) OnConnJoin(channel *Channel, option, result xmap.M)
 	return
 }
 
+//NoneHandler is proxy handler
+type NoneHandler struct {
+}
+
+//NewNoneHandler will return new NoneHandler
+func NewNoneHandler() (handler *NoneHandler) {
+	handler = &NoneHandler{}
+	return
+}
+
+//DialRaw will dial raw connection by uri
+func (n *NoneHandler) DialRaw(sid uint64, uri string) (raw Conn, err error) {
+	err = fmt.Errorf("not supported")
+	return
+}
+
+//OnConnLogin is event on connection login
+func (n *NoneHandler) OnConnLogin(channel Conn, args string) (name string, index int, result xmap.M, err error) {
+	err = fmt.Errorf("not supported")
+	return
+}
+
+//OnConnDialURI is event on connection dial to remote
+func (n *NoneHandler) OnConnDialURI(channel Conn, conn string, parts []string) (err error) {
+	err = fmt.Errorf("not supported")
+	return
+}
+
+//OnConnClose is event on connection close
+func (n *NoneHandler) OnConnClose(conn Conn) (err error) {
+	return
+}
+
+//OnConnJoin is event on channel join
+func (n *NoneHandler) OnConnJoin(channel *Channel, option, result xmap.M) (err error) {
+	return
+}
+
 //ProxyHandler is proxy handler
 type ProxyHandler interface {
 	//DialRaw will dial raw connection by uri
@@ -179,7 +217,7 @@ type ProxyHandler interface {
 	OnConnLogin(channel Conn, args string) (name string, index int, result xmap.M, err error)
 	//OnConnDialURI is event on connection dial to remote
 	OnConnDialURI(channel Conn, conn string, parts []string) (err error)
-	//OnConnLogin is event on connection close
+	//OnConnClose is event on connection close
 	OnConnClose(conn Conn) (err error)
 	//OnConnJoin is event on channel join
 	OnConnJoin(channel *Channel, option, result xmap.M) (err error)

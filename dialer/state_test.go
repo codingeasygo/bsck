@@ -11,7 +11,7 @@ import (
 type StateData struct {
 }
 
-func (s *StateData) State() xmap.M {
+func (s *StateData) State(args ...interface{}) xmap.M {
 	return xmap.M{
 		"a": 1,
 		"b": 2,
