@@ -258,7 +258,7 @@ func (s *Service) AddFoward(loc, uri string) (err error) {
 	case "ws":
 		fallthrough
 	case "wss":
-		// target.Host = locParts[0]
+		target.Host = target.Hostname()
 		err = s.Forward.AddForward(target.String(), uri)
 	default:
 		err = fmt.Errorf("not supported scheme %v", target.Scheme)
