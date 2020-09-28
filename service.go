@@ -512,7 +512,6 @@ func (s *Service) Start() (err error) {
 			ErrorLog("Service node listen on %v fail with %v", s.Config.Listen, err)
 			return
 		}
-		s.Node.StartHeartbeat()
 		InfoLog("node listen on %v success", s.Config.Listen)
 	}
 	if len(s.Config.Channels) > 0 {
@@ -532,6 +531,7 @@ func (s *Service) Start() (err error) {
 			return
 		}
 	}
+	s.Node.StartHeartbeat()
 	mux := http.NewServeMux()
 	mux.HandleFunc("/dav/", s.Forward.ProcWebSubsH)
 	mux.HandleFunc("/ws/", s.Forward.ProcWebSubsH)
