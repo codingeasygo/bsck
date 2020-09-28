@@ -575,6 +575,9 @@ func (r *Router) loopHeartbeat() {
 		now := time.Now().Local().UnixNano() / 1e6
 		r.channelLck.RLock()
 		for name, bond := range r.channel {
+			if len(bond.channels) < 1 {
+				continue
+			}
 			if now-last > 30000 {
 				InfoLog("Router(%v) send heartbeat to %v", r.Name, name)
 				showed = true
@@ -647,6 +650,7 @@ func (r *Router) procDial(channel Conn, buf []byte) (err error) {
 	DebugLog("Router(%v) proc dail to %v on channel(%v)", r.Name, conn, channel)
 	path := strings.SplitN(conn, "@", 2)
 	if len(path) < 2 {
+		WarnLog("Router(%v) proc dail to %v on channel(%v) fail with invalid uri", r.Name, conn, channel)
 		err = writeCmd(channel, nil, CmdDialBack, sid, []byte(fmt.Sprintf("invalid uri(%v)", conn)))
 		return
 	}
@@ -664,6 +668,7 @@ func (r *Router) procDial(channel Conn, buf []byte) (err error) {
 	next := parts[0]
 	dst, err := r.SelectChannel(next)
 	if err != nil {
+		DebugLog("Router(%v) proc dail to %v on channel(%v) fail with select channle error %v", r.Name, conn, channel, err)
 		message := err.Error()
 		err = writeCmd(channel, nil, CmdDialBack, sid, []byte(message))
 		return
