@@ -56,7 +56,7 @@ func TestForward(t *testing.T) {
 		fmt.Println("dial to ", uri, err)
 		return
 	}
-	{ //test web forward
+	if false { //test web forward
 		err := forward.AddForward("web://loctest0", "http://127.0.0.1:80")
 		if err != nil {
 			t.Error(err)
@@ -154,7 +154,7 @@ func TestForward(t *testing.T) {
 		forward.RemoveForward("loctest3")
 		//
 	}
-	{ //test sub forward
+	if false { //test sub forward
 		err := forward.AddForward("ws://t0", "tcp://echo")
 		if err != nil {
 			t.Error(err)
@@ -235,8 +235,41 @@ func TestForward(t *testing.T) {
 		forward.RemoveForward("t0")
 		forward.RemoveForward("t1")
 		forward.RemoveForward("t2")
+		ts.Close()
 	}
-
+	{ //test forward value
+		err := forward.AddForward("ws://t0", "tcp://${where}")
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		err = forward.AddForward("web://t2", "http://dav?dir=${where}")
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		ts := httptest.NewServer(http.HandlerFunc(forward.ProcWebSubsH))
+		tsURL, _ := url.Parse(ts.URL)
+		wsconn, err := websocket.Dial("ws://"+tsURL.Host+"/ws/t0?where=echo", "", ts.URL)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		defer wsconn.Close()
+		fmt.Fprintf(wsconn, "data->%v", 0)
+		buf := make([]byte, 1024)
+		readed, err := wsconn.Read(buf)
+		fmt.Println("->", readed, string(buf[:readed]), err)
+		if err != nil || string(buf[:readed]) != "data->0" {
+			t.Error(err)
+			return
+		}
+		data, err := hget("%v/web/t2/build.sh?where=.", ts.URL)
+		if err != nil || len(data) < 1 {
+			t.Errorf("%v-%v", err, data)
+			return
+		}
+	}
 }
 
 func TestForwadError(t *testing.T) {
@@ -262,19 +295,6 @@ func TestForwadError(t *testing.T) {
 		return
 	}
 	fmt.Printf("Err:%v\n", err)
-}
-
-func TestForwardUri(t *testing.T) {
-	_, _, err := ForwardUri([]string{"tcp://loc", "xx://loc"}).URL()
-	if err != nil {
-		t.Error(err)
-		return
-	}
-	_, _, err = ForwardUri([]string{"tcp://loc", "a->xx://loc"}).URL()
-	if err != nil {
-		t.Error(err)
-		return
-	}
 }
 
 func TestWaitReadWriteCloser(t *testing.T) {

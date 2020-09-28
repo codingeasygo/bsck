@@ -13,19 +13,11 @@ import (
 	"sync/atomic"
 
 	"github.com/codingeasygo/bsck/dialer"
+	"github.com/codingeasygo/util/xmap"
 	"golang.org/x/net/websocket"
 )
 
 type ForwardUri []string
-
-func (f ForwardUri) URL() (local *url.URL, remote *url.URL, err error) {
-	local, err = url.Parse(f[0])
-	if err == nil {
-		parts := strings.Split(f[1], "->")
-		remote, err = url.Parse(parts[len(parts)-1])
-	}
-	return
-}
 
 func (f ForwardUri) String() string {
 	return strings.Join(f, "->")
@@ -103,17 +95,11 @@ func (f *Forward) ProcName(name string, w http.ResponseWriter, req *http.Request
 
 func (f *Forward) ProcRouter(router ForwardUri, w http.ResponseWriter, req *http.Request) {
 	connection := req.Header.Get("Connection")
-	local, remote, err := router.URL()
+	local, err := url.Parse(router[0])
 	if err != nil {
 		w.WriteHeader(500)
 		WarnLog("Forward proc web by router(%v),Connection(%v) fail with %v", router, connection, err)
 		fmt.Fprintf(w, "Error:%v", err)
-		return
-	}
-	if connection == "Upgrade" {
-		websocket.Handler(func(conn *websocket.Conn) {
-			f.runWebsocket(conn, router[1])
-		}).ServeHTTP(w, req)
 		return
 	}
 	if len(f.WebAuth) > 0 && local.Query().Get("auth") != "0" {
@@ -125,6 +111,22 @@ func (f *Forward) ProcRouter(router ForwardUri, w http.ResponseWriter, req *http
 			return
 		}
 	}
+	remoteURI := router[1]
+	remoteURI = xmap.ReplaceAll(func(key string) interface{} { return req.URL.Query().Get(key) }, remoteURI, true, true)
+	parts := strings.Split(remoteURI, "->")
+	remote, err := url.Parse(parts[len(parts)-1])
+	if err != nil {
+		w.WriteHeader(500)
+		WarnLog("Forward proc web by router(%v),Connection(%v) fail with parse remote error %v", router, connection, err)
+		fmt.Fprintf(w, "Error:%v", err)
+		return
+	}
+	if connection == "Upgrade" {
+		websocket.Handler(func(conn *websocket.Conn) {
+			f.runWebsocket(conn, remoteURI)
+		}).ServeHTTP(w, req)
+		return
+	}
 	proxy := &httputil.ReverseProxy{
 		Director: func(req *http.Request) {
 			req.URL.Host = req.Host
@@ -132,10 +134,10 @@ func (f *Forward) ProcRouter(router ForwardUri, w http.ResponseWriter, req *http
 		},
 		Transport: &http.Transport{
 			Dial: func(network, addr string) (raw net.Conn, err error) {
-				return f.procDial(network, addr, router[1])
+				return f.procDial(network, addr, remoteURI)
 			},
 			DialTLS: func(network, addr string) (raw net.Conn, err error) {
-				return f.procDialTLS(network, addr, router[1])
+				return f.procDialTLS(network, addr, remoteURI)
 			},
 		},
 	}
@@ -189,7 +191,7 @@ func (f *Forward) AddForward(loc, uri string) (err error) {
 	f.lck.Lock()
 	defer f.lck.Unlock()
 	forward := ForwardUri([]string{loc, uri})
-	local, _, err := forward.URL()
+	local, err := url.Parse(loc)
 	if err != nil {
 		return
 	}
