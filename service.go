@@ -534,6 +534,7 @@ func (s *Service) Start() (err error) {
 	s.Node.StartHeartbeat()
 	mux := http.NewServeMux()
 	mux.HandleFunc("/dav/", s.Forward.ProcWebSubsH)
+	mux.HandleFunc("/web/", s.Forward.ProcWebSubsH)
 	mux.HandleFunc("/ws/", s.Forward.ProcWebSubsH)
 	mux.HandleFunc("/", s.Forward.HostForwardF)
 	s.Forward.WebAuth = s.Config.Web.Auth
