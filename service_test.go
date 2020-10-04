@@ -95,7 +95,7 @@ func TestService(t *testing.T) {
 	ioutil.WriteFile("/tmp/test.json", []byte(configTest2), os.ModePerm)
 	err = service.ReloadConfig()
 	time.Sleep(10 * time.Millisecond)
-	runTestEcho := func(name string, echoa, echob *xio.PipeConn) {
+	runTestEcho := func(name string, echoa, echob *xio.PipeReadWriteCloser) {
 		wc := make(chan int, 1)
 		go func() {
 			buf := make([]byte, 128)
@@ -202,7 +202,7 @@ func TestService(t *testing.T) {
 	}
 	{ //ssh test
 		client, err := service.DialSSH("w5", &ssh.ClientConfig{
-			User:            "cny",
+			User:            "root",
 			HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 			Auth:            []ssh.AuthMethod{ssh.Password("sco")},
 		})
@@ -228,4 +228,141 @@ func TestService(t *testing.T) {
 	time.Sleep(10 * time.Millisecond)
 	service.Stop()
 	time.Sleep(10 * time.Millisecond)
+}
+
+var configTestMaster = `
+{
+    "name": "master",
+    "listen": ":5023",
+    "web": {},
+    "socks5": "",
+    "forwards": {},
+    "channels": [],
+    "dialer": {
+        "standard": 1
+    },
+    "acl": {
+        "slaver": "abc",
+        "caller": "abc"
+    },
+    "access": [
+        [
+            ".*",
+            ".*"
+        ]
+    ]
+}
+`
+
+var configTestSlaver = `
+{
+    "name": "slaver",
+    "listen": "",
+    "web": {},
+    "socks5": "",
+    "forwards": {},
+    "channels": [
+        {
+            "enable":1,
+            "remote": "localhost:5023",
+            "token":  "abc",
+            "index":  0
+        }
+    ],
+    "dialer":{
+        "standard": 1
+	},
+	"access": [
+        [
+            ".*",
+            ".*"
+        ]
+    ]
+}
+`
+
+var configTestCaller = `
+{
+    "name": "caller",
+    "listen": "",
+    "web": {},
+    "socks5": "",
+    "forwards": {},
+    "channels": [
+        {
+            "enable":1,
+            "remote": "localhost:5023",
+            "token":  "abc",
+            "index":  0
+        }
+    ],
+    "dialer":{
+        "standard": 1
+    }
+}
+`
+
+func TestSSH(t *testing.T) {
+	// LogLevel
+	ioutil.WriteFile("/tmp/test_master.json", []byte(configTestMaster), os.ModePerm)
+	ioutil.WriteFile("/tmp/test_slaver.json", []byte(configTestSlaver), os.ModePerm)
+	ioutil.WriteFile("/tmp/test_caller.json", []byte(configTestCaller), os.ModePerm)
+	defer func() {
+		os.Remove("/tmp/test_master.json")
+		os.Remove("/tmp/test_slaver.json")
+		os.Remove("/tmp/test_caller.json")
+	}()
+	var err error
+	//
+	master := NewService()
+	master.ConfigPath = "/tmp/test_master.json"
+	err = master.Start()
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	slaver := NewService()
+	slaver.ConfigPath = "/tmp/test_slaver.json"
+	err = slaver.Start()
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	caller := NewService()
+	caller.ConfigPath = "/tmp/test_caller.json"
+	err = caller.Start()
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	time.Sleep(100 * time.Millisecond)
+	for i := 0; i < 100; i++ { //ssh test
+		info := fmt.Sprintf("data-%v", i)
+		client, err := caller.DialSSH("master->slaver->tcp://127.0.0.1:22", &ssh.ClientConfig{
+			User:            "root",
+			HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+			Auth:            []ssh.AuthMethod{ssh.Password("sco")},
+		})
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		ss, err := client.NewSession()
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		ss.Stdin = bytes.NewBufferString("echo -n " + info)
+		data, err := ss.Output("bash")
+		if err != nil || string(data) != info {
+			t.Errorf("err:%v,%v", err, string(data))
+			return
+		}
+		ss.Close()
+		client.Close()
+	}
+	caller.Stop()
+	slaver.Stop()
+	master.Stop()
+	time.Sleep(100 * time.Millisecond)
 }

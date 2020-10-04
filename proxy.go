@@ -90,7 +90,7 @@ func (n *NormalAcessHandler) OnConnLogin(channel Conn, args string) (name string
 	var option = xmap.M{}
 	err = json.Unmarshal([]byte(args), &option)
 	if err != nil {
-		ErrorLog("Proxy(%v) unmarshal login option fail with %v", n.Name, err)
+		ErrorLog("NormalAcessHandler(%v) unmarshal login option fail with %v", n.Name, err)
 		err = fmt.Errorf("parse login opiton fail with " + err.Error())
 		return
 	}
@@ -101,7 +101,7 @@ func (n *NormalAcessHandler) OnConnLogin(channel Conn, args string) (name string
 		token,R|S,L:0;
 	`, &index, &name, &having)
 	if err != nil {
-		ErrorLog("Proxy(%v) login option fail with name/token is required", n.Name)
+		ErrorLog("NormalAcessHandler(%v) login option fail with name/token is required", n.Name)
 		return
 	}
 	n.loginLocker.RLock()
@@ -109,7 +109,7 @@ func (n *NormalAcessHandler) OnConnLogin(channel Conn, args string) (name string
 	for access, t := range n.LoginAccess {
 		reg, err := regexp.Compile(access)
 		if err != nil {
-			WarnLog("Proxy(%v) compile acl name regexp(%v) fail with %v", n.Name, n, err)
+			WarnLog("NormalAcessHandler(%v) compile acl name regexp(%v) fail with %v", n.Name, n, err)
 			continue
 		}
 		if reg.MatchString(name) {
@@ -118,18 +118,18 @@ func (n *NormalAcessHandler) OnConnLogin(channel Conn, args string) (name string
 	}
 	n.loginLocker.RUnlock()
 	if len(mustbe) < 1 || having != mustbe {
-		WarnLog("Proxy(%v) login fail with auth fail", n.Name)
+		WarnLog("NormalAcessHandler(%v) login %v fail with auth fail, expect %v, but %v", n.Name, name, mustbe, having)
 		err = fmt.Errorf("access denied ")
 		return
 	}
-	InfoLog("Proxy(%v) channel %v login success on %v ", n.Name, name, channel)
-	channel.SetContext(option)
+	InfoLog("NormalAcessHandler(%v) channel %v login success on %v ", n.Name, name, channel)
+	channel.Context()["option"] = option
 	return
 }
 
 //OnConnDialURI is proxy handler to handle dial uri
 func (n *NormalAcessHandler) OnConnDialURI(channel Conn, conn string, parts []string) (err error) {
-	_, islogin := channel.Context().(xmap.M)
+	_, islogin := channel.Context()["option"]
 	if !islogin {
 		err = fmt.Errorf("not login")
 		return
@@ -137,12 +137,12 @@ func (n *NormalAcessHandler) OnConnDialURI(channel Conn, conn string, parts []st
 	name := channel.Name()
 	for _, entry := range n.DialAccess {
 		if len(entry) != 2 {
-			WarnLog("Proxy(%v) compile dial access fail with entry must be [<source>,<target>], but %v", n.Name, entry)
+			WarnLog("NormalAcessHandler(%v) compile dial access fail with entry must be [<source>,<target>], but %v", n.Name, entry)
 			continue
 		}
 		source, xerr := regexp.Compile(entry[0])
 		if xerr != nil {
-			WarnLog("Proxy(%v) compile dial access fail with %v by entry source %v", n.Name, xerr, entry[0])
+			WarnLog("NormalAcessHandler(%v) compile dial access fail with %v by entry source %v", n.Name, xerr, entry[0])
 			continue
 		}
 		if !source.MatchString(name) {
@@ -150,7 +150,7 @@ func (n *NormalAcessHandler) OnConnDialURI(channel Conn, conn string, parts []st
 		}
 		target, xerr := regexp.Compile(entry[1])
 		if xerr != nil {
-			WarnLog("Proxy(%v) compile dial access fail with %v by entry target %v", n.Name, xerr, entry[1])
+			WarnLog("NormalAcessHandler(%v) compile dial access fail with %v by entry target %v", n.Name, xerr, entry[1])
 			continue
 		}
 		if target.MatchString(name) {
@@ -369,7 +369,7 @@ func (p *Proxy) loopForward(l net.Listener, name string, listen *url.URL, uri st
 
 //Close will close the tcp listen
 func (p *Proxy) Close() (err error) {
-	InfoLog("Proxy(%v) is closing", p.Name)
+	InfoLog("Proxy(%v) %p is closing", p.Name, p)
 	p.Running = false
 	if p.master != nil {
 		err = p.master.Close()
@@ -435,15 +435,12 @@ func (p *Proxy) OnConnClose(conn Conn) (err error) {
 	if !p.Running || !ok {
 		return
 	}
-	option, ok := channel.Context().(xmap.M)
-	if !p.Running || !ok {
-		return
-	}
+	context := channel.Context()
 	if p.Handler != nil {
 		err = p.Handler.OnConnClose(conn)
 	}
-	if err == nil {
-		go p.runReconnect(option)
+	if err == nil && context.IntDef(-1, "login_conn") == 1 {
+		go p.runReconnect(context.Map("option"))
 		InfoLog("Proxy(%v) the chnnale(%v) is closed, will reconect it", p.Name, channel)
 	} else {
 		InfoLog("Proxy(%v) the chnnale(%v) is closed by %v, remove it", p.Name, channel, err)
@@ -519,7 +516,8 @@ func (p *Proxy) Login(option xmap.M) (channel *Channel, result xmap.M, err error
 	auth["name"] = p.Name
 	channel, result, err = p.JoinConn(NewInfoRWC(frame.NewReadWriteCloser(conn, p.BufferSize), conn.RemoteAddr().String()), index, auth)
 	if err == nil {
-		channel.SetContext(option)
+		channel.Context()["option"] = option
+		channel.Context()["login_conn"] = 1
 		p.Handler.OnConnJoin(channel, option, result)
 	}
 	return

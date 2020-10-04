@@ -12,9 +12,12 @@ var LogLevel int = 3
 //Log is the bsck package default log
 var Log = log.New(os.Stdout, "", log.Ldate|log.Lmicroseconds|log.Lshortfile)
 
+// var LOGDATA = make(chan string, 10000000)
+
 //DebugLog is log by debug level
 func DebugLog(format string, args ...interface{}) {
 	if LogLevel >= 3 {
+		// LOGDATA <- fmt.Sprintf("D "+format, args...)
 		Log.Output(2, fmt.Sprintf("D "+format, args...))
 	}
 }
@@ -22,6 +25,7 @@ func DebugLog(format string, args ...interface{}) {
 //InfoLog is log by info level
 func InfoLog(format string, args ...interface{}) {
 	if LogLevel >= 2 {
+		// LOGDATA <- fmt.Sprintf("I "+format, args...)
 		Log.Output(2, fmt.Sprintf("I "+format, args...))
 	}
 }
@@ -29,6 +33,7 @@ func InfoLog(format string, args ...interface{}) {
 //WarnLog is log by warn level
 func WarnLog(format string, args ...interface{}) {
 	if LogLevel >= 1 {
+		// LOGDATA <- fmt.Sprintf("W "+format, args...)
 		Log.Output(2, fmt.Sprintf("W "+format, args...))
 	}
 }
@@ -36,6 +41,7 @@ func WarnLog(format string, args ...interface{}) {
 //ErrorLog is log by error level
 func ErrorLog(format string, args ...interface{}) {
 	if LogLevel >= 0 {
+		// LOGDATA <- fmt.Sprintf("E "+format, args...)
 		Log.Output(2, fmt.Sprintf("E "+format, args...))
 	}
 }

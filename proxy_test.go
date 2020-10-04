@@ -1,16 +1,23 @@
 package bsck
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"log"
+	"math/rand"
 	"net"
+	"net/http"
+	_ "net/http/pprof"
 	"net/url"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/codingeasygo/bsck/dialer"
 	"github.com/codingeasygo/util/converter"
+	"github.com/codingeasygo/util/xhash"
 	"github.com/codingeasygo/util/xio"
 	"github.com/codingeasygo/util/xio/frame"
 	"github.com/codingeasygo/util/xmap"
@@ -18,7 +25,7 @@ import (
 
 func init() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
-	ShowLog = 2
+	go http.ListenAndServe(":6060", nil)
 }
 
 type Echo struct {
@@ -324,6 +331,316 @@ func TestProxy(t *testing.T) {
 	fmt.Printf("\n\n\nall test done\n")
 }
 
+func TestProxyName(t *testing.T) {
+	masterHandler := NewNormalAcessHandler("master", DialRawF(func(sid uint64, uri string) (conn Conn, err error) {
+		raw := xio.NewEchoConn()
+		if err == nil {
+			conn = NewRawConn("echo", raw, 32*1024, sid, uri)
+		}
+		return
+	}))
+	masterHandler.LoginAccess["slaver"] = "abc"
+	masterHandler.LoginAccess["caller"] = "abc"
+	masterHandler.DialAccess = [][]string{{".*", ".*"}}
+	master := NewProxy("master", masterHandler)
+	err := master.ListenMaster(":9232")
+	if err != nil {
+		return
+	}
+	//
+	slaverHandler := NewNormalAcessHandler("master", DialRawF(func(sid uint64, uri string) (conn Conn, err error) {
+		raw := xio.NewEchoConn()
+		if err == nil {
+			conn = NewRawConn("echo", raw, 1024, sid, uri)
+		}
+		return
+	}))
+	slaverHandler.DialAccess = [][]string{{".*", ".*"}}
+	slaver := NewProxy("slaver", slaverHandler)
+	_, _, err = slaver.Login(xmap.M{
+		"remote": "localhost:9232",
+		"token":  "abc",
+		"index":  0,
+	})
+	if err != nil {
+		master.Close()
+		master = nil
+		return
+	}
+	fmt.Printf("--->%v\n", slaver.Name)
+	slaver.Close()
+	master.Close()
+}
+
+func initProxy() (master, slaver, caller *Proxy, err error) {
+	masterHandler := NewNormalAcessHandler("master", DialRawF(func(sid uint64, uri string) (conn Conn, err error) {
+		raw := xio.NewEchoConn()
+		if err == nil {
+			conn = NewRawConn("echo", raw, 32*1024, sid, uri)
+		}
+		return
+	}))
+	masterHandler.LoginAccess["slaver"] = "abc"
+	masterHandler.LoginAccess["caller"] = "abc"
+	masterHandler.DialAccess = [][]string{{".*", ".*"}}
+	master = NewProxy("master", masterHandler)
+	err = master.ListenMaster(":9232")
+	if err != nil {
+		return
+	}
+	//
+	slaverHandler := NewNormalAcessHandler("master", DialRawF(func(sid uint64, uri string) (conn Conn, err error) {
+		raw := xio.NewEchoConn()
+		if err == nil {
+			conn = NewRawConn("echo", raw, 1024, sid, uri)
+		}
+		return
+	}))
+	slaverHandler.DialAccess = [][]string{{".*", ".*"}}
+	slaver = NewProxy("slaver", slaverHandler)
+	_, _, err = slaver.Login(xmap.M{
+		"remote": "localhost:9232",
+		"token":  "abc",
+		"index":  0,
+	})
+	if err != nil {
+		master.Close()
+		master = nil
+		return
+	}
+	//
+	caller = NewProxy("caller", NewNoneHandler())
+	_, _, err = caller.Login(xmap.M{
+		"remote": "localhost:9232",
+		"token":  "abc",
+		"index":  0,
+	})
+	if err != nil {
+		master.Close()
+		slaver.Close()
+		master = nil
+		slaver = nil
+		return
+	}
+	return
+}
+
+var globalRunc uint64
+
+func BenchmarkProxy(b *testing.B) {
+	LogLevel = -1
+	master, slaver, caller, err := initProxy()
+	if err != nil {
+		b.Error(err)
+		return
+	}
+	runCase := func(i uint64) {
+		buffer := bytes.NewBuffer(nil)
+		n := 10
+		for j := 0; j < n; j++ {
+			fmt.Fprintf(buffer, "data->%v-%v", i, j)
+		}
+		//
+		data := buffer.Bytes()
+		if len(data) > 1000 {
+			panic("err")
+		}
+		sendHash := xhash.SHA1(data)
+		conna, connb, err := xio.Pipe()
+		if err != nil {
+			b.Error(err)
+			return
+		}
+		// fmt.Printf("%p start dial\n", connb)
+		sid, err := caller.Dial(fmt.Sprintf("master->slaver->xx-%v", i), connb)
+		// fmt.Printf("%p,%v start dial done\n", connb, sid)
+		if err != nil {
+			b.Error(err)
+			return
+		}
+		// fmt.Printf("%p,%v start write\n", connb, sid)
+		_, err = conna.Write(data)
+		// fmt.Printf("%p,%v start write done\n", connb, sid)
+		if err != nil {
+			b.Error(err)
+			return
+		}
+		// fmt.Printf("FullBuffer,%p,%v,xx-%v full buffer\n", connb, sid, i)
+		data2 := make([]byte, len(data))
+		err = xio.FullBuffer(conna, data2, uint32(len(data)), nil)
+		// fmt.Printf("FullBuffer,%p,%v,xx-%v full buffer is done\n", connb, sid, i)
+		if err != nil {
+			b.Errorf("err:%v,uri:xx-%v", err, i)
+			return
+		}
+		recvHash := xhash.SHA1(data2)
+		if sendHash != recvHash {
+			fmt.Printf("%v,%v======>\n\ndata1:%v\ndata2:%v\n\n\n", i, sid, string(data), string(data2))
+			panic(fmt.Sprintf("%v==%v", sendHash, recvHash))
+		}
+		conna.Close()
+		// fmt.Printf("%p,%v is done\n", connb, sid)
+		// fmt.Printf("%v data is ok\n", len(data))
+	}
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			runCase(atomic.AddUint64(&globalRunc, 1))
+		}
+	})
+	caller.Close()
+	slaver.Close()
+	master.Close()
+}
+
+func TestMultiProxy(t *testing.T) {
+	LogLevel = -1
+	// ShowLog = 2
+	masterHandler := NewNormalAcessHandler("master", DialRawF(func(sid uint64, uri string) (conn Conn, err error) {
+		raw := xio.NewEchoConn()
+		if err == nil {
+			conn = NewRawConn("echo", raw, 32*1024, sid, uri)
+		}
+		return
+	}))
+	masterHandler.LoginAccess["slaver"] = "abc"
+	masterHandler.LoginAccess["caller"] = "abc"
+	masterHandler.DialAccess = [][]string{{".*", ".*"}}
+	master := NewProxy("master", masterHandler)
+	err := master.ListenMaster(":9232")
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	defer master.Close()
+	//
+	slaverHandler := NewNormalAcessHandler("master", DialRawF(func(sid uint64, uri string) (conn Conn, err error) {
+		raw := xio.NewEchoConn()
+		if err == nil {
+			conn = NewRawConn("echo", raw, 1024, sid, uri)
+		}
+		return
+	}))
+	slaverHandler.DialAccess = [][]string{{".*", ".*"}}
+	slaver := NewProxy("slaver", slaverHandler)
+	_, _, err = slaver.Login(xmap.M{
+		"remote": "localhost:9232",
+		"token":  "abc",
+		"index":  0,
+	})
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	defer slaver.Close()
+	//
+	caller := NewProxy("caller", NewNoneHandler())
+	_, _, err = caller.Login(xmap.M{
+		"remote": "localhost:9232",
+		"token":  "abc",
+		"index":  0,
+	})
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	defer caller.Close()
+	runCase := func(i int) {
+		buffer := bytes.NewBuffer(nil)
+		n := rand.Intn(40) + 10
+		for j := 0; j < n; j++ {
+			fmt.Fprintf(buffer, "data->%v-%v", i, j)
+		}
+		//
+		data := buffer.Bytes()
+		if len(data) > 1000 {
+			panic("err")
+		}
+		sendHash := xhash.SHA1(data)
+		conna, connb, err := xio.Pipe()
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		// fmt.Printf("%p start dial\n", connb)
+		sid, err := caller.Dial(fmt.Sprintf("master->slaver->xx-%v", i), connb)
+		// fmt.Printf("%p,%v start dial done\n", connb, sid)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		// fmt.Printf("%p,%v start write\n", connb, sid)
+		_, err = conna.Write(data)
+		// fmt.Printf("%p,%v start write done\n", connb, sid)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		// fmt.Printf("FullBuffer,%p,%v,xx-%v full buffer\n", connb, sid, i)
+		data2 := make([]byte, len(data))
+		err = xio.FullBuffer(conna, data2, uint32(len(data)), nil)
+		// fmt.Printf("FullBuffer,%p,%v,xx-%v full buffer is done\n", connb, sid, i)
+		if err != nil {
+			t.Errorf("err:%v,uri:xx-%v", err, i)
+			return
+		}
+		recvHash := xhash.SHA1(data2)
+		if sendHash != recvHash {
+			fmt.Printf("%v,%v======>\n\ndata1:%v\ndata2:%v\n\n\n", i, sid, string(data), string(data2))
+			panic(fmt.Sprintf("%v==%v", sendHash, recvHash))
+		}
+		conna.Close()
+		// fmt.Printf("%p,%v is done\n", connb, sid)
+		// fmt.Printf("%v data is ok\n", len(data))
+	}
+	begin := time.Now()
+	runnerc := 100
+	waitc := make(chan int, 10000)
+	totalc := 50000
+	waiter := sync.WaitGroup{}
+	for k := 0; k < runnerc; k++ {
+		waiter.Add(1)
+		go func() {
+			for {
+				i := <-waitc
+				if i < 0 {
+					break
+				}
+				runCase(i)
+			}
+			waiter.Done()
+			// fmt.Printf("runner is done\n\n")
+		}()
+	}
+	time.Sleep(100 * time.Millisecond)
+	for i := 0; i < totalc; i++ {
+		waitc <- i
+	}
+	for k := 0; k < runnerc; k++ {
+		waitc <- -1
+	}
+	waiter.Wait()
+	used := time.Now().Sub(begin)
+	fmt.Printf("total:%v,used:%v,avg:%v\n", totalc, used, used/time.Duration(totalc))
+	fmt.Printf("all test done\n")
+	// logf, err := os.OpenFile("a.log", os.O_CREATE|os.O_WRONLY, os.ModePerm)
+	// if err != nil {
+	// 	t.Error(err)
+	// 	return
+	// }
+	// running := true
+	// for running {
+	// 	select {
+	// 	case l := <-LOGDATA:
+	// 		fmt.Fprintf(logf, "%v\n", l)
+	// 	default:
+	// 		running = false
+	// 	}
+	// }
+	// logf.Close()
+	// fmt.Printf("log write done\n")
+}
+
 func TestProxyError(t *testing.T) {
 	var masterEcho *Echo
 	handler := NewNormalAcessHandler("master", DialRawF(func(sid uint64, uri string) (conn Conn, err error) {
@@ -527,7 +844,7 @@ func TestProxyError(t *testing.T) {
 		src := &Channel{ReadWriteCloser: frame.NewReadWriteCloser(srcRaw, 1024)}
 		dstRaw := NewErrReadWriteCloser([]byte("error"), 10)
 		dst := &Channel{ReadWriteCloser: frame.NewReadWriteCloser(dstRaw, 1024)}
-		master.Router.addTable(src, 1000, dst, 1001)
+		master.Router.addTable(src, 1000, dst, 1001, "")
 		buf := make([]byte, 1024)
 		copy(buf[13:], []byte("error"))
 		//

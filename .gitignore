@@ -18,3 +18,5 @@ bsrouter/build
 bsrouter/bsrouter.key
 bsrouter/bsrouter.pem
 test.log
+*.log
+t.json
