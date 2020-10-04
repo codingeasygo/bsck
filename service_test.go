@@ -352,8 +352,12 @@ func TestSSH(t *testing.T) {
 			t.Error(err)
 			return
 		}
+		stdout := bytes.NewBuffer(nil)
+		allout := bytes.NewBuffer(nil)
 		ss.Stdin = bytes.NewBufferString("echo -n " + info)
-		data, err := ss.Output("bash")
+		ss.Stdout, ss.Stderr = xio.NewMultiWriter(stdout, allout), allout
+		err = ss.Run("bash")
+		data := stdout.Bytes()
 		if err != nil || string(data) != info {
 			t.Errorf("err:%v,%v", err, string(data))
 			return
