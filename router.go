@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/codingeasygo/util/converter"
+	"github.com/codingeasygo/util/xio"
 	"github.com/codingeasygo/util/xio/frame"
 	"github.com/codingeasygo/util/xmap"
 )
@@ -88,7 +89,7 @@ type Conn interface {
 //ConnectedWaiter interface for connected waiter
 type ConnectedWaiter interface {
 	Wait() bool
-	Ready()
+	Ready(proc func(err error))
 }
 
 type readDeadlinable interface {
@@ -203,17 +204,27 @@ func (r *RawConn) Close() (err error) {
 
 //Wait is ConnectedWaiter impl
 func (r *RawConn) Wait() bool {
+	if waiter, ok := r.ReadWriteCloser.(ConnectedWaiter); ok {
+		return waiter.Wait()
+	}
 	v := <-r.connected
 	return v > 0
 }
 
 //Ready is ConnectedWaiter impl
-func (r *RawConn) Ready() {
+func (r *RawConn) Ready(proc func(err error)) {
+	if waiter, ok := r.ReadWriteCloser.(ConnectedWaiter); ok {
+		waiter.Ready(proc)
+		return
+	}
 	<-r.lck
 	if r.closed < 1 {
 		r.connected <- 1
 	}
 	r.lck <- 1
+	if proc != nil {
+		go proc(nil)
+	}
 }
 
 //ID is an implementation of Conn
@@ -398,11 +409,11 @@ func (r *Router) Register(channel Conn) {
 	go r.loopReadRaw(channel)
 }
 
-//Bind one raw connection to channel by session.
-func (r *Router) Bind(src Conn, srcSid uint64, dst Conn, dstSid uint64, conn string) {
-	r.addTable(src, srcSid, dst, dstSid, conn)
-	go r.loopReadRaw(dst)
-}
+// //Bind one raw connection to channel by session.
+// func (r *Router) Bind(src Conn, srcSid uint64, dst Conn, dstSid uint64, conn string) {
+// 	r.addTable(src, srcSid, dst, dstSid, conn)
+// 	go r.loopReadRaw(dst)
+// }
 
 func (r *Router) addChannel(channel Conn) {
 	r.channelLck.Lock()
@@ -630,10 +641,13 @@ func (r *Router) procRawDial(channel Conn, sid uint64, conn, uri string) (err er
 		return
 	}
 	DebugLog("Router(%v) dail(%v-%v->%v-%v) to %v success on channel(%v)", r.Name, channel.ID(), sid, raw.ID(), dstSid, conn, channel)
-	r.Bind(channel, sid, raw, dstSid, conn)
+	r.addTable(channel, sid, raw, dstSid, conn)
 	err = writeCmd(channel, nil, CmdDialBack, sid, []byte("OK"))
 	if err != nil {
 		raw.Close()
+		r.removeTable(channel, sid)
+	} else {
+		go r.loopReadRaw(raw)
 	}
 	return
 }
@@ -704,9 +718,17 @@ func (r *Router) procDialBack(channel Conn, buf []byte) (err error) {
 		msg := string(buf[13:])
 		if msg == "OK" {
 			InfoLog("Router(%v) dail to %v success", r.Name, target)
-			r.Bind(channel, sid, target, target.ID(), router[4].(string))
+			r.addTable(channel, sid, target, target.ID(), router[4].(string))
 			if waiter, ok := target.(ConnectedWaiter); ok {
-				waiter.Ready()
+				waiter.Ready(func(err error) {
+					if err == nil {
+						r.loopReadRaw(target)
+					} else {
+						r.removeTable(channel, sid)
+					}
+				})
+			} else {
+				go r.loopReadRaw(target)
 			}
 		} else {
 			InfoLog("Router(%v) dail to %v fail with %v", r.Name, target, msg)
@@ -778,7 +800,7 @@ func (r *Router) Dial(uri string, raw io.ReadWriteCloser) (sid uint64, err error
 func (r *Router) SyncDial(uri string, raw io.ReadWriteCloser) (sid uint64, err error) {
 	sid, conn, err := r.DialConn(uri, raw)
 	if err == nil {
-		if waiter, ok := conn.(*RawConn); ok && !waiter.Wait() {
+		if waiter, ok := conn.(ConnectedWaiter); ok && !waiter.Wait() {
 			err = fmt.Errorf("connect reseted")
 		}
 	}
@@ -800,20 +822,33 @@ func (r *Router) DialConn(uri string, raw io.ReadWriteCloser) (sid uint64, conn 
 		r.rawConn[fmt.Sprintf("%p", raw)] = []io.ReadWriteCloser{raw, conn}
 		r.rawConn[fmt.Sprintf("%p", conn)] = []io.ReadWriteCloser{conn, raw}
 		r.rawLck.Unlock()
-		go func() {
-			_, err = io.CopyBuffer(raw, conn, make([]byte, r.BufferSize))
-			raw.Close()
-			r.rawLck.Lock()
-			delete(r.rawConn, fmt.Sprintf("%p", raw))
-			r.rawLck.Unlock()
-		}()
-		go func() {
+		proc := func(err error) {
+			defer func() {
+				r.rawLck.Lock()
+				delete(r.rawConn, fmt.Sprintf("%p", raw))
+				delete(r.rawConn, fmt.Sprintf("%p", conn))
+				r.rawLck.Unlock()
+			}()
+			if err != nil {
+				raw.Close()
+				conn.Close()
+				return
+			}
+			go func() {
+				_, err = io.CopyBuffer(raw, conn, make([]byte, r.BufferSize))
+				raw.Close()
+			}()
 			_, err = io.CopyBuffer(conn, raw, make([]byte, r.BufferSize))
 			conn.Close()
-			r.rawLck.Lock()
-			delete(r.rawConn, fmt.Sprintf("%p", conn))
-			r.rawLck.Unlock()
-		}()
+		}
+		if waiter, ok := conn.(ConnectedWaiter); ok {
+			waiter.Ready(nil)
+		}
+		if waiter, ok := raw.(ConnectedWaiter); ok {
+			waiter.Ready(proc)
+		} else {
+			go proc(nil)
+		}
 		return
 	}
 	channel, err := r.SelectChannel(parts[0])
@@ -969,5 +1004,81 @@ func writeCmd(w frame.Writer, buffer []byte, cmd byte, sid uint64, msg []byte) (
 	binary.BigEndian.PutUint64(buffer[5:], sid)
 	copy(buffer[13:], msg)
 	_, err = w.WriteFrame(buffer[:len(msg)+13])
+	return
+}
+
+type routerPiper struct {
+	Base        io.ReadWriteCloser
+	proc        func(err error)
+	readyLocker sync.RWMutex
+	baseLocker  sync.RWMutex
+	ready       int
+}
+
+func newRouterPiper() (piper *routerPiper) {
+	piper = &routerPiper{
+		readyLocker: sync.RWMutex{},
+		baseLocker:  sync.RWMutex{},
+	}
+	piper.readyLocker.Lock()
+	piper.baseLocker.Lock()
+	return
+}
+
+func (r *routerPiper) Wait() bool {
+	r.readyLocker.Lock()
+	r.readyLocker.Unlock()
+	return true
+}
+
+func (r *routerPiper) Ready(proc func(err error)) {
+	r.proc = proc
+	r.readyLocker.Unlock()
+}
+
+func (r *routerPiper) PipeConn(conn io.ReadWriteCloser, target string) (err error) {
+	r.Base = conn
+	r.ready = 1
+	r.baseLocker.Unlock()
+	r.proc(nil)
+	r.proc = nil
+	return
+}
+
+func (r *routerPiper) Read(p []byte) (n int, err error) {
+	if r.ready == 0 {
+		r.baseLocker.RLock()
+		r.baseLocker.RUnlock()
+	}
+	n, err = r.Base.Read(p)
+	return
+}
+
+func (r *routerPiper) Write(p []byte) (n int, err error) {
+	if r.ready == 0 {
+		r.baseLocker.RLock()
+		r.baseLocker.RUnlock()
+	}
+	n, err = r.Base.Write(p)
+	return
+}
+
+func (r *routerPiper) Close() (err error) {
+	if r.ready == 0 && r.proc != nil {
+		r.proc(fmt.Errorf("closed"))
+		r.proc = nil
+	}
+	if r.Base != nil {
+		r.Base.Close()
+		r.Base = nil
+	}
+	return
+}
+
+//DialPiper will dial uri on router and return piper
+func (r *Router) DialPiper(uri string, bufferSize int) (raw xio.Piper, err error) {
+	piper := newRouterPiper()
+	_, err = r.SyncDial(uri, piper)
+	raw = piper
 	return
 }

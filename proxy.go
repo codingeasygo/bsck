@@ -13,6 +13,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/codingeasygo/util/proxy/socks"
+	"github.com/codingeasygo/util/xio"
 	"github.com/codingeasygo/util/xio/frame"
 	"github.com/codingeasygo/util/xmap"
 )
@@ -291,15 +293,14 @@ func (p *Proxy) StartForward(name string, listen *url.URL, router string) (liste
 	}
 	switch listen.Scheme {
 	case "socks":
-		sp := NewSocksProxy()
-		sp.Dialer = func(utype int, uri string, raw io.ReadWriteCloser) (sid uint64, err error) {
-			sid, err = p.Dial(strings.Replace(router, "${HOST}", uri, -1), raw)
+		sp := socks.NewServer()
+		sp.Dialer = xio.PiperDialerF(func(uri string, bufferSize int) (raw xio.Piper, err error) {
+			raw, err = p.DialPiper(strings.Replace(router, "${HOST}", uri, -1), bufferSize)
 			return
-		}
-		err = sp.Start(listen.Host)
+		})
+		listener, err = sp.Start(listen.Host)
 		if err == nil {
-			listener = sp
-			p.forwards[name] = []interface{}{sp, listen, router}
+			p.forwards[name] = []interface{}{listener, listen, router}
 			InfoLog("Proxy(%v) start socket forward on %v success by %v->%v", p.Name, listener.Addr(), listen, router)
 		}
 	default:

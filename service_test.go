@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/codingeasygo/bsck/dialer"
+	"github.com/codingeasygo/util/proxy/socks"
 	"github.com/codingeasygo/util/xhttp"
 	"github.com/codingeasygo/util/xio"
 	"github.com/codingeasygo/util/xmap"
@@ -68,6 +69,7 @@ var configTest2 = `
 `
 
 func TestService(t *testing.T) {
+	socks.SetLogLevel(socks.LogLevelDebug)
 	ioutil.WriteFile("/tmp/test.json", []byte(configTest1), os.ModePerm)
 	defer os.Remove("/tmp/test.json")
 	service := NewService()
@@ -134,7 +136,7 @@ func TestService(t *testing.T) {
 	}
 	{ //socks test
 		echoa, echob, _ := xio.Pipe()
-		_, err = service.SocksDialer(SocksUriTypeBS, "tcp://echo", echob)
+		_, err = service.SyncDialAll("tcp://echo", echob)
 		if err != nil {
 			t.Error(err)
 			return
@@ -143,7 +145,7 @@ func TestService(t *testing.T) {
 	}
 	{ //socks test
 		echoa, echob, _ := xio.Pipe()
-		_, err = service.SocksDialer(SocksUriTypeBS, "tcp://echo?abc=1", echob)
+		_, err = service.SyncDialAll("tcp://echo?abc=1", echob)
 		if err != nil {
 			t.Error(err)
 			return
@@ -152,7 +154,7 @@ func TestService(t *testing.T) {
 	}
 	{ //socks test
 		echoa, echob, _ := xio.Pipe()
-		_, err = service.SocksDialer(SocksUriTypeBS, "w1?abc=1", echob)
+		_, err = service.SyncDialAll("w1?abc=1", echob)
 		if err != nil {
 			t.Error(err)
 			return
@@ -161,7 +163,7 @@ func TestService(t *testing.T) {
 	}
 	{ //socks test
 		echoa, echob, _ := xio.Pipe()
-		_, err = service.SocksDialer(SocksUriTypeBS, "w2?abc=1", echob)
+		_, err = service.SyncDialAll("w2?abc=1", echob)
 		if err != nil {
 			t.Error(err)
 			return
@@ -202,7 +204,7 @@ func TestService(t *testing.T) {
 	}
 	{ //ssh test
 		client, err := service.DialSSH("w5", &ssh.ClientConfig{
-			User:            "root",
+			User:            "cny",
 			HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 			Auth:            []ssh.AuthMethod{ssh.Password("sco")},
 		})
@@ -339,7 +341,7 @@ func TestSSH(t *testing.T) {
 	for i := 0; i < 100; i++ { //ssh test
 		info := fmt.Sprintf("data-%v", i)
 		client, err := caller.DialSSH("master->slaver->tcp://127.0.0.1:22", &ssh.ClientConfig{
-			User:            "root",
+			User:            "cny",
 			HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 			Auth:            []ssh.AuthMethod{ssh.Password("sco")},
 		})

@@ -22,7 +22,9 @@ import (
 	"time"
 
 	"github.com/codingeasygo/bsck/dialer"
+	"github.com/codingeasygo/util/proxy"
 	"github.com/codingeasygo/util/xhttp"
+	"github.com/codingeasygo/util/xio"
 	"github.com/codingeasygo/util/xmap"
 	"golang.org/x/crypto/ssh"
 )
@@ -138,7 +140,7 @@ func (f ForwardFinderF) FindForward(uri string) (target string, err error) {
 //Service is bound socket service
 type Service struct {
 	Node       *Proxy
-	Socks      *SocksProxy
+	Socks      *proxy.Server
 	Web        net.Listener
 	Forward    *Forward
 	Dialer     *dialer.Pool
@@ -353,23 +355,29 @@ func (s *Service) RemoveFoward(loc string) (err error) {
 	return
 }
 
-//DialerAll will dial uri by raw
-func (s *Service) DialerAll(uris string, raw io.ReadWriteCloser) (sid uint64, err error) {
-	sid, err = s.dialerAll(uris, raw)
+//SyncDialAll will sync dial uri by raw
+func (s *Service) SyncDialAll(uris string, raw io.ReadWriteCloser) (sid uint64, err error) {
+	sid, err = s.DialAll(uris, raw, true)
+	return
+}
+
+//DialAll will dial uri by raw
+func (s *Service) DialAll(uris string, raw io.ReadWriteCloser, sync bool) (sid uint64, err error) {
+	sid, err = s.dialAll(uris, raw, sync)
 	if err == nil || err != ErrForwardNotExist || s.Finder == nil {
 		return
 	}
 	uris, err = s.Finder.FindForward(uris)
 	if err == nil {
-		sid, err = s.dialerAll(uris, raw)
+		sid, err = s.dialAll(uris, raw, sync)
 	}
 	return
 }
 
-func (s *Service) dialerAll(uris string, raw io.ReadWriteCloser) (sid uint64, err error) {
+func (s *Service) dialAll(uris string, raw io.ReadWriteCloser, sync bool) (sid uint64, err error) {
 	DebugLog("Service try dial all to %v", uris)
 	for _, uri := range strings.Split(uris, ",") {
-		sid, err = s.dialerOne(uri, raw)
+		sid, err = s.dialOne(uri, raw, sync)
 		if err == nil {
 			break
 		}
@@ -377,7 +385,7 @@ func (s *Service) dialerAll(uris string, raw io.ReadWriteCloser) (sid uint64, er
 	return
 }
 
-func (s *Service) dialerOne(uri string, raw io.ReadWriteCloser) (sid uint64, err error) {
+func (s *Service) dialOne(uri string, raw io.ReadWriteCloser, sync bool) (sid uint64, err error) {
 	DebugLog("Service try dial to %v", uri)
 	if strings.Contains(uri, "->") {
 		sid, err = s.Node.Dial(uri, raw)
@@ -408,17 +416,10 @@ func (s *Service) dialerOne(uri string, raw io.ReadWriteCloser) (sid uint64, err
 			dialURI += "?" + parts[1]
 		}
 	}
-	sid, err = s.Node.Dial(dialURI, raw)
-	return
-}
-
-//SocksDialer is socks proxy dialer
-func (s *Service) SocksDialer(utype int, uri string, raw io.ReadWriteCloser) (sid uint64, err error) {
-	switch utype {
-	case SocksUriTypeBS:
-		sid, err = s.DialerAll(uri, raw)
-	default:
-		err = fmt.Errorf("not supported for type %v", utype)
+	if sync {
+		sid, err = s.Node.SyncDial(dialURI, raw)
+	} else {
+		sid, err = s.Node.Dial(dialURI, raw)
 	}
 	return
 }
@@ -438,7 +439,7 @@ func (s *Service) DialNet(network, addr string) (conn net.Conn, err error) {
 	if err == nil {
 		addr = strings.TrimSuffix(addr, ":80")
 		addr = strings.TrimSuffix(addr, ":443")
-		_, err = s.DialerAll(addr, raw)
+		_, err = s.DialAll(addr, raw, true)
 	}
 	return
 }
@@ -447,7 +448,7 @@ func (s *Service) DialNet(network, addr string) (conn net.Conn, err error) {
 func (s *Service) DialSSH(uri string, config *ssh.ClientConfig) (client *ssh.Client, err error) {
 	conn, raw, err := dialer.CreatePipedConn()
 	if err == nil {
-		_, err = s.DialerAll(uri, raw)
+		_, err = s.DialAll(uri, raw, true)
 	}
 	if err != nil {
 		return
@@ -457,6 +458,14 @@ func (s *Service) DialSSH(uri string, config *ssh.ClientConfig) (client *ssh.Cli
 		return nil, err
 	}
 	client = ssh.NewClient(c, chans, reqs)
+	return
+}
+
+//DialPiper will dial uri on router and return piper
+func (s *Service) DialPiper(uri string, bufferSize int) (raw xio.Piper, err error) {
+	piper := newRouterPiper()
+	_, err = s.DialAll(uri, piper, true)
+	raw = piper
 	return
 }
 
@@ -473,7 +482,7 @@ func (s *Service) Start() (err error) {
 		return
 	}
 	InfoLog("Service will start by config %v", s.ConfigPath)
-	s.Socks = NewSocksProxy()
+	s.Socks = proxy.NewServer(s)
 	s.Forward = NewForward()
 	if s.Handler == nil {
 		handler := NewNormalAcessHandler(s.Config.Name, nil)
@@ -505,7 +514,7 @@ func (s *Service) Start() (err error) {
 		return
 	}
 	// s.Socks.Dialer = s.SocksDialer
-	s.Forward.Dialer = s.DialerAll
+	s.Forward.Dialer = s.SyncDialAll
 	if len(s.Config.Listen) > 0 {
 		err = s.Node.ListenMaster(s.Config.Listen)
 		if err != nil {
@@ -524,7 +533,7 @@ func (s *Service) Start() (err error) {
 		}
 	}
 	if len(s.Config.Socks5) > 0 {
-		err = s.Socks.Start(s.Config.Socks5)
+		_, err = s.Socks.Start(s.Config.Socks5)
 		if err != nil {
 			ErrorLog("Service start socks5 on %v fail with %v\n", s.Config.Socks5, err)
 			s.Node.Close()
@@ -559,7 +568,7 @@ func (s *Service) Stop() (err error) {
 		s.Node.Close()
 		s.Node = nil
 	}
-	if s.Socks != nil && s.Socks.Listener != nil {
+	if s.Socks != nil {
 		s.Socks.Close()
 		s.Socks = nil
 	}

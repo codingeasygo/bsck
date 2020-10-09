@@ -881,14 +881,14 @@ func TestProxyError(t *testing.T) {
 		master.Router.loopReadRaw(src)
 	}
 	{ //test for cover
-		rawConn := NewRawConn("", NewEcho("data"), 1024, 0, "")
-		rawConn.Index()
-		func() {
-			defer func() {
-				recover()
-			}()
-			rawConn.Read(nil)
-		}()
+		// rawConn := NewRawConn("", NewEcho("data"), 1024, 0, "")
+		// rawConn.Index()
+		// func() {
+		// 	defer func() {
+		// 		recover()
+		// 	}()
+		// 	rawConn.Read(nil)
+		// }()
 		cmdString(CmdLoginBack)
 		echo := NewErrReadWriteCloser([]byte("data"), 0)
 		xio.FullBuffer(echo, make([]byte, 1024), 8, nil)
