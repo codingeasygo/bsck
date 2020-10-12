@@ -137,6 +137,7 @@ func (p *Pool) Bootstrap(options xmap.M) error {
 
 //Dial the uri by dialer poo
 func (p *Pool) Dial(sid uint64, uri string, pipe io.ReadWriteCloser) (r Conn, err error) {
+	DebugLog("Pool try dial to %v", uri)
 	for _, dialer := range p.Dialers {
 		if dialer.Matched(uri) {
 			r, err = dialer.Dial(sid, uri, pipe)

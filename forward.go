@@ -163,6 +163,10 @@ func (f *Forward) procDial(network, addr string, router string) (raw net.Conn, e
 	raw, piped, err := dialer.CreatePipedConn()
 	if err == nil {
 		_, err = f.Dialer(router, piped)
+		if err != nil {
+			raw.Close()
+			piped.Close()
+		}
 	}
 	return
 }
@@ -171,6 +175,10 @@ func (f *Forward) procDialTLS(network, addr string, router string) (raw net.Conn
 	rawConn, piped, err := dialer.CreatePipedConn()
 	if err == nil {
 		_, err = f.Dialer(router, piped)
+		if err != nil {
+			rawConn.Close()
+			piped.Close()
+		}
 	}
 	if err != nil {
 		return

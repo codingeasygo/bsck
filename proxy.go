@@ -3,6 +3,7 @@ package bsck
 import (
 	"crypto/rand"
 	"crypto/tls"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -537,4 +538,12 @@ func NewInfoRWC(raw frame.ReadWriteCloser, info string) *InfoRWC {
 
 func (i *InfoRWC) String() string {
 	return i.Info
+}
+
+//EncodeWebURI will replace string in () as base64 encoding
+func EncodeWebURI(format string, args ...interface{}) string {
+	return regexp.MustCompile("\\([^\\)]*\\)").ReplaceAllStringFunc(fmt.Sprintf(format, args...), func(having string) string {
+		having = strings.Trim(having, "()")
+		return "base64-" + base64.RawURLEncoding.EncodeToString([]byte(having))
+	})
 }

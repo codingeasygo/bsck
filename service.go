@@ -6,6 +6,7 @@
 package bsck
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -83,7 +84,7 @@ type Config struct {
 	Listen    string            `json:"listen"`
 	ACL       map[string]string `json:"acl"`
 	Access    [][]string        `json:"access"`
-	Socks5    string            `json:"socks5"`
+	Console   string            `json:"console"`
 	Web       Web               `json:"web"`
 	ShowLog   int               `json:"showlog"`
 	Forwards  map[string]string `json:"forwards"`
@@ -140,7 +141,7 @@ func (f ForwardFinderF) FindForward(uri string) (target string, err error) {
 //Service is bound socket service
 type Service struct {
 	Node       *Proxy
-	Socks      *proxy.Server
+	Console    *proxy.Server
 	Web        net.Listener
 	Forward    *Forward
 	Dialer     *dialer.Pool
@@ -162,6 +163,7 @@ func NewService() (s *Service) {
 		configLock: sync.RWMutex{},
 		alias:      map[string]string{},
 		aliasLock:  sync.RWMutex{},
+		Webs:       map[string]http.Handler{},
 	}
 	client := &http.Client{
 		Transport: &http.Transport{
@@ -391,29 +393,27 @@ func (s *Service) dialOne(uri string, raw io.ReadWriteCloser, sync bool) (sid ui
 		sid, err = s.Node.Dial(uri, raw)
 		return
 	}
-	if regexp.MustCompile("^[A-Za-z0-9]*://.*$").MatchString(uri) {
-		sid = s.Node.UniqueSid()
-		_, err = s.Dialer.Dial(sid, uri, raw)
-		return
-	}
-	parts := strings.SplitN(uri, "?", 2)
-	s.aliasLock.Lock()
-	target, ok := s.alias[parts[0]]
-	s.aliasLock.Unlock()
-	if !ok {
-		router := s.Forward.FindForward(parts[0])
-		if len(router) < 2 {
-			err = ErrForwardNotExist
-			return
+	dialURI := uri
+	if !regexp.MustCompile("^[A-Za-z0-9]*://.*$").MatchString(uri) {
+		parts := strings.SplitN(uri, "?", 2)
+		s.aliasLock.Lock()
+		target, ok := s.alias[parts[0]]
+		s.aliasLock.Unlock()
+		if !ok {
+			router := s.Forward.FindForward(parts[0])
+			if len(router) < 2 {
+				err = ErrForwardNotExist
+				return
+			}
+			target = router[1]
 		}
-		target = router[1]
-	}
-	dialURI := target
-	if len(parts) > 1 {
-		if strings.Contains(dialURI, "?") {
-			dialURI += "&" + parts[1]
-		} else {
-			dialURI += "?" + parts[1]
+		dialURI = target
+		if len(parts) > 1 {
+			if strings.Contains(dialURI, "?") {
+				dialURI += "&" + parts[1]
+			} else {
+				dialURI += "?" + parts[1]
+			}
 		}
 	}
 	if sync {
@@ -435,11 +435,23 @@ func (s *Service) DialRaw(sid uint64, uri string) (conn Conn, err error) {
 
 //DialNet is net dialer to router
 func (s *Service) DialNet(network, addr string) (conn net.Conn, err error) {
+	addr = strings.TrimSuffix(addr, ":80")
+	addr = strings.TrimSuffix(addr, ":443")
+	if strings.HasPrefix(addr, "base64-") {
+		var realAddr []byte
+		realAddr, err = base64.RawURLEncoding.DecodeString(strings.TrimPrefix(addr, "base64-"))
+		if err != nil {
+			return
+		}
+		addr = string(realAddr)
+	}
 	conn, raw, err := dialer.CreatePipedConn()
 	if err == nil {
-		addr = strings.TrimSuffix(addr, ":80")
-		addr = strings.TrimSuffix(addr, ":443")
 		_, err = s.DialAll(addr, raw, true)
+		if err != nil {
+			conn.Close()
+			raw.Close()
+		}
 	}
 	return
 }
@@ -449,6 +461,10 @@ func (s *Service) DialSSH(uri string, config *ssh.ClientConfig) (client *ssh.Cli
 	conn, raw, err := dialer.CreatePipedConn()
 	if err == nil {
 		_, err = s.DialAll(uri, raw, true)
+		if err != nil {
+			conn.Close()
+			raw.Close()
+		}
 	}
 	if err != nil {
 		return
@@ -482,7 +498,7 @@ func (s *Service) Start() (err error) {
 		return
 	}
 	InfoLog("Service will start by config %v", s.ConfigPath)
-	s.Socks = proxy.NewServer(s)
+	s.Console = proxy.NewServer(s)
 	s.Forward = NewForward()
 	if s.Handler == nil {
 		handler := NewNormalAcessHandler(s.Config.Name, nil)
@@ -506,8 +522,8 @@ func (s *Service) Start() (err error) {
 	if s.Config.Reconnect > 0 {
 		s.Node.ReconnectDelay = time.Duration(s.Config.Reconnect) * time.Millisecond
 	}
+	s.Webs["state"] = http.HandlerFunc(s.Node.Router.StateH)
 	s.Dialer = dialer.NewPool()
-	s.Dialer.AddDialer(dialer.NewStateDialer("router", s.Node.Router))
 	s.Dialer.Webs = s.Webs
 	err = s.Dialer.Bootstrap(s.Config.Dialer)
 	if err != nil {
@@ -532,10 +548,10 @@ func (s *Service) Start() (err error) {
 			ErrorLog("Service add forward by %v->%v fail with %v", loc, uri, err)
 		}
 	}
-	if len(s.Config.Socks5) > 0 {
-		_, err = s.Socks.Start(s.Config.Socks5)
+	if len(s.Config.Console) > 0 {
+		_, err = s.Console.Start(s.Config.Console)
 		if err != nil {
-			ErrorLog("Service start socks5 on %v fail with %v\n", s.Config.Socks5, err)
+			ErrorLog("Service start console on %v fail with %v\n", s.Config.Console, err)
 			s.Node.Close()
 			return
 		}
@@ -552,7 +568,7 @@ func (s *Service) Start() (err error) {
 	if len(s.Config.Web.Listen) > 0 {
 		s.Web, err = net.Listen("tcp", s.Config.Web.Listen)
 		if err != nil {
-			ErrorLog("Service start web on %v fail with %v\n", s.Config.Socks5, err)
+			ErrorLog("Service start web on %v fail with %v\n", s.Config.Console, err)
 			return err
 		}
 		go func() {
@@ -568,9 +584,9 @@ func (s *Service) Stop() (err error) {
 		s.Node.Close()
 		s.Node = nil
 	}
-	if s.Socks != nil {
-		s.Socks.Close()
-		s.Socks = nil
+	if s.Console != nil {
+		s.Console.Close()
+		s.Console = nil
 	}
 	if s.Web != nil {
 		s.Web.Close()

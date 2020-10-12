@@ -2,6 +2,7 @@ package bsck
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/codingeasygo/bsck/dialer"
+	"github.com/codingeasygo/util/converter"
 	"github.com/codingeasygo/util/proxy/socks"
 	"github.com/codingeasygo/util/xhttp"
 	"github.com/codingeasygo/util/xio"
@@ -53,13 +55,14 @@ var configTest2 = `
         "t2~tcp://:2332": "http://dav?dir=.",
         "t3~socks://localhost:10322": "tcp://echo",
         "t4~rdp://localhost:0": "tcp://127.0.0.1:22",
-		"t5~vnc://localhost:0": "tcp://127.0.0.1:22",
+		"t5~vnc://localhost:0": "tcp://dev.loc:22",
 		"w1~web://w1": "tcp://echo?abc=1",
 		"w2": "tcp://echo",
 		"w3": "http://dav?dir=.",
 		"w40": "http://test1",
 		"w41": "http://test1",
-		"w5": "tcp://127.0.0.1:22"
+		"w5": "tcp://dev.loc:22",
+		"w6": "http://state"
     },
     "channels": [],
     "dialer":{
@@ -204,9 +207,9 @@ func TestService(t *testing.T) {
 	}
 	{ //ssh test
 		client, err := service.DialSSH("w5", &ssh.ClientConfig{
-			User:            "cny",
+			User:            "test",
 			HostKeyCallback: ssh.InsecureIgnoreHostKey(),
-			Auth:            []ssh.AuthMethod{ssh.Password("sco")},
+			Auth:            []ssh.AuthMethod{ssh.Password("123")},
 		})
 		if err != nil {
 			t.Error(err)
@@ -224,6 +227,14 @@ func TestService(t *testing.T) {
 			return
 		}
 	}
+	{ //state test
+		data, err := service.Client.GetMap("http://w6?*=*")
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		fmt.Printf("%v\n", converter.JSON(data))
+	}
 	//
 	ioutil.WriteFile("/tmp/test.json", []byte(configTest1), os.ModePerm)
 	err = service.ReloadConfig()
@@ -237,7 +248,7 @@ var configTestMaster = `
     "name": "master",
     "listen": ":5023",
     "web": {},
-    "socks5": "",
+    "console": "",
     "forwards": {},
     "channels": [],
     "dialer": {
@@ -261,7 +272,7 @@ var configTestSlaver = `
     "name": "slaver",
     "listen": "",
     "web": {},
-    "socks5": "",
+    "console": "",
     "forwards": {},
     "channels": [
         {
@@ -288,7 +299,7 @@ var configTestCaller = `
     "name": "caller",
     "listen": "",
     "web": {},
-    "socks5": "",
+    "console": ":1701",
     "forwards": {},
     "channels": [
         {
@@ -338,12 +349,12 @@ func TestSSH(t *testing.T) {
 		return
 	}
 	time.Sleep(100 * time.Millisecond)
-	for i := 0; i < 100; i++ { //ssh test
+	for i := 0; i < 10; i++ { //ssh test
 		info := fmt.Sprintf("data-%v", i)
-		client, err := caller.DialSSH("master->slaver->tcp://127.0.0.1:22", &ssh.ClientConfig{
-			User:            "cny",
+		client, err := caller.DialSSH("master->slaver->tcp://dev.loc:22", &ssh.ClientConfig{
+			User:            "test",
 			HostKeyCallback: ssh.InsecureIgnoreHostKey(),
-			Auth:            []ssh.AuthMethod{ssh.Password("sco")},
+			Auth:            []ssh.AuthMethod{ssh.Password("123")},
 		})
 		if err != nil {
 			t.Error(err)
@@ -366,6 +377,61 @@ func TestSSH(t *testing.T) {
 		}
 		ss.Close()
 		client.Close()
+	}
+	caller.Stop()
+	slaver.Stop()
+	master.Stop()
+	time.Sleep(100 * time.Millisecond)
+}
+
+func TestState(t *testing.T) {
+	var err error
+	//
+	master := NewService()
+	json.Unmarshal([]byte(configTestMaster), &master.Config)
+	err = master.Start()
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	slaver := NewService()
+	json.Unmarshal([]byte(configTestSlaver), &slaver.Config)
+	err = slaver.Start()
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	caller := NewService()
+	json.Unmarshal([]byte(configTestCaller), &caller.Config)
+	err = caller.Start()
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	time.Sleep(100 * time.Millisecond)
+	{ //state
+		conna, connb, _ := xio.CreatePipedConn()
+		_, err = caller.SyncDialAll("master->slaver->tcp://echo", connb)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		state, err := caller.Client.GetMap(EncodeWebURI("http://(master->http://state)/?*=*"))
+		if err != nil || len(state.Map("channels")) < 1 || len(state.ArrayDef(nil, "table")) < 1 {
+			t.Error(converter.JSON(state))
+			return
+		}
+		state, err = caller.Client.GetMap(EncodeWebURI("http://(master->http://state)/?a=111"))
+		if err != nil || len(state.Map("channels")) > 0 || len(state.ArrayDef(nil, "table")) > 0 {
+			t.Error(state)
+			return
+		}
+		state, err = caller.Client.GetMap(EncodeWebURI("http://(master->http://state)"))
+		if err != nil || len(state.Map("channels")) > 0 || len(state.ArrayDef(nil, "table")) > 0 {
+			t.Error(state)
+			return
+		}
+		conna.Close()
 	}
 	caller.Stop()
 	slaver.Stop()

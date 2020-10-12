@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"net/url"
 	"strings"
 	"sync"
@@ -996,6 +997,17 @@ func (r *Router) State(args ...interface{}) (state xmap.M) {
 	return
 }
 
+//StateH return the current state of router
+func (r *Router) StateH(w http.ResponseWriter, req *http.Request) {
+	var query = xmap.M{}
+	for key := range req.URL.Query() {
+		query[key] = req.URL.Query().Get(key)
+	}
+	state := r.State(query)
+	w.Header().Add("Content-Type", "application/json;charset=utf-8")
+	fmt.Fprintf(w, "%v", converter.JSON(state))
+}
+
 func writeCmd(w frame.Writer, buffer []byte, cmd byte, sid uint64, msg []byte) (err error) {
 	if buffer == nil {
 		buffer = make([]byte, len(msg)+13)
@@ -1037,6 +1049,10 @@ func (r *routerPiper) Ready(proc func(err error)) {
 }
 
 func (r *routerPiper) PipeConn(conn io.ReadWriteCloser, target string) (err error) {
+	if r.proc == nil {
+		err = fmt.Errorf("is not ready")
+		return
+	}
 	r.Base = conn
 	r.ready = 1
 	r.baseLocker.Unlock()
@@ -1070,7 +1086,6 @@ func (r *routerPiper) Close() (err error) {
 	}
 	if r.Base != nil {
 		r.Base.Close()
-		r.Base = nil
 	}
 	return
 }
