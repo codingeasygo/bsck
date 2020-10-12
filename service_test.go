@@ -23,10 +23,10 @@ import (
 var configTest1 = `
 {
     "name": "r0",
-    "listen": ":5023",
+    "listen": ":15023",
     "web": {
-        "listen": ":5024",
-        "suffix": ".test.loc:5024",
+        "listen": ":15024",
+        "suffix": ".test.loc:15024",
         "auth": ""
     },
     "socks5": ":5081",
@@ -42,10 +42,10 @@ var configTest1 = `
 var configTest2 = `
 {
     "name": "r0",
-    "listen": ":5023",
+    "listen": ":15023",
     "web": {
-        "listen": ":5024",
-        "suffix": ".test.loc:5024",
+        "listen": ":15024",
+        "suffix": ".test.loc:15024",
         "auth": ""
     },
     "socks5": ":5081",
@@ -246,7 +246,7 @@ func TestService(t *testing.T) {
 var configTestMaster = `
 {
     "name": "master",
-    "listen": ":5023",
+    "listen": ":15023",
     "web": {},
     "console": "",
     "forwards": {},
@@ -277,7 +277,7 @@ var configTestSlaver = `
     "channels": [
         {
             "enable":1,
-            "remote": "localhost:5023",
+            "remote": "localhost:15023",
             "token":  "abc",
             "index":  0
         }
@@ -304,7 +304,7 @@ var configTestCaller = `
     "channels": [
         {
             "enable":1,
-            "remote": "localhost:5023",
+            "remote": "localhost:15023",
             "token":  "abc",
             "index":  0
         }

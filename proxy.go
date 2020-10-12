@@ -371,7 +371,7 @@ func (p *Proxy) loopForward(l net.Listener, name string, listen *url.URL, uri st
 
 //Close will close the tcp listen
 func (p *Proxy) Close() (err error) {
-	InfoLog("Proxy(%v) %p is closing", p.Name, p)
+	InfoLog("Proxy(%v) is closing", p.Name)
 	p.Running = false
 	if p.master != nil {
 		err = p.master.Close()

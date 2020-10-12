@@ -38,7 +38,7 @@ func hget(format string, args ...interface{}) (data string, err error) {
 }
 
 func TestForward(t *testing.T) {
-	dialerPool := dialer.NewPool()
+	dialerPool := dialer.NewPool("test")
 	dialerPool.Bootstrap(xmap.M{
 		"standard": 1,
 	})

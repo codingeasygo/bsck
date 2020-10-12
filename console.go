@@ -45,18 +45,23 @@ func NewConsole(slaverAddress string) (console *Console) {
 func (c *Console) dialAll(uri string, raw io.ReadWriteCloser) (sid uint64, err error) {
 	conn, err := socks.DialType(c.SlaverAddress, 0x05, uri)
 	if err != nil {
+		if waiter, ok := raw.(ReadyWaiter); ok {
+			waiter.Ready(err, nil)
+		}
+		raw.Close()
 		return
 	}
 	proc := func(err error) {
 		if err != nil {
 			conn.Close()
+			raw.Close()
 			return
 		}
 		go xio.CopyBuffer(conn, raw, make([]byte, c.BufferSize))
 		xio.CopyBuffer(raw, conn, make([]byte, c.BufferSize))
 	}
-	if waiter, ok := raw.(ConnectedWaiter); ok {
-		waiter.Ready(proc)
+	if waiter, ok := raw.(ReadyWaiter); ok {
+		waiter.Ready(nil, proc)
 	} else {
 		go proc(nil)
 	}
@@ -107,13 +112,14 @@ func (c *Console) Dial(uri string) (conn io.ReadWriteCloser, err error) {
 }
 
 //StartPing will start ping to uri
-func (c *Console) StartPing(uri string) (closer func()) {
+func (c *Console) StartPing(uri string, delay time.Duration) (closer func()) {
 	if !strings.Contains(uri, "tcp://echo") {
 		if len(uri) > 0 {
 			uri += "->"
 		}
-		uri += "http://state"
+		uri += "tcp://echo"
 	}
+	var err error
 	var running bool = true
 	var runc uint64
 	var conn io.ReadWriteCloser
@@ -130,10 +136,10 @@ func (c *Console) StartPing(uri string) (closer func()) {
 	go func() {
 		for running {
 			pingStart := time.Now()
-			conn, err := c.Dial(uri)
+			conn, err = c.Dial(uri)
 			if err != nil {
 				fmt.Printf("Ping to %v fail with dial error %v", uri, err)
-				time.Sleep(time.Second)
+				time.Sleep(delay)
 				continue
 			}
 			runc++
@@ -142,20 +148,20 @@ func (c *Console) StartPing(uri string) (closer func()) {
 			if err != nil {
 				fmt.Printf("Ping to %v fail with write error %v", uri, err)
 				conn.Close()
-				time.Sleep(time.Second)
+				time.Sleep(delay)
 				continue
 			}
 			err = xio.FullBuffer(conn, buf, 64, nil)
 			if err != nil {
 				fmt.Printf("Ping to %v fail with read error %v", uri, err)
 				conn.Close()
-				time.Sleep(time.Second)
+				time.Sleep(delay)
 				continue
 			}
 			pingUsed := time.Now().Sub(pingStart)
 			fmt.Printf("%v Bytes from %v time=%v\n", len(buf), uri, pingUsed)
 			conn.Close()
-			time.Sleep(time.Second)
+			time.Sleep(delay)
 		}
 		waiter.Done()
 	}()
@@ -201,16 +207,18 @@ func (c *Console) PrintState(uri, query string) (err error) {
 
 //DialPiper will dial uri on router and return piper
 func (c *Console) DialPiper(uri string, bufferSize int) (raw xio.Piper, err error) {
-	piper := newRouterPiper()
+	piper := NewWaitedPiper()
 	_, err = c.dialAll(uri, piper)
 	raw = piper
 	return
 }
 
 //Proxy will start shell by runner and rewrite all tcp connection by console
-func (c *Console) Proxy(uri string, proxyRunner, proxyKey string, stdin io.Reader, stdout, stderr io.Writer, args ...string) (err error) {
+func (c *Console) Proxy(uri string, proxyRunner, proxyKey string, env []string, stdin io.Reader, stdout, stderr io.Writer, args ...string) (err error) {
 	server := proxy.NewServer(xio.PiperDialerF(func(target string, bufferSize int) (raw xio.Piper, err error) {
-		targetURI := strings.ReplaceAll(uri, "${HOST}", target)
+		targetURI := uri
+		targetURI = strings.ReplaceAll(targetURI, "${URI}", target)
+		targetURI = strings.ReplaceAll(targetURI, "${HOST}", strings.TrimPrefix(target, "tcp://"))
 		raw, err = c.DialPiper(targetURI, bufferSize)
 		return
 	}))
@@ -218,6 +226,7 @@ func (c *Console) Proxy(uri string, proxyRunner, proxyKey string, stdin io.Reade
 	if err == nil {
 		cmd := exec.Command(proxyRunner, args...)
 		cmd.Env = append(cmd.Env, fmt.Sprintf("%v=%v", proxyKey, listener.Addr()))
+		cmd.Env = append(cmd.Env, env...)
 		cmd.Stdin, cmd.Stdout, cmd.Stderr = stdin, stdout, stderr
 		err = cmd.Run()
 		server.Close()

@@ -389,12 +389,8 @@ func (s *Service) dialAll(uris string, raw io.ReadWriteCloser, sync bool) (sid u
 
 func (s *Service) dialOne(uri string, raw io.ReadWriteCloser, sync bool) (sid uint64, err error) {
 	DebugLog("Service try dial to %v", uri)
-	if strings.Contains(uri, "->") {
-		sid, err = s.Node.Dial(uri, raw)
-		return
-	}
 	dialURI := uri
-	if !regexp.MustCompile("^[A-Za-z0-9]*://.*$").MatchString(uri) {
+	if !strings.Contains(uri, "->") && !regexp.MustCompile("^[A-Za-z0-9]*://.*$").MatchString(uri) {
 		parts := strings.SplitN(uri, "?", 2)
 		s.aliasLock.Lock()
 		target, ok := s.alias[parts[0]]
@@ -479,7 +475,7 @@ func (s *Service) DialSSH(uri string, config *ssh.ClientConfig) (client *ssh.Cli
 
 //DialPiper will dial uri on router and return piper
 func (s *Service) DialPiper(uri string, bufferSize int) (raw xio.Piper, err error) {
-	piper := newRouterPiper()
+	piper := NewWaitedPiper()
 	_, err = s.DialAll(uri, piper, true)
 	raw = piper
 	return
@@ -523,7 +519,7 @@ func (s *Service) Start() (err error) {
 		s.Node.ReconnectDelay = time.Duration(s.Config.Reconnect) * time.Millisecond
 	}
 	s.Webs["state"] = http.HandlerFunc(s.Node.Router.StateH)
-	s.Dialer = dialer.NewPool()
+	s.Dialer = dialer.NewPool(s.Config.Name)
 	s.Dialer.Webs = s.Webs
 	err = s.Dialer.Bootstrap(s.Config.Dialer)
 	if err != nil {

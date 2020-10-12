@@ -87,10 +87,10 @@ type Conn interface {
 	Context() xmap.M
 }
 
-//ConnectedWaiter interface for connected waiter
-type ConnectedWaiter interface {
-	Wait() bool
-	Ready(proc func(err error))
+//ReadyWaiter interface for ready waiter
+type ReadyWaiter interface {
+	Wait() error
+	Ready(failed error, next func(err error))
 }
 
 type readDeadlinable interface {
@@ -108,13 +108,15 @@ type RawConn struct {
 	name         string
 	sid          uint64
 	uri          string
-	connected    chan int
-	closed       uint32
-	lck          chan int
 	context      xmap.M
 	buffer       []byte
 	readTimeout  time.Duration
 	writeTimeout time.Duration
+	ready        int
+	closed       int
+	failed       error
+	readyLocker  sync.RWMutex
+	closeLocker  sync.RWMutex
 }
 
 // NewRawConn returns a new RawConn by raw connection/session id/uri
@@ -124,12 +126,12 @@ func NewRawConn(name string, raw io.ReadWriteCloser, bufferSize int, sid uint64,
 		name:            name,
 		sid:             sid,
 		uri:             uri,
-		connected:       make(chan int, 1),
-		lck:             make(chan int, 1),
+		readyLocker:     sync.RWMutex{},
+		closeLocker:     sync.RWMutex{},
 		buffer:          make([]byte, bufferSize),
 		context:         xmap.M{},
 	}
-	conn.lck <- 1
+	conn.readyLocker.Lock()
 	return
 }
 
@@ -193,38 +195,53 @@ func (r *RawConn) SetTimeout(timeout time.Duration) {
 
 //Close will close the raw connection
 func (r *RawConn) Close() (err error) {
-	<-r.lck
-	if r.closed < 1 {
-		close(r.connected)
-		r.closed = 1
+	if _, ok := r.ReadWriteCloser.(ReadyWaiter); ok {
+		return r.ReadWriteCloser.Close()
 	}
-	r.lck <- 1
+	r.closeLocker.Lock()
+	if r.closed > 0 {
+		r.closeLocker.Unlock()
+		return
+	}
+	r.closed = 1
+	ready := r.ready
+	r.closeLocker.Unlock()
+	//
+	if ready < 1 {
+		r.readyLocker.Unlock()
+	}
 	err = r.ReadWriteCloser.Close()
 	return
 }
 
 //Wait is ConnectedWaiter impl
-func (r *RawConn) Wait() bool {
-	if waiter, ok := r.ReadWriteCloser.(ConnectedWaiter); ok {
+func (r *RawConn) Wait() error {
+	if waiter, ok := r.ReadWriteCloser.(ReadyWaiter); ok {
 		return waiter.Wait()
 	}
-	v := <-r.connected
-	return v > 0
+	r.readyLocker.Lock()
+	r.readyLocker.Unlock()
+	return r.failed
 }
 
 //Ready is ConnectedWaiter impl
-func (r *RawConn) Ready(proc func(err error)) {
-	if waiter, ok := r.ReadWriteCloser.(ConnectedWaiter); ok {
-		waiter.Ready(proc)
+func (r *RawConn) Ready(failed error, next func(err error)) {
+	if waiter, ok := r.ReadWriteCloser.(ReadyWaiter); ok {
+		waiter.Ready(failed, next)
 		return
 	}
-	<-r.lck
-	if r.closed < 1 {
-		r.connected <- 1
+	r.closeLocker.Lock()
+	if r.closed > 0 {
+		r.closeLocker.Unlock()
+		return
 	}
-	r.lck <- 1
-	if proc != nil {
-		go proc(nil)
+	r.ready = 1
+	r.closeLocker.Unlock()
+	//
+	r.failed = failed
+	r.readyLocker.Unlock()
+	if failed == nil && next != nil {
+		go next(nil)
 	}
 }
 
@@ -540,6 +557,7 @@ func (r *Router) loopReadRaw(channel Conn) {
 	}
 	r.channelLck.Unlock()
 	//
+	running := []io.Closer{}
 	r.tableLck.Lock()
 	if channel.Type() == ConnTypeRaw {
 		// router := r.table[fmt.Sprintf("%v-%v", channel.ID(), channel.ID())]
@@ -555,7 +573,7 @@ func (r *Router) loopReadRaw(channel Conn) {
 				continue
 			}
 			if target.Type() == ConnTypeRaw {
-				target.Close()
+				running = append(running, target)
 			} else {
 				writeCmd(target, nil, CmdClosed, rsid, []byte(err.Error()))
 			}
@@ -563,6 +581,9 @@ func (r *Router) loopReadRaw(channel Conn) {
 		}
 	}
 	r.tableLck.Unlock()
+	for _, closer := range running {
+		closer.Close()
+	}
 	r.Handler.OnConnClose(channel)
 }
 
@@ -720,8 +741,8 @@ func (r *Router) procDialBack(channel Conn, buf []byte) (err error) {
 		if msg == "OK" {
 			InfoLog("Router(%v) dail to %v success", r.Name, target)
 			r.addTable(channel, sid, target, target.ID(), router[4].(string))
-			if waiter, ok := target.(ConnectedWaiter); ok {
-				waiter.Ready(func(err error) {
+			if waiter, ok := target.(ReadyWaiter); ok {
+				waiter.Ready(nil, func(err error) {
 					if err == nil {
 						r.loopReadRaw(target)
 					} else {
@@ -734,6 +755,9 @@ func (r *Router) procDialBack(channel Conn, buf []byte) (err error) {
 		} else {
 			InfoLog("Router(%v) dail to %v fail with %v", r.Name, target, msg)
 			r.removeTable(channel, sid)
+			if waiter, ok := target.(ReadyWaiter); ok {
+				waiter.Ready(fmt.Errorf("%v", msg), nil)
+			}
 			target.Close()
 		}
 	} else {
@@ -801,8 +825,8 @@ func (r *Router) Dial(uri string, raw io.ReadWriteCloser) (sid uint64, err error
 func (r *Router) SyncDial(uri string, raw io.ReadWriteCloser) (sid uint64, err error) {
 	sid, conn, err := r.DialConn(uri, raw)
 	if err == nil {
-		if waiter, ok := conn.(ConnectedWaiter); ok && !waiter.Wait() {
-			err = fmt.Errorf("connect reseted")
+		if waiter, ok := conn.(ReadyWaiter); ok {
+			err = waiter.Wait()
 		}
 	}
 	return
@@ -816,6 +840,9 @@ func (r *Router) DialConn(uri string, raw io.ReadWriteCloser) (sid uint64, conn 
 		sid = r.UniqueSid()
 		conn, err = r.Handler.DialRaw(sid, uri)
 		if err != nil {
+			if waiter, ok := raw.(ReadyWaiter); ok {
+				waiter.Ready(err, nil)
+			}
 			raw.Close()
 			return
 		}
@@ -842,11 +869,11 @@ func (r *Router) DialConn(uri string, raw io.ReadWriteCloser) (sid uint64, conn 
 			_, err = io.CopyBuffer(conn, raw, make([]byte, r.BufferSize))
 			conn.Close()
 		}
-		if waiter, ok := conn.(ConnectedWaiter); ok {
-			waiter.Ready(nil)
+		if waiter, ok := conn.(ReadyWaiter); ok {
+			waiter.Ready(nil, nil)
 		}
-		if waiter, ok := raw.(ConnectedWaiter); ok {
-			waiter.Ready(proc)
+		if waiter, ok := raw.(ReadyWaiter); ok {
+			waiter.Ready(nil, proc)
 		} else {
 			go proc(nil)
 		}
@@ -903,13 +930,12 @@ func (r *Router) JoinConn(conn frame.ReadWriteCloser, index int, args interface{
 
 //Close all channel
 func (r *Router) Close() (err error) {
-	InfoLog("Router(%v) router is closing", r.Name)
+	all := []io.Closer{}
 	r.channelLck.Lock()
 	for _, bond := range r.channel {
 		bond.channelLck.Lock()
 		for _, channel := range bond.channels {
-			channel.Close()
-			InfoLog("Router(%v) %v is closing", r.Name, channel)
+			all = append(all, channel)
 		}
 		bond.channelLck.Unlock()
 	}
@@ -917,20 +943,25 @@ func (r *Router) Close() (err error) {
 	r.tableLck.Lock()
 	for _, table := range r.table {
 		if closer, ok := table[0].(io.Closer); ok {
-			closer.Close()
+			all = append(all, closer)
 		}
 		if closer, ok := table[2].(io.Closer); ok {
-			closer.Close()
+			all = append(all, closer)
 		}
 	}
 	r.tableLck.Unlock()
 	r.rawLck.Lock()
 	for _, entry := range r.rawConn {
 		if entry[0] != nil {
-			entry[0].Close()
+			all = append(all, entry[0])
 		}
 	}
 	r.rawLck.Unlock()
+	InfoLog("Router(%v) router will close %v connection", r.Name, len(all))
+	for _, closer := range all {
+		InfoLog("Router(%v) %v is closing", r.Name, closer)
+		closer.Close()
+	}
 	return
 }
 
@@ -1019,81 +1050,124 @@ func writeCmd(w frame.Writer, buffer []byte, cmd byte, sid uint64, msg []byte) (
 	return
 }
 
-type routerPiper struct {
-	Base        io.ReadWriteCloser
-	proc        func(err error)
-	readyLocker sync.RWMutex
-	baseLocker  sync.RWMutex
-	ready       int
+//DialPiper will dial uri on router and return piper
+func (r *Router) DialPiper(uri string, bufferSize int) (raw xio.Piper, err error) {
+	piper := NewWaitedPiper()
+	_, err = r.SyncDial(uri, piper)
+	raw = piper
+	return
 }
 
-func newRouterPiper() (piper *routerPiper) {
-	piper = &routerPiper{
+//WaitedPiper is Waiter/Piper implemnt
+type WaitedPiper struct {
+	Base        io.ReadWriteCloser
+	next        func(err error)
+	ready       int
+	failed      error
+	closed      int
+	readyLocker sync.RWMutex
+	baseLocker  sync.RWMutex
+	closeLocker sync.RWMutex
+}
+
+//NewWaitedPiper will return new WaitedPiper
+func NewWaitedPiper() (piper *WaitedPiper) {
+	piper = &WaitedPiper{
 		readyLocker: sync.RWMutex{},
 		baseLocker:  sync.RWMutex{},
+		closeLocker: sync.RWMutex{},
 	}
 	piper.readyLocker.Lock()
 	piper.baseLocker.Lock()
 	return
 }
 
-func (r *routerPiper) Wait() bool {
+//Wait will wait piper is ready
+func (r *WaitedPiper) Wait() error {
 	r.readyLocker.Lock()
 	r.readyLocker.Unlock()
-	return true
+	return r.failed
 }
 
-func (r *routerPiper) Ready(proc func(err error)) {
-	r.proc = proc
+//Ready will set piper is ready, failed/next at lasted is not nil
+func (r *WaitedPiper) Ready(failed error, next func(err error)) {
+	if failed == nil && next == nil {
+		panic("failed/next is nil")
+	}
+	r.closeLocker.Lock()
+	if r.closed > 0 {
+		r.closeLocker.Unlock()
+		return
+	}
+	r.next = next
+	r.failed = failed
+	r.closeLocker.Unlock()
+	//
 	r.readyLocker.Unlock()
 }
 
-func (r *routerPiper) PipeConn(conn io.ReadWriteCloser, target string) (err error) {
-	if r.proc == nil {
-		err = fmt.Errorf("is not ready")
+//PipeConn will pipe connection, it must be called after Wait success, or panic
+func (r *WaitedPiper) PipeConn(conn io.ReadWriteCloser, target string) (err error) {
+	if r.next == nil || r.failed != nil {
+		panic("not ready")
+	}
+	r.closeLocker.Lock()
+	if r.closed > 0 {
+		r.closeLocker.Unlock()
+		err = fmt.Errorf("closed")
 		return
 	}
 	r.Base = conn
 	r.ready = 1
+	r.closeLocker.Unlock()
 	r.baseLocker.Unlock()
-	r.proc(nil)
-	r.proc = nil
+	r.next(nil)
 	return
 }
 
-func (r *routerPiper) Read(p []byte) (n int, err error) {
+func (r *WaitedPiper) Read(p []byte) (n int, err error) {
 	if r.ready == 0 {
-		r.baseLocker.RLock()
-		r.baseLocker.RUnlock()
+		r.baseLocker.Lock()
+		r.baseLocker.Unlock()
 	}
-	n, err = r.Base.Read(p)
+	err = r.failed
+	if r.failed == nil {
+		n, err = r.Base.Read(p)
+	}
 	return
 }
 
-func (r *routerPiper) Write(p []byte) (n int, err error) {
+func (r *WaitedPiper) Write(p []byte) (n int, err error) {
 	if r.ready == 0 {
-		r.baseLocker.RLock()
-		r.baseLocker.RUnlock()
+		r.baseLocker.Lock()
+		r.baseLocker.Unlock()
 	}
-	n, err = r.Base.Write(p)
+	err = r.failed
+	if r.failed == nil {
+		n, err = r.Base.Write(p)
+	}
 	return
 }
 
-func (r *routerPiper) Close() (err error) {
-	if r.ready == 0 && r.proc != nil {
-		r.proc(fmt.Errorf("closed"))
-		r.proc = nil
+//Close will close ready piper, it will lock when it is not ready
+func (r *WaitedPiper) Close() (err error) {
+	r.closeLocker.Lock()
+	if r.closed > 0 {
+		r.closeLocker.Unlock()
+		err = fmt.Errorf("alrady closed")
+		return
+	}
+	r.closed = 1
+	ready := r.ready
+	r.closeLocker.Unlock()
+	if ready < 1 {
+		r.baseLocker.Unlock()
+	}
+	if r.next != nil {
+		r.next(fmt.Errorf("closed"))
 	}
 	if r.Base != nil {
-		r.Base.Close()
+		err = r.Base.Close()
 	}
-	return
-}
-
-//DialPiper will dial uri on router and return piper
-func (r *Router) DialPiper(uri string, bufferSize int) (raw xio.Piper, err error) {
-	piper := newRouterPiper()
-	_, err = r.SyncDial(uri, piper)
-	raw = piper
 	return
 }

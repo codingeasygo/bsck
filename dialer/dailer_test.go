@@ -9,7 +9,7 @@ import (
 )
 
 func TestPool(t *testing.T) {
-	pool := NewPool()
+	pool := NewPool("test")
 	err := pool.Bootstrap(xmap.M{
 		"dialers": []xmap.M{
 			{
@@ -44,7 +44,7 @@ func TestPool(t *testing.T) {
 	}
 
 	//test not dialer
-	pool = NewPool()
+	pool = NewPool("test")
 	_, err = pool.Dial(10, "http://web?dir=/tmp", nil)
 	if err == nil {
 		t.Error(err)

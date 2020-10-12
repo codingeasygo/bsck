@@ -70,6 +70,7 @@ type Dialer interface {
 
 //Pool is the set of Dialer
 type Pool struct {
+	Name        string
 	Dialers     []Dialer
 	Webs        map[string]http.Handler
 	conns       map[string]Conn
@@ -77,8 +78,9 @@ type Pool struct {
 }
 
 //NewPool will return new Pool
-func NewPool() (pool *Pool) {
+func NewPool(name string) (pool *Pool) {
 	pool = &Pool{
+		Name:        name,
 		conns:       map[string]Conn{},
 		connsLocker: sync.RWMutex{},
 	}
@@ -116,28 +118,28 @@ func (p *Pool) Bootstrap(options xmap.M) error {
 		web := NewWebDialer("dav", NewWebdavHandler())
 		web.Bootstrap(options.MapDef(xmap.M{}, "dav"))
 		p.Dialers = append(p.Dialers, web)
-		InfoLog("Pool add dav dialer to pool")
+		InfoLog("Pool(%v) add dav dialer to pool", p.Name)
 	}
 	if options.Value("web") != nil || options.IntDef(0, "standard") > 0 || options.IntDef(0, "std") > 0 {
 		for n, w := range p.Webs {
 			web := NewWebDialer(n, w)
 			web.Bootstrap(options.MapDef(xmap.M{}, n))
 			p.Dialers = append(p.Dialers, web)
-			InfoLog("Pool add web/%v dialer to pool", n)
+			InfoLog("Pool(%v) add web/%v dialer to pool", p.Name, n)
 		}
 	}
 	if options.Value("tcp") != nil || options.IntDef(0, "standard") > 0 || options.IntDef(0, "std") > 0 {
 		tcp := NewTCPDialer()
 		tcp.Bootstrap(options.MapDef(xmap.M{}, "tcp"))
 		p.Dialers = append(p.Dialers, tcp)
-		InfoLog("Pool add tcp dialer to pool")
+		InfoLog("Pool(%v) add tcp dialer to pool", p.Name)
 	}
 	return nil
 }
 
 //Dial the uri by dialer poo
 func (p *Pool) Dial(sid uint64, uri string, pipe io.ReadWriteCloser) (r Conn, err error) {
-	DebugLog("Pool try dial to %v", uri)
+	DebugLog("Pool(%v) try dial to %v", p.Name, uri)
 	for _, dialer := range p.Dialers {
 		if dialer.Matched(uri) {
 			r, err = dialer.Dial(sid, uri, pipe)

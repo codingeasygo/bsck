@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"syscall"
+	"time"
 
 	"github.com/codingeasygo/bsck"
 )
@@ -124,13 +125,16 @@ func main() {
 	}
 	var err error
 	var closer func()
-	if conn || proxy {
+	if conn {
 		err = bsck.NewConsole(slaver).Redirect(fullURI, os.Stdin, os.Stdout, nil)
 		if err != nil {
-			fmt.Printf("done with %v\n", err)
+			fmt.Printf("Conn done with %v\n", err)
+			os.Exit(1)
 		}
+	} else if proxy {
+		bsck.NewConsole(slaver).Redirect(fullURI, os.Stdin, os.Stdout, nil)
 	} else if ping {
-		closer = bsck.NewConsole(slaver).StartPing(fullURI)
+		closer = bsck.NewConsole(slaver).StartPing(fullURI, time.Second)
 	} else if state {
 		var query string
 		if len(args) > 0 {
@@ -138,20 +142,33 @@ func main() {
 		}
 		err = bsck.NewConsole(slaver).PrintState(fullURI, query)
 		if err != nil {
-			fmt.Printf("done with %v\n", err)
+			fmt.Printf("Print state done with %v\n", err)
+			os.Exit(1)
 		}
 	} else if shell {
-
+		if len(args) < 2 {
+			fmt.Fprintf(os.Stderr, "ProxyRunner/ProxyKey is not setting\n")
+			usage()
+			os.Exit(1)
+			return
+		}
+		err = bsck.NewConsole(slaver).Proxy(fullURI, args[0], args[1], nil, os.Stdin, os.Stdout, os.Stderr, args[2:]...)
+		if err != nil {
+			fmt.Printf("Shell done with %v\n", err)
+			os.Exit(1)
+		}
 	} else {
 		usage()
 		os.Exit(1)
 	}
-	sigc := make(chan os.Signal, 1)
-	signal.Notify(sigc,
-		syscall.SIGHUP,
-		syscall.SIGINT,
-		syscall.SIGTERM,
-		syscall.SIGQUIT)
-	<-sigc
-	closer()
+	if closer != nil {
+		sigc := make(chan os.Signal, 1)
+		signal.Notify(sigc,
+			syscall.SIGHUP,
+			syscall.SIGINT,
+			syscall.SIGTERM,
+			syscall.SIGQUIT)
+		<-sigc
+		closer()
+	}
 }
