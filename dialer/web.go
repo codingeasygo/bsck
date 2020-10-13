@@ -297,6 +297,9 @@ func (web *WebdavHandler) ServeHTTP(resp http.ResponseWriter, req *http.Request)
 	}
 	dir := args.Query().Get("dir")
 	if len(dir) < 1 {
+		dir = req.URL.Query().Get("dir")
+	}
+	if len(dir) < 1 {
 		err = fmt.Errorf("the dir arguemnt is required")
 		WarnLog("WebdavHandler parset remote address %v fail with %v", req.RemoteAddr, err)
 		fmt.Fprintf(resp, "%v", err)

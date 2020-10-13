@@ -4,12 +4,11 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/http/httptest"
 	"testing"
 	"time"
 
 	"github.com/codingeasygo/util/xhttp"
-	"github.com/codingeasygo/web"
-	"github.com/codingeasygo/web/httptest"
 )
 
 func TestWebDialer(t *testing.T) {
@@ -83,11 +82,8 @@ func TestWebDialer(t *testing.T) {
 	fmt.Printf("%v,%v,%v\n", conn.LocalAddr(), conn.RemoteAddr(), conn.Network())
 	//test error
 	//
-	ts := httptest.NewHandlerFuncServer(func(hs *web.Session) web.Result {
-		dialer.Handler.ServeHTTP(hs.W, hs.R)
-		return web.Return
-	})
-	data, err := ts.GetText("/")
+	ts := httptest.NewServer(dialer.Handler)
+	data, err := xhttp.GetText("%v", ts.URL)
 	if err == nil {
 		t.Errorf("%v-%v", data, err)
 		return
