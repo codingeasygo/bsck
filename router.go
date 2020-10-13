@@ -546,16 +546,18 @@ func (r *Router) loopReadRaw(channel Conn) {
 	}
 	channel.Close()
 	InfoLog("Router(%v) the reader(%v) is stopped by %v", r.Name, channel, err)
-	r.channelLck.Lock()
-	bond := r.channel[channel.Name()]
-	if bond != nil {
-		bond.channelLck.Lock()
-		bond.channels[channel.Index()] = channel
-		delete(bond.channels, channel.Index())
-		bond.channelLck.Unlock()
-		InfoLog("Router(%v) remove channel(%v) success", r.Name, channel)
+	if channel.Type() == ConnTypeChannel {
+		r.channelLck.Lock()
+		bond := r.channel[channel.Name()]
+		if bond != nil {
+			bond.channelLck.Lock()
+			bond.channels[channel.Index()] = channel
+			delete(bond.channels, channel.Index())
+			bond.channelLck.Unlock()
+			InfoLog("Router(%v) remove channel(%v) success", r.Name, channel)
+		}
+		r.channelLck.Unlock()
 	}
-	r.channelLck.Unlock()
 	//
 	running := []io.Closer{}
 	r.tableLck.Lock()
@@ -746,7 +748,10 @@ func (r *Router) procDialBack(channel Conn, buf []byte) (err error) {
 					if err == nil {
 						r.loopReadRaw(target)
 					} else {
-						r.removeTable(channel, sid)
+						router := r.removeTable(channel, sid)
+						if router != nil {
+							writeCmd(channel, nil, CmdClosed, sid, []byte(err.Error()))
+						}
 					}
 				})
 			} else {
@@ -1170,4 +1175,8 @@ func (r *WaitedPiper) Close() (err error) {
 		err = r.Base.Close()
 	}
 	return
+}
+
+func (r *WaitedPiper) String() string {
+	return fmt.Sprintf("WaitedPiper(%v)", xio.RemoteAddr(r.Base))
 }
