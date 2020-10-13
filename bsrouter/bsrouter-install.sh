@@ -1,6 +1,7 @@
 #!/bin/bash
+cd `dirname ${0}`
 
-installServer(){
+install(){
   if [ ! -d /home/bsrouter ];then
     useradd bsrouter
     mkdir -p /home/bsrouter
@@ -8,42 +9,27 @@ installServer(){
   fi
   cp -f bsrouter /usr/local/bin/bsrouter
   cp -f bsconsole /usr/local/bin/bsconsole
-  cp -f bs-ssh.sh /usr/local/bin/bs-ssh
-  cp -f bs-scp.sh /usr/local/bin/bs-scp
-  cp -f bs-sftp.sh /usr/local/bin/bs-sftp
-  ln -sf /usr/local/bin/bsconsole /usr/local/bin/bs-ping
-  ln -sf /usr/local/bin/bsconsole /usr/local/bin/bs-state
-  ln -sf /usr/local/bin/bsconsole /usr/local/bin/bs-bash
+  /usr/local/bin/bsconsole -uninstall
+  /usr/local/bin/bsconsole -install
   if [ ! -f /etc/systemd/system/bsrouter.service ];then
     cp -f bsrouter.service /etc/systemd/system/
   fi
   mkdir -p /etc/bsrouter
+  if [ ! -f /etc/bsrouter/bsrouter.env ];then
+    cp -f default-bsrouter.env /etc/bsrouter/bsrouter.env
+  fi
   if [ ! -f /etc/bsrouter/bsrouter.json ];then
     cp -f default-bsrouter.json /etc/bsrouter/bsrouter.json
   fi
   systemctl enable bsrouter.service
-}
-
-installClient(){
-  cd `dirname ${0}`
-  cp -f bsrouter /usr/local/bin/
-  cp -f bsconsole /usr/local/bin/
-  bsconsole -uninstall
-  bsconsole -install
+  systemctl restart bsrouter.service
 }
 
 case "$1" in
-  -i)
-    case "$2" in
-    -s)
-      installServer
-      ;;
-    -c)
-      installClient
-      ;;
-    esac
-    ;;
-  *)
-    echo "Usage: ./bsrouter-install.sh -i"
-    ;;
+-i)
+  install
+  ;;
+*)
+  echo "Usage: ./bsrouter-install.sh -i"
+  ;;
 esac

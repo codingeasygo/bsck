@@ -60,8 +60,8 @@ func mklink(link, target string) (err error) {
 		runner = "cmd"
 		args = []string{"/c", "mklink", link + ".exe", target}
 	} else {
-		runner = "bash"
-		args = []string{"-c", "ln", "-s", link, target}
+		runner = "ln"
+		args = []string{"-s", target, link}
 	}
 	cmd := exec.Command(runner, args...)
 	cmd.Stdout = os.Stdout

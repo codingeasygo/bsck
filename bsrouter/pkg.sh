@@ -11,7 +11,7 @@ output=build
 
 #### Package ####
 srv_name=bsrouter
-srv_ver=1.4.2
+srv_ver=2.0.0
 srv_out=$output/$srv_name
 rm -rf $srv_out
 mkdir -p $srv_out
@@ -23,7 +23,7 @@ cp -f bsrouter-install.sh $srv_out
 cp -f bsrouter.service $srv_out
 cp -f create-cert.sh $srv_out
 cp -f default-bsrouter.json $srv_out
-cp -f ../bsconsole/bs-*.sh $srv_out
+cp -f default-bsrouter.env $srv_out
 
 ###
 cd $output
