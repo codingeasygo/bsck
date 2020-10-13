@@ -6,42 +6,58 @@ import (
 	"os"
 )
 
+const (
+	//LogLevelDebug is debug log level
+	LogLevelDebug = 40
+	//LogLevelInfo is info log level
+	LogLevelInfo = 30
+	//LogLevelWarn is warn log level
+	LogLevelWarn = 20
+	//LogLevelError is error log level
+	LogLevelError = 10
+)
+
 //LogLevel is log leveo config
-var LogLevel int = 3
+var LogLevel = LogLevelInfo
 
-//Log is the bsck package default log
-var Log = log.New(os.Stdout, "", log.Ldate|log.Lmicroseconds|log.Lshortfile)
+//Logger is the bsck package default log
+var Logger = log.New(os.Stdout, "", log.Ldate|log.Lmicroseconds|log.Lshortfile)
 
-// var LOGDATA = make(chan string, 10000000)
+//SetLogLevel is set log level to l
+func SetLogLevel(l int) {
+	if l > 0 {
+		LogLevel = l
+	}
+}
 
-//DebugLog is log by debug level
+//DebugLog is the debug level log
 func DebugLog(format string, args ...interface{}) {
-	if LogLevel >= 3 {
-		// LOGDATA <- fmt.Sprintf("D "+format, args...)
-		Log.Output(2, fmt.Sprintf("D "+format, args...))
+	if LogLevel < LogLevelDebug {
+		return
 	}
+	Logger.Output(2, fmt.Sprintf("D "+format, args...))
 }
 
-//InfoLog is log by info level
+//InfoLog is the info level log
 func InfoLog(format string, args ...interface{}) {
-	if LogLevel >= 2 {
-		// LOGDATA <- fmt.Sprintf("I "+format, args...)
-		Log.Output(2, fmt.Sprintf("I "+format, args...))
+	if LogLevel < LogLevelInfo {
+		return
 	}
+	Logger.Output(2, fmt.Sprintf("I "+format, args...))
 }
 
-//WarnLog is log by warn level
+//WarnLog is the warn level log
 func WarnLog(format string, args ...interface{}) {
-	if LogLevel >= 1 {
-		// LOGDATA <- fmt.Sprintf("W "+format, args...)
-		Log.Output(2, fmt.Sprintf("W "+format, args...))
+	if LogLevel < LogLevelWarn {
+		return
 	}
+	Logger.Output(2, fmt.Sprintf("W "+format, args...))
 }
 
-//ErrorLog is log by error level
+//ErrorLog is the error level log
 func ErrorLog(format string, args ...interface{}) {
-	if LogLevel >= 0 {
-		// LOGDATA <- fmt.Sprintf("E "+format, args...)
-		Log.Output(2, fmt.Sprintf("E "+format, args...))
+	if LogLevel < LogLevelError {
+		return
 	}
+	Logger.Output(2, fmt.Sprintf("E "+format, args...))
 }
