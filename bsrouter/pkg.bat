@@ -7,7 +7,7 @@ mkdir build
 mkdir build\%srv_name%
 set GOOS=windows
 set GOARCH=%1
-go build -o build\%srv_name%\bsrouter.exe github.com/sutils/bsck/bsrouter
+go build -o build\%srv_name%\bsrouter.exe github.com/codingeasygo/bsck/bsrouter
 if NOT %ERRORLEVEL% EQU 0 goto :efail
 xcopy win-%OS%\nssm.exe build\%srv_name%
 xcopy bsrouter-conf.bat build\%srv_name%

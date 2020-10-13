@@ -31,8 +31,8 @@ github.com/codingeasygo/util v0.0.0-20201012133212-a7ba0b69e799 h1:LfX9WUyf4+Ak/
 github.com/codingeasygo/util v0.0.0-20201012133212-a7ba0b69e799/go.mod h1:q4DRF2HY/Qt0qCCARM1OR0dke9XFkKtgr/POyT63crI=
 github.com/codingeasygo/util v0.0.0-20201012133534-8f1fbb327bca h1:ptjPNXbCSKPJMGv9iSVSzM2xjHRvq+y0WQs+fXIIB0I=
 github.com/codingeasygo/util v0.0.0-20201012133534-8f1fbb327bca/go.mod h1:q4DRF2HY/Qt0qCCARM1OR0dke9XFkKtgr/POyT63crI=
-github.com/codingeasygo/web v0.0.0-20200828081934-4c16e112fa13 h1:nM/UNJzc/wuZTOKtjPFYWTGxxHITDNEIC6DU28N+Pis=
-github.com/codingeasygo/web v0.0.0-20200828081934-4c16e112fa13/go.mod h1:6Gb9GjK8iPCRi4kOSyZY8pBj8t7hMzi35e+Tc5TOBsg=
+github.com/codingeasygo/util v0.0.0-20201013101002-690066198ad4 h1:7Pl1vGQdawxURHJavOBrLFv9pa0Pa9l6Li8bL2zf5R0=
+github.com/codingeasygo/util v0.0.0-20201013101002-690066198ad4/go.mod h1:q4DRF2HY/Qt0qCCARM1OR0dke9XFkKtgr/POyT63crI=
 golang.org/x/crypto v0.0.0-20190308221718-c2843e01d9a2/go.mod h1:djNgcEr1/C05ACkg1iLfiJU5Ep61QUkGW8qpdssI0+w=
 golang.org/x/crypto v0.0.0-20200622213623-75b288015ac9 h1:psW17arqaxU48Z5kZ0CQnkZWQJsqcURM6tKiBApRjXI=
 golang.org/x/crypto v0.0.0-20200622213623-75b288015ac9/go.mod h1:LzIPMQfyMNhhGPhUkYOs5KpL4U8rLKemX1yGLhDgUto=

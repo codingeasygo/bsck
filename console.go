@@ -25,6 +25,8 @@ type Console struct {
 	Client        *xhttp.Client
 	SlaverAddress string
 	BufferSize    int
+	conns         map[string]net.Conn
+	connsLock     sync.RWMutex
 }
 
 //NewConsole will return new Console
@@ -32,6 +34,8 @@ func NewConsole(slaverAddress string) (console *Console) {
 	console = &Console{
 		SlaverAddress: slaverAddress,
 		BufferSize:    32 * 1024,
+		conns:         map[string]net.Conn{},
+		connsLock:     sync.RWMutex{},
 	}
 	client := &http.Client{
 		Transport: &http.Transport{
@@ -39,6 +43,20 @@ func NewConsole(slaverAddress string) (console *Console) {
 		},
 	}
 	console.Client = xhttp.NewClient(client)
+	return
+}
+
+//Close will close all connectiion
+func (c *Console) Close() (err error) {
+	all := []io.Closer{}
+	c.connsLock.Lock()
+	for _, conn := range c.conns {
+		all = append(all, conn)
+	}
+	c.connsLock.Unlock()
+	for _, conn := range all {
+		conn.Close()
+	}
 	return
 }
 
@@ -59,7 +77,13 @@ func (c *Console) dialAll(uri string, raw io.ReadWriteCloser) (sid uint64, err e
 		}
 		go xio.CopyBuffer(conn, raw, make([]byte, c.BufferSize))
 		xio.CopyBuffer(raw, conn, make([]byte, c.BufferSize))
+		c.connsLock.Lock()
+		delete(c.conns, fmt.Sprintf("%p", conn))
+		c.connsLock.Unlock()
 	}
+	c.connsLock.Lock()
+	c.conns[fmt.Sprintf("%p", conn)] = conn
+	c.connsLock.Unlock()
 	if waiter, ok := raw.(ReadyWaiter); ok {
 		waiter.Ready(nil, proc)
 	} else {
@@ -138,7 +162,7 @@ func (c *Console) StartPing(uri string, delay time.Duration) (closer func()) {
 			pingStart := time.Now()
 			conn, err = c.Dial(uri)
 			if err != nil {
-				fmt.Printf("Ping to %v fail with dial error %v", uri, err)
+				fmt.Printf("Ping to %v fail with dial error %v\n", uri, err)
 				time.Sleep(delay)
 				continue
 			}
@@ -146,14 +170,14 @@ func (c *Console) StartPing(uri string, delay time.Duration) (closer func()) {
 			fmt.Fprintf(bytes.NewBuffer(buf), "%v", runc)
 			_, err = conn.Write(buf)
 			if err != nil {
-				fmt.Printf("Ping to %v fail with write error %v", uri, err)
+				fmt.Printf("Ping to %v fail with write error %v\n", uri, err)
 				conn.Close()
 				time.Sleep(delay)
 				continue
 			}
 			err = xio.FullBuffer(conn, buf, 64, nil)
 			if err != nil {
-				fmt.Printf("Ping to %v fail with read error %v", uri, err)
+				fmt.Printf("Ping to %v fail with read error %v\n", uri, err)
 				conn.Close()
 				time.Sleep(delay)
 				continue
@@ -214,23 +238,31 @@ func (c *Console) DialPiper(uri string, bufferSize int) (raw xio.Piper, err erro
 }
 
 //Proxy will start shell by runner and rewrite all tcp connection by console
-func (c *Console) Proxy(uri string, proxyRunner, proxyKey string, env []string, stdin io.Reader, stdout, stderr io.Writer, args ...string) (err error) {
+func (c *Console) Proxy(uri string, stdin io.Reader, stdout, stderr io.Writer, prepare func(listener net.Listener) (env []string, runner string, args []string, err error)) (err error) {
 	server := proxy.NewServer(xio.PiperDialerF(func(target string, bufferSize int) (raw xio.Piper, err error) {
 		targetURI := uri
-		targetURI = strings.ReplaceAll(targetURI, "${URI}", target)
-		targetURI = strings.ReplaceAll(targetURI, "${HOST}", strings.TrimPrefix(target, "tcp://"))
+		if strings.Contains(target, ".") {
+			targetURI = strings.ReplaceAll(targetURI, "${URI}", target)
+			targetURI = strings.ReplaceAll(targetURI, "${HOST}", strings.TrimPrefix(target, "tcp://"))
+		} else {
+			target = strings.TrimPrefix(target, "tcp://")
+			target = strings.TrimSuffix(target, ":80")
+			target = strings.TrimSuffix(target, ":443")
+			targetURI = strings.ReplaceAll(targetURI, "${URI}", "http://"+target)
+		}
 		raw, err = c.DialPiper(targetURI, bufferSize)
 		return
 	}))
 	listener, err := server.Start("127.0.0.1:0")
-	if err == nil {
-		cmd := exec.Command(proxyRunner, args...)
-		cmd.Env = append(cmd.Env, fmt.Sprintf("%v=%v", proxyKey, listener.Addr()))
-		cmd.Env = append(cmd.Env, env...)
-		cmd.Stdin, cmd.Stdout, cmd.Stderr = stdin, stdout, stderr
-		err = cmd.Run()
-		server.Close()
-		listener.Close()
+	if err != nil {
+		return
 	}
+	env, runner, args, err := prepare(listener)
+	cmd := exec.Command(runner, args...)
+	cmd.Env = append(cmd.Env, env...)
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = stdin, stdout, stderr
+	err = cmd.Run()
+	server.Close()
+	listener.Close()
 	return
 }

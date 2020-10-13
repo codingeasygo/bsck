@@ -1,0 +1,21 @@
+{
+    "name": "caller",
+    "listen": "",
+    "web": {},
+    "console": ":1701",
+    "forwards": {
+        "dav": "http://dav?dir=."
+    },
+    "channels": [
+        {
+            "enable": 1,
+            "remote": "localhost:15023",
+            "token": "abc",
+            "index": 0
+        }
+    ],
+    "dialer": {
+        "standard": 1
+    },
+    "log": 40
+}

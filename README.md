@@ -30,16 +30,16 @@ bond socket provider a server/client channel like ssh tunneling, it can forward 
 * install basic comamnd
 
 ```.sh
-go get github.com/sutils/bsck/bsrouter
-go get github.com/sutils/bsck/bsconsole
+go get github.com/codingeasygo/bsck/bsrouter
+go get github.com/codingeasygo/bsck/bsconsole
 ```
 
 * install other command
 
 ```.sh
-cp -f $GOPATH/src/github.com/sutils/bsck/bsconsole/bs-ssh.sh $GOPATH/bin/bs-ssh
-cp -f $GOPATH/src/github.com/sutils/bsck/bsconsole/bs-scp.sh $GOPATH/bin/bs-scp
-cp -f $GOPATH/src/github.com/sutils/bsck/bsconsole/bs-sftp.sh $GOPATH/bin/bs-sftp
+cp -f $GOPATH/src/github.com/codingeasygo/bsck/bsconsole/bs-ssh.sh $GOPATH/bin/bs-ssh
+cp -f $GOPATH/src/github.com/codingeasygo/bsck/bsconsole/bs-scp.sh $GOPATH/bin/bs-scp
+cp -f $GOPATH/src/github.com/codingeasygo/bsck/bsconsole/bs-sftp.sh $GOPATH/bin/bs-sftp
 ln -sf $GOPATH/bin/bsconsole $GOPATH/bin/bs-ping
 ln -sf $GOPATH/bin/bsconsole $GOPATH/bin/bs-state
 ln -sf $GOPATH/bin/bsconsole $GOPATH/bin/bs-bash

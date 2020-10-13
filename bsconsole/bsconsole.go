@@ -5,15 +5,18 @@ import (
 	"flag"
 	"fmt"
 	"io/ioutil"
+	"net"
 	"os"
 	"os/signal"
 	"os/user"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/codingeasygo/bsck"
+	"github.com/codingeasygo/util/xio"
 )
 
 //Version is bsrouter version
@@ -26,6 +29,7 @@ type Config struct {
 }
 
 var slaver string
+var quiet bool
 var conn bool
 var proxy bool
 var ping bool
@@ -33,6 +37,16 @@ var state bool
 var shell bool
 var help bool
 var closer = func() {}
+
+const proxyChainsConf = `
+strict_chain
+proxy_dns
+remote_dns_subnet 224
+tcp_read_time_out 15000
+tcp_connect_time_out 8000
+[ProxyList]
+socks5 	127.0.0.1 %v
+`
 
 func usage() {
 	fmt.Fprintf(os.Stderr, "Bond Socket Console Version %v\n", Version)
@@ -45,6 +59,7 @@ func usage() {
 func main() {
 	var showVersion bool
 	flag.StringVar(&slaver, "slaver", "", "the slaver console address")
+	flag.BoolVar(&quiet, "quiet", false, "quiet mode")
 	flag.BoolVar(&conn, "conn", false, "redirect connection to stdio")
 	flag.BoolVar(&proxy, "proxy", false, "redirect connection to std proxy")
 	flag.BoolVar(&ping, "ping", false, "send ping to uri")
@@ -122,37 +137,88 @@ func main() {
 			fullURI = args[0]
 			args = args[1:]
 		}
+	} else {
+		if len(args) > 0 {
+			fullURI = args[0]
+			args = args[1:]
+		}
 	}
 	var err error
 	var closer func()
+	console := bsck.NewConsole(slaver)
+	defer console.Close()
 	if conn {
-		err = bsck.NewConsole(slaver).Redirect(fullURI, os.Stdin, os.Stdout, nil)
+		closer = func() {}
+		err = console.Redirect(fullURI, os.Stdin, os.Stdout, xio.CloserF(func() (err error) {
+			if !quiet {
+				fmt.Printf("Conn done with remote closed\n")
+			}
+			return
+		}))
 		if err != nil {
-			fmt.Printf("Conn done with %v\n", err)
+			if !quiet {
+				fmt.Printf("Conn done with %v\n", err)
+			}
 			os.Exit(1)
 		}
 	} else if proxy {
-		bsck.NewConsole(slaver).Redirect(fullURI, os.Stdin, os.Stdout, nil)
+		if len(args) < 1 {
+			fmt.Fprintf(os.Stderr, "ProxyRunner is not setting\n")
+			usage()
+			os.Exit(1)
+			return
+		}
+		err = console.Proxy(fullURI, os.Stdin, os.Stdout, os.Stderr, func(listener net.Listener) (env []string, runnerName string, runnerArgs []string, err error) {
+			_, port, _ := net.SplitHostPort(listener.Addr().String())
+			confFile, err := ioutil.TempFile("", "proxychains-*.conf")
+			if err != nil {
+				return
+			}
+			confFile.WriteString(fmt.Sprintf(proxyChainsConf, port))
+			confFile.Close()
+			runnerName = "proxychains4"
+			runnerArgs = append(runnerArgs, "-q", "-f", confFile.Name())
+			runnerArgs = append(runnerArgs, args...)
+			return
+		})
+		if err != nil {
+			fmt.Printf("Proxy done with %v\n", err)
+			os.Exit(1)
+		}
 	} else if ping {
-		closer = bsck.NewConsole(slaver).StartPing(fullURI, time.Second)
+		closer = console.StartPing(fullURI, time.Second)
 	} else if state {
 		var query string
 		if len(args) > 0 {
 			query = args[0]
 		}
-		err = bsck.NewConsole(slaver).PrintState(fullURI, query)
+		err = console.PrintState(fullURI, query)
 		if err != nil {
 			fmt.Printf("Print state done with %v\n", err)
 			os.Exit(1)
 		}
 	} else if shell {
 		if len(args) < 2 {
-			fmt.Fprintf(os.Stderr, "ProxyRunner/ProxyKey is not setting\n")
+			fmt.Fprintf(os.Stderr, "ProxyKey/ProxyRunner is not setting\n")
 			usage()
 			os.Exit(1)
 			return
 		}
-		err = bsck.NewConsole(slaver).Proxy(fullURI, args[0], args[1], nil, os.Stdin, os.Stdout, os.Stderr, args[2:]...)
+		err = console.Proxy(fullURI, os.Stdin, os.Stdout, os.Stderr, func(listener net.Listener) (env []string, runnerName string, runnerArgs []string, err error) {
+			keys := args[0]
+			keys = strings.ReplaceAll(keys, "${HOST}", listener.Addr().String())
+			env = strings.Split(keys, ",")
+			for i, e := range env {
+				if e == "http_proxy" || e == "https_proxy" || e == "HTTP_PROXY" || e == "HTTPS_PROXY" {
+					env[i] = fmt.Sprintf("%v=http://%v", e, listener.Addr())
+				} else if e == "socks_proxy" || e == "SOCKS_PROXY" {
+					env[i] = fmt.Sprintf("%v=socks5://%v", e, listener.Addr())
+				}
+			}
+			runnerName = args[1]
+			runnerArgs = args[2:]
+			return
+		})
 		if err != nil {
 			fmt.Printf("Shell done with %v\n", err)
 			os.Exit(1)

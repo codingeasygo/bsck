@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os/exec"
@@ -106,7 +107,12 @@ func TestConsole(t *testing.T) {
 		//
 		res.Reset()
 		log.Reset()
-		err := console.Proxy("master->tcp://${HOST}", "curl", "http_proxy", []string{"HOME=" + string(home)}, nil, res, log, "-v", ts.URL)
+		err := console.Proxy("master->tcp://${HOST}", nil, res, log, func(l net.Listener) (env []string, runner string, args []string, err error) {
+			env = []string{"http_proxy=http://" + l.Addr().String(), "HOME=" + string(home)}
+			runner = "curl"
+			args = []string{"-v", ts.URL}
+			return
+		})
 		if err != nil {
 			fmt.Printf("out is \n%v\n", string(log.Bytes()))
 			t.Error(err)
@@ -121,7 +127,12 @@ func TestConsole(t *testing.T) {
 		//
 		res.Reset()
 		log.Reset()
-		err = console.Proxy("master->tcp://${HOSTxx}", "curl", "http_proxy", []string{"HOME=" + string(home)}, nil, res, log, "-v", ts.URL)
+		err = console.Proxy("master->tcp://${HOSTxx}", nil, res, log, func(l net.Listener) (env []string, runner string, args []string, err error) {
+			env = []string{"http_proxy=http://" + l.Addr().String(), "HOME=" + string(home)}
+			runner = "curl"
+			args = []string{"-v", ts.URL}
+			return
+		})
 		if err != nil {
 			fmt.Printf("out is \n%v\n", string(log.Bytes()))
 			t.Error(err)

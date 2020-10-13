@@ -20,3 +20,5 @@ bsrouter/bsrouter.pem
 test.log
 *.log
 t.json
+bsrouter/bsrouter
+bsconsole/bsconsole

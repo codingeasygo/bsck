@@ -1,0 +1,22 @@
+{
+    "name": "master",
+    "listen": ":15023",
+    "web": {},
+    "console": "",
+    "forwards": {},
+    "channels": [],
+    "dialer": {
+        "standard": 1
+    },
+    "acl": {
+        "slaver": "abc",
+        "caller": "abc"
+    },
+    "access": [
+        [
+            ".*",
+            ".*"
+        ]
+    ],
+    "log": 40
+}
