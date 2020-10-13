@@ -86,7 +86,7 @@ type Config struct {
 	Access    [][]string        `json:"access"`
 	Console   string            `json:"console"`
 	Web       Web               `json:"web"`
-	ShowLog   int               `json:"showlog"`
+	Log       int               `json:"log"`
 	Forwards  map[string]string `json:"forwards"`
 	Channels  []xmap.M          `json:"channels"`
 	Dialer    xmap.M            `json:"dialer"`
@@ -493,6 +493,8 @@ func (s *Service) Start() (err error) {
 		err = fmt.Errorf("config is nil and configure path is empty")
 		return
 	}
+	proxy.SetLogLevel(s.Config.Log)
+	SetLogLevel(s.Config.Log)
 	InfoLog("Service will start by config %v", s.ConfigPath)
 	s.Console = proxy.NewServer(s)
 	s.Forward = NewForward()
@@ -533,7 +535,7 @@ func (s *Service) Start() (err error) {
 			ErrorLog("Service node listen on %v fail with %v", s.Config.Listen, err)
 			return
 		}
-		InfoLog("node listen on %v success", s.Config.Listen)
+		InfoLog("Service node listen on %v success", s.Config.Listen)
 	}
 	if len(s.Config.Channels) > 0 {
 		go s.Node.LoginChannel(true, s.Config.Channels...)
@@ -551,6 +553,7 @@ func (s *Service) Start() (err error) {
 			s.Node.Close()
 			return
 		}
+		InfoLog("Service console listen on %v success", s.Config.Console)
 	}
 	s.Node.StartHeartbeat()
 	mux := http.NewServeMux()
