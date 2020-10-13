@@ -26,12 +26,10 @@ installServer(){
 
 installClient(){
   cd `dirname ${0}`
-  ln -sf bs-ssh.sh bs-ssh
-  ln -sf bs-scp.sh bs-scp
-  ln -sf bs-sftp.sh bs-sftp
-  ln -sf bsconsole bs-ping
-  ln -sf bsconsole bs-state
-  ln -sf bsconsole bs-bash
+  cp -f bsrouter /usr/local/bin/
+  cp -f bsconsole /usr/local/bin/
+  bsconsole -uninstall
+  bsconsole -install
 }
 
 case "$1" in

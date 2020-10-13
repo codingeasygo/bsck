@@ -36,6 +36,7 @@ var ping bool
 var state bool
 var shell bool
 var help bool
+var uninstall, install bool
 var closer = func() {}
 
 const proxyChainsConf = `
@@ -49,33 +50,23 @@ socks5 	127.0.0.1 %v
 `
 
 func usage() {
+	_, fn := filepath.Split(os.Args[0])
+	fn = strings.TrimSuffix(fn, ".exe")
 	fmt.Fprintf(os.Stderr, "Bond Socket Console Version %v\n", Version)
-	fmt.Fprintf(os.Stderr, "Usage:  %v [option] <forward uri>\n", "bsconsole")
-	fmt.Fprintf(os.Stderr, "        %v 'x->y->tcp://127.0.0.1:80'\n", "bsconsole")
-	fmt.Fprintf(os.Stderr, "bsrouter options:\n")
+	fmt.Fprintf(os.Stderr, "Usage:  %v [option] <forward uri>\n", fn)
+	fmt.Fprintf(os.Stderr, "        %v 'x->y->tcp://127.0.0.1:80'\n", fn)
+	fmt.Fprintf(os.Stderr, "%v options:\n", fn)
 	flag.PrintDefaults()
 }
 
 func main() {
 	var showVersion bool
 	flag.StringVar(&slaver, "slaver", "", "the slaver console address")
-	flag.BoolVar(&quiet, "quiet", false, "quiet mode")
-	flag.BoolVar(&conn, "conn", false, "redirect connection to stdio")
-	flag.BoolVar(&proxy, "proxy", false, "redirect connection to std proxy")
-	flag.BoolVar(&ping, "ping", false, "send ping to uri")
-	flag.BoolVar(&help, "help", false, "show help")
+	flag.BoolVar(&quiet, "q", false, "quiet mode")
 	flag.BoolVar(&help, "h", false, "show help")
-	flag.BoolVar(&state, "state", false, "show node state")
-	flag.BoolVar(&shell, "shell", false, "start shell which forwaring conn to uri")
-	flag.BoolVar(&showVersion, "version", false, "show version")
 	flag.BoolVar(&showVersion, "v", false, "show version")
-	flag.Parse()
-	if showVersion {
-		fmt.Println(Version)
-		os.Exit(1)
-		return
-	}
 	_, fn := filepath.Split(os.Args[0])
+	fn = strings.TrimSuffix(fn, ".exe")
 	switch fn {
 	case "bs-conn":
 		conn = true
@@ -87,10 +78,79 @@ func main() {
 		state = true
 	case "bs-shell":
 		shell = true
+	default:
+		flag.BoolVar(&conn, "conn", false, "redirect connection to stdio")
+		flag.BoolVar(&proxy, "proxy", false, "redirect connection to std proxy")
+		flag.BoolVar(&ping, "ping", false, "send ping to uri")
+		flag.BoolVar(&state, "state", false, "show node state")
+		flag.BoolVar(&shell, "shell", false, "start shell which forwaring conn to uri")
+		flag.BoolVar(&install, "install", false, "install all command")
+		flag.BoolVar(&uninstall, "uninstall", false, "uninstall all command")
+	}
+	flag.Parse()
+	if showVersion {
+		fmt.Println(Version)
+		os.Exit(1)
+		return
 	}
 	if help {
 		usage()
 		os.Exit(1)
+		return
+	}
+	if uninstall {
+		fmt.Printf("start uninstall command\n")
+		filename, _ := filepath.Abs(os.Args[0])
+		filedir, _ := filepath.Split(filename)
+		removeFile(filepath.Join(filedir, "bs-conn"))
+		removeFile(filepath.Join(filedir, "bs-proxy"))
+		removeFile(filepath.Join(filedir, "bs-ping"))
+		removeFile(filepath.Join(filedir, "bs-state"))
+		removeFile(filepath.Join(filedir, "bs-shell"))
+		removeFile(filepath.Join(filedir, "bs-scp"))
+		removeFile(filepath.Join(filedir, "bs-sftp"))
+		removeFile(filepath.Join(filedir, "bs-ssh"))
+		fmt.Printf("Uninstall is done\n")
+		return
+	}
+	if install {
+		fmt.Printf("start install command\n")
+		var err error
+		filename, _ := filepath.Abs(os.Args[0])
+		filedir, _ := filepath.Split(filename)
+		err = mklink(filepath.Join(filedir, "bs-conn"), filename)
+		if err != nil {
+			os.Exit(1)
+		}
+		err = mklink(filepath.Join(filedir, "bs-proxy"), filename)
+		if err != nil {
+			os.Exit(1)
+		}
+		err = mklink(filepath.Join(filedir, "bs-ping"), filename)
+		if err != nil {
+			os.Exit(1)
+		}
+		err = mklink(filepath.Join(filedir, "bs-state"), filename)
+		if err != nil {
+			os.Exit(1)
+		}
+		err = mklink(filepath.Join(filedir, "bs-shell"), filename)
+		if err != nil {
+			os.Exit(1)
+		}
+		err = scriptWrite(filepath.Join(filedir, "bs-scp"), scriptSCP)
+		if err != nil {
+			os.Exit(1)
+		}
+		err = scriptWrite(filepath.Join(filedir, "bs-sftp"), scriptSFTP)
+		if err != nil {
+			os.Exit(1)
+		}
+		err = scriptWrite(filepath.Join(filedir, "bs-ssh"), scriptSSH)
+		if err != nil {
+			os.Exit(1)
+		}
+		fmt.Printf("Install is done\n")
 		return
 	}
 	var fullURI string

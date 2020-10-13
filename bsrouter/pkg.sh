@@ -17,7 +17,7 @@ rm -rf $srv_out
 mkdir -p $srv_out
 ##build normal
 echo "Build $srv_name normal executor..."
-go build -o $srv_out/$srv_name github.com/codingeasygo/bsck/bsrouter
+go build -o $srv_out/bsrouter github.com/codingeasygo/bsck/bsrouter
 go build -o $srv_out/bsconsole github.com/codingeasygo/bsck/bsconsole
 cp -f bsrouter-install.sh $srv_out
 cp -f bsrouter.service $srv_out
