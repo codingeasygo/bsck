@@ -216,7 +216,9 @@ func main() {
 				}
 			}
 			runnerName = args[1]
-			runnerArgs = args[2:]
+			for _, arg := range args[2:] {
+				runnerArgs = append(runnerArgs, strings.ReplaceAll(arg, "${PROXY_HOST}", listener.Addr().String()))
+			}
 			return
 		})
 		if err != nil {

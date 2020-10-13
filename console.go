@@ -260,6 +260,7 @@ func (c *Console) Proxy(uri string, stdin io.Reader, stdout, stderr io.Writer, p
 	env, runner, args, err := prepare(listener)
 	cmd := exec.Command(runner, args...)
 	cmd.Env = append(cmd.Env, env...)
+	InfoLog("Console proxy command %v by\narg:%v\nenv:%v\n", runner, args, cmd.Env)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = stdin, stdout, stderr
 	err = cmd.Run()
 	server.Close()
