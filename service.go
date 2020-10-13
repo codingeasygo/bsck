@@ -90,7 +90,6 @@ type Config struct {
 	Forwards  map[string]string `json:"forwards"`
 	Channels  []xmap.M          `json:"channels"`
 	Dialer    xmap.M            `json:"dialer"`
-	Proxy     xmap.M            `json:"proxy"`
 	Reconnect int64             `json:"reconnect"`
 	RDPDir    string            `json:"rdp_dir"`
 	VNCDir    string            `json:"vnc_dir"`
@@ -152,6 +151,7 @@ type Service struct {
 	ConfigPath string
 	Client     *xhttp.Client
 	Webs       map[string]http.Handler
+	BufferSize int
 	configLock sync.RWMutex
 	configLast int64
 	alias      map[string]string
@@ -161,6 +161,7 @@ type Service struct {
 //NewService will return new Service
 func NewService() (s *Service) {
 	s = &Service{
+		BufferSize: 64 * 1024,
 		configLock: sync.RWMutex{},
 		alias:      map[string]string{},
 		aliasLock:  sync.RWMutex{},
@@ -499,6 +500,8 @@ func (s *Service) Start() (err error) {
 	SetLogLevel(s.Config.Log)
 	InfoLog("Server(%v) will start by config %v", s.Name, s.ConfigPath)
 	s.Console = proxy.NewServer(s)
+	s.Console.HTTP.BufferSize = s.BufferSize
+	s.Console.SOCKS.BufferSize = s.BufferSize
 	s.Forward = NewForward()
 	if s.Handler == nil {
 		handler := NewNormalAcessHandler(s.Config.Name, nil)
@@ -512,6 +515,7 @@ func (s *Service) Start() (err error) {
 		s.Handler = handler
 	}
 	s.Node = NewProxy(s.Config.Name, s.Handler)
+	s.Node.BufferSize = s.BufferSize
 	if len(s.Config.Cert) > 0 && !filepath.IsAbs(s.Config.Cert) {
 		s.Config.Cert = filepath.Join(filepath.Dir(s.ConfigPath), s.Config.Cert)
 	}
