@@ -108,20 +108,26 @@ func (n *NormalAcessHandler) OnConnLogin(channel Conn, args string) (name string
 		return
 	}
 	n.loginLocker.RLock()
-	var mustbe string
-	for access, t := range n.LoginAccess {
-		reg, err := regexp.Compile(access)
+	var matched string
+	for key, val := range n.LoginAccess {
+		keyPattern, err := regexp.Compile(key)
 		if err != nil {
-			WarnLog("NormalAcessHandler(%v) compile acl name regexp(%v) fail with %v", n.Name, n, err)
+			WarnLog("NormalAcessHandler(%v) compile acl key regexp(%v) fail with %v", n.Name, key, err)
 			continue
 		}
-		if reg.MatchString(name) {
-			mustbe = t
+		valPattern, err := regexp.Compile(val)
+		if err != nil {
+			WarnLog("NormalAcessHandler(%v) compile acl token regexp(%v) fail with %v", n.Name, val, err)
+			continue
+		}
+		if keyPattern.MatchString(name) && valPattern.MatchString(having) {
+			matched = key
+			break
 		}
 	}
 	n.loginLocker.RUnlock()
-	if len(mustbe) < 1 || having != mustbe {
-		WarnLog("NormalAcessHandler(%v) login %v fail with auth fail, expect %v, but %v", n.Name, name, mustbe, having)
+	if len(matched) < 1 {
+		WarnLog("NormalAcessHandler(%v) login %v/%v fail with auth fail", n.Name, name, having)
 		err = fmt.Errorf("access denied ")
 		return
 	}
