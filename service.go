@@ -140,6 +140,7 @@ func (f ForwardFinderF) FindForward(uri string) (target string, err error) {
 
 //Service is bound socket service
 type Service struct {
+	Name       string
 	Node       *Proxy
 	Console    *proxy.Server
 	Web        net.Listener
@@ -178,7 +179,7 @@ func NewService() (s *Service) {
 func (s *Service) ReloadConfig() (err error) {
 	fileInfo, err := os.Stat(s.ConfigPath)
 	if err != nil {
-		DebugLog("ReloadConfig reload configure fail with %v", err)
+		DebugLog("Server(%v) reload configure fail with %v", s.Name, err)
 		return
 	}
 	newLast := fileInfo.ModTime().Local().UnixNano() / 1e6
@@ -188,10 +189,10 @@ func (s *Service) ReloadConfig() (err error) {
 	config := s.Config
 	newConfig, newLast, err := ReadConfig(s.ConfigPath)
 	if err != nil {
-		DebugLog("ReloadConfig read configure %v fail with %v", s.ConfigPath, err)
+		DebugLog("Server(%v) read configure %v fail with %v", s.Name, s.ConfigPath, err)
 		return
 	}
-	DebugLog("bsrouter will reload modified configure %v by old(%v),new(%v)", s.ConfigPath, s.configLast, newLast)
+	DebugLog("Server(%v) will reload modified configure %v by old(%v),new(%v)", s.Name, s.ConfigPath, s.configLast, newLast)
 	//remove missing
 	for loc := range config.Forwards {
 		if _, ok := newConfig.Forwards[loc]; ok {
@@ -199,7 +200,7 @@ func (s *Service) ReloadConfig() (err error) {
 		}
 		err = s.RemoveFoward(loc)
 		if err != nil {
-			ErrorLog("bsrouter remove forward by %v fail with %v", loc, err)
+			ErrorLog("Server(%v) remove forward by %v fail with %v", s.Name, loc, err)
 		}
 	}
 	for loc, uri := range newConfig.Forwards {
@@ -208,7 +209,7 @@ func (s *Service) ReloadConfig() (err error) {
 		}
 		err = s.AddFoward(loc, uri)
 		if err != nil {
-			ErrorLog("bsrouter add forward by %v->%v fail with %v", loc, uri, err)
+			ErrorLog("Server(%v) add forward by %v->%v fail with %v", s.Name, loc, uri, err)
 		}
 	}
 	config.Forwards = newConfig.Forwards
@@ -275,9 +276,9 @@ func (s *Service) AddFoward(loc, uri string) (err error) {
 		err := ioutil.WriteFile(savepath, []byte(fileData), os.ModePerm)
 		s.configLock.Unlock()
 		if err != nil {
-			WarnLog("Service save rdp info to %v faile with %v", savepath, err)
+			WarnLog("Server(%v) save rdp info to %v faile with %v", s.Name, savepath, err)
 		} else {
-			InfoLog("Service save rdp info to %v success", savepath)
+			InfoLog("Server(%v) save rdp info to %v success", s.Name, savepath)
 		}
 	}
 	if err == nil && vnc && len(s.Config.VNCDir) > 0 {
@@ -289,9 +290,9 @@ func (s *Service) AddFoward(loc, uri string) (err error) {
 		err := ioutil.WriteFile(savepath, []byte(fileData), os.ModePerm)
 		s.configLock.Unlock()
 		if err != nil {
-			WarnLog("Service save vnc info to %v faile with %v", savepath, err)
+			WarnLog("Server(%v) save vnc info to %v faile with %v", s.Name, savepath, err)
 		} else {
-			InfoLog("Service save vnc info to %v success", savepath)
+			InfoLog("Server(%v) save vnc info to %v success", s.Name, savepath)
 		}
 	}
 	return
@@ -338,9 +339,9 @@ func (s *Service) RemoveFoward(loc string) (err error) {
 		err := os.Remove(savepath)
 		s.configLock.Unlock()
 		if err != nil {
-			WarnLog("Service remove rdp file on %v faile with %v", savepath, err)
+			WarnLog("Server(%v) remove rdp file on %v faile with %v", s.Name, savepath, err)
 		} else {
-			InfoLog("Service remove rdp file on %v success", savepath)
+			InfoLog("Server(%v) remove rdp file on %v success", s.Name, savepath)
 		}
 	}
 	if vnc && len(s.Config.VNCDir) > 0 {
@@ -349,9 +350,9 @@ func (s *Service) RemoveFoward(loc string) (err error) {
 		err := os.Remove(savepath)
 		s.configLock.Unlock()
 		if err != nil {
-			WarnLog("Service remove vnc file on %v faile with %v", savepath, err)
+			WarnLog("Server(%v) remove vnc file on %v faile with %v", s.Name, savepath, err)
 		} else {
-			InfoLog("Service remove vnc file on %v success", savepath)
+			InfoLog("Server(%v) remove vnc file on %v success", s.Name, savepath)
 		}
 	}
 	return
@@ -377,7 +378,7 @@ func (s *Service) DialAll(uris string, raw io.ReadWriteCloser, sync bool) (sid u
 }
 
 func (s *Service) dialAll(uris string, raw io.ReadWriteCloser, sync bool) (sid uint64, err error) {
-	DebugLog("Service try dial all to %v", uris)
+	DebugLog("Server(%v) try dial all to %v", s.Name, uris)
 	for _, uri := range strings.Split(uris, ",") {
 		sid, err = s.dialOne(uri, raw, sync)
 		if err == nil {
@@ -388,7 +389,7 @@ func (s *Service) dialAll(uris string, raw io.ReadWriteCloser, sync bool) (sid u
 }
 
 func (s *Service) dialOne(uri string, raw io.ReadWriteCloser, sync bool) (sid uint64, err error) {
-	DebugLog("Service try dial to %v", uri)
+	DebugLog("Server(%v) try dial to %v", s.Name, uri)
 	dialURI := uri
 	if !strings.Contains(uri, "->") && !regexp.MustCompile("^[A-Za-z0-9]*://.*$").MatchString(uri) {
 		parts := strings.SplitN(uri, "?", 2)
@@ -486,16 +487,17 @@ func (s *Service) Start() (err error) {
 	if len(s.ConfigPath) > 0 {
 		s.Config, s.configLast, err = ReadConfig(s.ConfigPath)
 		if err != nil {
-			ErrorLog("Service read config %v fail with %v", s.ConfigPath, err)
+			ErrorLog("Server(%v) read config %v fail with %v", s.Name, s.ConfigPath, err)
 			return
 		}
 	} else if s.Config == nil {
 		err = fmt.Errorf("config is nil and configure path is empty")
 		return
 	}
+	s.Name = s.Config.Name
 	proxy.SetLogLevel(s.Config.Log)
 	SetLogLevel(s.Config.Log)
-	InfoLog("Service will start by config %v", s.ConfigPath)
+	InfoLog("Server(%v) will start by config %v", s.Name, s.ConfigPath)
 	s.Console = proxy.NewServer(s)
 	s.Forward = NewForward()
 	if s.Handler == nil {
@@ -532,10 +534,10 @@ func (s *Service) Start() (err error) {
 	if len(s.Config.Listen) > 0 {
 		err = s.Node.ListenMaster(s.Config.Listen)
 		if err != nil {
-			ErrorLog("Service node listen on %v fail with %v", s.Config.Listen, err)
+			ErrorLog("Server(%v) node listen on %v fail with %v", s.Name, s.Config.Listen, err)
 			return
 		}
-		InfoLog("Service node listen on %v success", s.Config.Listen)
+		InfoLog("Server(%v) node listen on %v success", s.Name, s.Config.Listen)
 	}
 	if len(s.Config.Channels) > 0 {
 		go s.Node.LoginChannel(true, s.Config.Channels...)
@@ -543,17 +545,17 @@ func (s *Service) Start() (err error) {
 	for loc, uri := range s.Config.Forwards {
 		err = s.AddFoward(loc, uri)
 		if err != nil {
-			ErrorLog("Service add forward by %v->%v fail with %v", loc, uri, err)
+			ErrorLog("Server(%v) add forward by %v->%v fail with %v", s.Name, loc, uri, err)
 		}
 	}
 	if len(s.Config.Console) > 0 {
 		_, err = s.Console.Start(s.Config.Console)
 		if err != nil {
-			ErrorLog("Service start console on %v fail with %v\n", s.Config.Console, err)
+			ErrorLog("Server(%v) start console on %v fail with %v\n", s.Name, s.Config.Console, err)
 			s.Node.Close()
 			return
 		}
-		InfoLog("Service console listen on %v success", s.Config.Console)
+		InfoLog("Server(%v) console listen on %v success", s.Name, s.Config.Console)
 	}
 	s.Node.StartHeartbeat()
 	mux := http.NewServeMux()
@@ -567,7 +569,7 @@ func (s *Service) Start() (err error) {
 	if len(s.Config.Web.Listen) > 0 {
 		s.Web, err = net.Listen("tcp", s.Config.Web.Listen)
 		if err != nil {
-			ErrorLog("Service start web on %v fail with %v\n", s.Config.Console, err)
+			ErrorLog("Server(%v) start web on %v fail with %v\n", s.Name, s.Config.Console, err)
 			return err
 		}
 		go func() {
@@ -579,6 +581,7 @@ func (s *Service) Start() (err error) {
 
 //Stop will stop service
 func (s *Service) Stop() (err error) {
+	InfoLog("Server(%v) is stopping", s.Name)
 	if s.Node != nil {
 		s.Node.Close()
 		s.Node = nil

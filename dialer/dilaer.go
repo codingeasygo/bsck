@@ -112,7 +112,7 @@ func (p *Pool) Bootstrap(options xmap.M) error {
 		echo := NewEchoDialer()
 		echo.Bootstrap(options.Map("echo"))
 		p.Dialers = append(p.Dialers, echo)
-		InfoLog("Pool add echo dialer to pool")
+		InfoLog("Pool(%v) add echo dialer to pool", p.Name)
 	}
 	if options.Value("dav") != nil || options.IntDef(0, "standard") > 0 || options.IntDef(0, "std") > 0 {
 		web := NewWebDialer("dav", NewWebdavHandler())
