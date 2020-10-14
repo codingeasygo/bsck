@@ -3,8 +3,8 @@ package dialer
 import (
 	"io"
 	"net/url"
-	"sync"
 
+	"github.com/codingeasygo/util/xio"
 	"github.com/codingeasygo/util/xmap"
 )
 
@@ -59,52 +59,14 @@ func (e *EchoDialer) Shutdown() (err error) {
 
 //EchoReadWriteCloser is an implementation of the io.ReadWriteCloser interface for pipe write to read.
 type EchoReadWriteCloser struct {
-	pipe chan []byte
-	lck  sync.RWMutex
+	*xio.PipedChan
 }
 
 //NewEchoReadWriteCloser will return new EchoReadWriteCloser
 func NewEchoReadWriteCloser() *EchoReadWriteCloser {
 	return &EchoReadWriteCloser{
-		pipe: make(chan []byte, 1),
-		lck:  sync.RWMutex{},
+		PipedChan: xio.NewPipedChan(),
 	}
-}
-
-func (e *EchoReadWriteCloser) Write(p []byte) (n int, err error) {
-	if e.pipe == nil {
-		err = io.EOF
-		return
-	}
-	n = len(p)
-	e.pipe <- p[:]
-	return
-}
-
-func (e *EchoReadWriteCloser) Read(p []byte) (n int, err error) {
-	if e.pipe == nil {
-		err = io.EOF
-		return
-	}
-	buf := <-e.pipe
-	if buf == nil {
-		err = io.EOF
-		return
-	}
-	n = copy(p, buf)
-	return
-}
-
-//Close echo read writer closer.
-func (e *EchoReadWriteCloser) Close() (err error) {
-	e.lck.Lock()
-	if e.pipe != nil {
-		e.pipe <- nil
-		close(e.pipe)
-		e.pipe = nil
-	}
-	e.lck.Unlock()
-	return
 }
 
 //Pipe is Pipable implment
