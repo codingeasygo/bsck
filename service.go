@@ -33,8 +33,8 @@ import (
 //ShowLog will show more log.
 var ShowLog = 0
 
-//RDPTmpl is the template string for rdp file
-const RDPTmpl = `
+//RDPTemplate is the template string for rdp file
+const RDPTemplate = `
 screen mode id:i:2
 use multimon:i:1
 session bpp:i:24
@@ -59,8 +59,8 @@ bookmarktype:i:3
 use redirection server name:i:0
 `
 
-//VNCTmpl is the template string for vnc file
-const VNCTmpl = `
+//VNCTemplate is the template string for vnc file
+const VNCTemplate = `
 FriendlyName=%v
 FullScreen=1
 Host=%v
@@ -69,14 +69,14 @@ RelativePtr=0
 Scaling=100%%
 `
 
-//Web is pojo for web configure
+//Web is struct for web configure
 type Web struct {
 	Suffix string `json:"suffix"`
 	Listen string `json:"listen"`
 	Auth   string `json:"auth"`
 }
 
-//Config is pojo for all configure
+//Config is struct for all configure
 type Config struct {
 	Name      string            `json:"name"`
 	Cert      string            `json:"cert"`
@@ -120,7 +120,7 @@ func ReadConfig(path string) (config *Config, last int64, err error) {
 	return
 }
 
-//ErrForwardNotExist is foward is not exist error
+//ErrForwardNotExist is forward is not exist error
 var ErrForwardNotExist = fmt.Errorf("%v", "forward not exist")
 
 //ForwardFinder is forward finder
@@ -161,7 +161,7 @@ type Service struct {
 //NewService will return new Service
 func NewService() (s *Service) {
 	s = &Service{
-		BufferSize: 64 * 1024,
+		BufferSize: 32 * 1024,
 		configLock: sync.RWMutex{},
 		alias:      map[string]string{},
 		aliasLock:  sync.RWMutex{},
@@ -199,7 +199,7 @@ func (s *Service) ReloadConfig() (err error) {
 		if _, ok := newConfig.Forwards[loc]; ok {
 			continue
 		}
-		err = s.RemoveFoward(loc)
+		err = s.RemoveForward(loc)
 		if err != nil {
 			ErrorLog("Server(%v) remove forward by %v fail with %v", s.Name, loc, err)
 		}
@@ -208,7 +208,7 @@ func (s *Service) ReloadConfig() (err error) {
 		if config.Forwards[loc] == uri {
 			continue
 		}
-		err = s.AddFoward(loc, uri)
+		err = s.AddForward(loc, uri)
 		if err != nil {
 			ErrorLog("Server(%v) add forward by %v->%v fail with %v", s.Name, loc, uri, err)
 		}
@@ -218,8 +218,8 @@ func (s *Service) ReloadConfig() (err error) {
 	return
 }
 
-//AddFoward will add forward by local and remote
-func (s *Service) AddFoward(loc, uri string) (err error) {
+//AddForward will add forward by local and remote
+func (s *Service) AddForward(loc, uri string) (err error) {
 	locParts := strings.SplitN(loc, "~", 2)
 	if len(locParts) < 2 {
 		s.aliasLock.Lock()
@@ -229,7 +229,7 @@ func (s *Service) AddFoward(loc, uri string) (err error) {
 		}
 		s.aliasLock.Unlock()
 		if having {
-			err = fmt.Errorf("local uri is exeists %v", loc)
+			err = fmt.Errorf("local uri is exists %v", loc)
 		}
 		// err = fmt.Errorf("local uri must be alias~*://*, but %v", loc)
 		return
@@ -271,13 +271,13 @@ func (s *Service) AddFoward(loc, uri string) (err error) {
 	}
 	if err == nil && rdp && len(s.Config.RDPDir) > 0 {
 		s.configLock.Lock()
-		fileData := fmt.Sprintf(RDPTmpl, listener.Addr(), target.User.Username())
+		fileData := fmt.Sprintf(RDPTemplate, listener.Addr(), target.User.Username())
 		os.MkdirAll(s.Config.RDPDir, os.ModePerm)
 		savepath := filepath.Join(s.Config.RDPDir, locParts[0]+".rdp")
 		err := ioutil.WriteFile(savepath, []byte(fileData), os.ModePerm)
 		s.configLock.Unlock()
 		if err != nil {
-			WarnLog("Server(%v) save rdp info to %v faile with %v", s.Name, savepath, err)
+			WarnLog("Server(%v) save rdp info to %v failed with %v", s.Name, savepath, err)
 		} else {
 			InfoLog("Server(%v) save rdp info to %v success", s.Name, savepath)
 		}
@@ -285,13 +285,13 @@ func (s *Service) AddFoward(loc, uri string) (err error) {
 	if err == nil && vnc && len(s.Config.VNCDir) > 0 {
 		s.configLock.Lock()
 		password, _ := target.User.Password()
-		fileData := fmt.Sprintf(VNCTmpl, locParts[0], listener.Addr(), password)
+		fileData := fmt.Sprintf(VNCTemplate, locParts[0], listener.Addr(), password)
 		os.MkdirAll(s.Config.VNCDir, os.ModePerm)
 		savepath := filepath.Join(s.Config.VNCDir, locParts[0]+".vnc")
 		err := ioutil.WriteFile(savepath, []byte(fileData), os.ModePerm)
 		s.configLock.Unlock()
 		if err != nil {
-			WarnLog("Server(%v) save vnc info to %v faile with %v", s.Name, savepath, err)
+			WarnLog("Server(%v) save vnc info to %v failed with %v", s.Name, savepath, err)
 		} else {
 			InfoLog("Server(%v) save vnc info to %v success", s.Name, savepath)
 		}
@@ -299,8 +299,8 @@ func (s *Service) AddFoward(loc, uri string) (err error) {
 	return
 }
 
-//RemoveFoward will remove forward
-func (s *Service) RemoveFoward(loc string) (err error) {
+//RemoveForward will remove forward
+func (s *Service) RemoveForward(loc string) (err error) {
 	locParts := strings.SplitN(loc, "~", 2)
 	if len(locParts) < 2 {
 		s.aliasLock.Lock()
@@ -310,7 +310,7 @@ func (s *Service) RemoveFoward(loc string) (err error) {
 		}
 		s.aliasLock.Unlock()
 		if !having {
-			err = fmt.Errorf("local uri is not exeists %v", loc)
+			err = fmt.Errorf("local uri is not exists %v", loc)
 		}
 		// err = fmt.Errorf("local uri must be alias~*://*, but %v", loc)
 		return
@@ -340,7 +340,7 @@ func (s *Service) RemoveFoward(loc string) (err error) {
 		err := os.Remove(savepath)
 		s.configLock.Unlock()
 		if err != nil {
-			WarnLog("Server(%v) remove rdp file on %v faile with %v", s.Name, savepath, err)
+			WarnLog("Server(%v) remove rdp file on %v failed with %v", s.Name, savepath, err)
 		} else {
 			InfoLog("Server(%v) remove rdp file on %v success", s.Name, savepath)
 		}
@@ -351,7 +351,7 @@ func (s *Service) RemoveFoward(loc string) (err error) {
 		err := os.Remove(savepath)
 		s.configLock.Unlock()
 		if err != nil {
-			WarnLog("Server(%v) remove vnc file on %v faile with %v", s.Name, savepath, err)
+			WarnLog("Server(%v) remove vnc file on %v failed with %v", s.Name, savepath, err)
 		} else {
 			InfoLog("Server(%v) remove vnc file on %v success", s.Name, savepath)
 		}
@@ -467,11 +467,11 @@ func (s *Service) DialSSH(uri string, config *ssh.ClientConfig) (client *ssh.Cli
 	if err != nil {
 		return
 	}
-	c, chans, reqs, err := ssh.NewClientConn(conn, uri, config)
+	c, channel, request, err := ssh.NewClientConn(conn, uri, config)
 	if err != nil {
 		return nil, err
 	}
-	client = ssh.NewClient(c, chans, reqs)
+	client = ssh.NewClient(c, channel, request)
 	return
 }
 
@@ -547,7 +547,7 @@ func (s *Service) Start() (err error) {
 		go s.Node.LoginChannel(true, s.Config.Channels...)
 	}
 	for loc, uri := range s.Config.Forwards {
-		err = s.AddFoward(loc, uri)
+		err = s.AddForward(loc, uri)
 		if err != nil {
 			ErrorLog("Server(%v) add forward by %v->%v fail with %v", s.Name, loc, uri, err)
 		}
