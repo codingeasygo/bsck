@@ -20,17 +20,17 @@ import (
 	"github.com/codingeasygo/util/xmap"
 )
 
-// //AuthOption is a pojo struct to login auth.
+// //AuthOption is a struct struct to login auth.
 // type AuthOption struct {
 // 	//the channel index
 // 	Index int `json:"index"`
-// 	//the chnnale name
+// 	//the channel name
 // 	Name string `json:"name"`
 // 	//the auth token
 // 	Token string `json:"token"`
 // }
 
-// //ChannelOption is a pojo struct for adding channel to Router
+// //ChannelOption is a struct struct for adding channel to Router
 // type ChannelOption struct {
 // 	//enable
 // 	Enable bool `json:"enable"`
@@ -78,7 +78,7 @@ func NewNormalAcessHandler(name string, dialer RawDialer) (handler *NormalAcessH
 	return
 }
 
-//DialRaw is proxy handler to dail remove
+//DialRaw is proxy handler to dial remove
 func (n *NormalAcessHandler) DialRaw(sid uint64, uri string) (raw Conn, err error) {
 	if n.Dialer == nil {
 		err = fmt.Errorf("not supported")
@@ -94,7 +94,7 @@ func (n *NormalAcessHandler) OnConnLogin(channel Conn, args string) (name string
 	err = json.Unmarshal([]byte(args), &option)
 	if err != nil {
 		ErrorLog("NormalAcessHandler(%v) unmarshal login option fail with %v", n.Name, err)
-		err = fmt.Errorf("parse login opiton fail with " + err.Error())
+		err = fmt.Errorf("parse login option fail with " + err.Error())
 		return
 	}
 	var having string
@@ -138,8 +138,8 @@ func (n *NormalAcessHandler) OnConnLogin(channel Conn, args string) (name string
 
 //OnConnDialURI is proxy handler to handle dial uri
 func (n *NormalAcessHandler) OnConnDialURI(channel Conn, conn string, parts []string) (err error) {
-	_, islogin := channel.Context()["option"]
-	if !islogin {
+	_, isLogin := channel.Context()["option"]
+	if !isLogin {
 		err = fmt.Errorf("not login")
 		return
 	}
@@ -149,17 +149,17 @@ func (n *NormalAcessHandler) OnConnDialURI(channel Conn, conn string, parts []st
 			WarnLog("NormalAcessHandler(%v) compile dial access fail with entry must be [<source>,<target>], but %v", n.Name, entry)
 			continue
 		}
-		source, xerr := regexp.Compile(entry[0])
-		if xerr != nil {
-			WarnLog("NormalAcessHandler(%v) compile dial access fail with %v by entry source %v", n.Name, xerr, entry[0])
+		source, sourceError := regexp.Compile(entry[0])
+		if sourceError != nil {
+			WarnLog("NormalAcessHandler(%v) compile dial access fail with %v by entry source %v", n.Name, sourceError, entry[0])
 			continue
 		}
 		if !source.MatchString(name) {
 			continue
 		}
-		target, xerr := regexp.Compile(entry[1])
-		if xerr != nil {
-			WarnLog("NormalAcessHandler(%v) compile dial access fail with %v by entry target %v", n.Name, xerr, entry[1])
+		target, targetError := regexp.Compile(entry[1])
+		if targetError != nil {
+			WarnLog("NormalAcessHandler(%v) compile dial access fail with %v by entry target %v", n.Name, targetError, entry[1])
 			continue
 		}
 		if target.MatchString(name) {
@@ -325,11 +325,11 @@ func (p *Proxy) StartForward(name string, listen *url.URL, router string) (liste
 func (p *Proxy) StopForward(name string) (err error) {
 	InfoLog("Proxy(%v) stop forward by name:%v", p.Name, name)
 	p.forwardsLck.Lock()
-	vals := p.forwards[name]
+	forward := p.forwards[name]
 	delete(p.forwards, name)
 	p.forwardsLck.Unlock()
-	if len(vals) > 0 {
-		err = vals[0].(io.Closer).Close()
+	if len(forward) > 0 {
+		err = forward[0].(io.Closer).Close()
 	}
 	return
 }
@@ -346,14 +346,14 @@ func (p *Proxy) loopMaster(l net.Listener) {
 		p.Router.Accept(NewInfoRWC(frame.NewReadWriteCloser(conn, p.BufferSize), conn.RemoteAddr().String()))
 	}
 	l.Close()
-	InfoLog("Proxy(%v) master aceept on %v is stopped", p.Name, l.Addr())
+	InfoLog("Proxy(%v) master accept on %v is stopped", p.Name, l.Addr())
 }
 
 func (p *Proxy) loopForward(l net.Listener, name string, listen *url.URL, uri string) {
 	var err error
 	var sid uint64
 	var conn net.Conn
-	InfoLog("Proxy(%v) proxy forward(%v->%v) aceept runner is starting", p.Name, l.Addr(), uri)
+	InfoLog("Proxy(%v) proxy forward(%v->%v) accept runner is starting", p.Name, l.Addr(), uri)
 	for p.Running {
 		conn, err = l.Accept()
 		if err != nil {
@@ -369,7 +369,7 @@ func (p *Proxy) loopForward(l net.Listener, name string, listen *url.URL, uri st
 		}
 	}
 	l.Close()
-	InfoLog("Proxy(%v) proxy forward(%v->%v) aceept runner is stopped", p.Name, l.Addr(), uri)
+	InfoLog("Proxy(%v) proxy forward(%v->%v) accept runner is stopped", p.Name, l.Addr(), uri)
 	p.forwardsLck.Lock()
 	delete(p.forwards, name)
 	p.forwardsLck.Unlock()
@@ -449,9 +449,9 @@ func (p *Proxy) OnConnClose(conn Conn) (err error) {
 	}
 	if err == nil && context.IntDef(-1, "login_conn") == 1 {
 		go p.runReconnect(context.Map("option"))
-		InfoLog("Proxy(%v) the chnnale(%v) is closed, will reconect it", p.Name, channel)
+		InfoLog("Proxy(%v) the channel(%v) is closed, will reconnect it", p.Name, channel)
 	} else {
-		InfoLog("Proxy(%v) the chnnale(%v) is closed by %v, remove it", p.Name, channel, err)
+		InfoLog("Proxy(%v) the channel(%v) is closed by %v, remove it", p.Name, channel, err)
 	}
 	return nil
 }

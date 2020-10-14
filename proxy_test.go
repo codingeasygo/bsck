@@ -89,7 +89,7 @@ func (e *Echo) String() string {
 func TestProxy(t *testing.T) {
 	var masterEcho *Echo
 	handler := NewNormalAcessHandler("master", DialRawF(func(sid uint64, uri string) (conn Conn, err error) {
-		fmt.Println("master test dail to ", uri)
+		fmt.Println("master test dial to ", uri)
 		conn = NewRawConn("", masterEcho, 1024, sid, uri)
 		return
 	}))
@@ -109,7 +109,7 @@ func TestProxy(t *testing.T) {
 	defer master.Close()
 	var slaver1Echo *Echo
 	slaver1Handler := NewNormalAcessHandler("master", DialRawF(func(sid uint64, uri string) (conn Conn, err error) {
-		fmt.Println("slaver test dail to ", uri)
+		fmt.Println("slaver test dial to ", uri)
 		conn = NewRawConn("", slaver1Echo, 1024, sid, uri)
 		return
 	}))
@@ -197,7 +197,7 @@ func TestProxy(t *testing.T) {
 				err = fmt.Errorf("test error")
 				return
 			}
-			fmt.Println("ms test dail to ", uri)
+			fmt.Println("ms test dial to ", uri)
 			conn = NewRawConn("", msEcho, 1024, sid, uri)
 			return
 		}))
@@ -250,7 +250,7 @@ func TestProxy(t *testing.T) {
 		fmt.Printf("\n\n\ntest channel close\n")
 		slaver3Echo := NewEcho("slaver3")
 		slaver3Handler := NewNormalAcessHandler("slaver3", DialRawF(func(sid uint64, uri string) (conn Conn, err error) {
-			fmt.Println("slaver3 test dail to ", uri)
+			fmt.Println("slaver3 test dial to ", uri)
 			conn = NewRawConn("", slaver3Echo, 1024, sid, uri)
 			return
 		}))
@@ -644,7 +644,7 @@ func TestMultiProxy(t *testing.T) {
 func TestProxyError(t *testing.T) {
 	var masterEcho *Echo
 	handler := NewNormalAcessHandler("master", DialRawF(func(sid uint64, uri string) (conn Conn, err error) {
-		fmt.Println("master test dail to ", uri)
+		fmt.Println("master test dial to ", uri)
 		if uri == "error" {
 			err = fmt.Errorf("error")
 		} else {
@@ -669,7 +669,7 @@ func TestProxyError(t *testing.T) {
 	// slaver := NewRouter("slaver")
 	// var slaverEcho *Echo
 	// slaver.DialRaw = func(sid uint64, uri string) (conn Conn, err error) {
-	// 	fmt.Println("slaver test dail to ", uri)
+	// 	fmt.Println("slaver test dial to ", uri)
 	// 	conn = NewRawConn("",slaverEcho, sid, uri, 4096)
 	// 	// err = fmt.Errorf("error")
 	// 	return
@@ -726,7 +726,7 @@ func TestProxyError(t *testing.T) {
 			return
 		}
 		//
-		//test proc dail fail
+		//test proc dial fail
 		buf := make([]byte, 1024)
 		data := []byte{}
 		//
@@ -837,7 +837,7 @@ func TestProxyError(t *testing.T) {
 		}
 	}
 	{ //test proc dial back error
-		fmt.Printf("\n\n\ntest proc dail back error\n")
+		fmt.Printf("\n\n\ntest proc dial back error\n")
 		//
 		//test dial fail
 		srcRaw := NewErrReadWriteCloser([]byte("error"), 10)
@@ -970,7 +970,7 @@ func TestReconnect(t *testing.T) {
 func TestProxyForward(t *testing.T) {
 	var masterEcho *Echo
 	handler := NewNormalAcessHandler("master", DialRawF(func(sid uint64, uri string) (conn Conn, err error) {
-		fmt.Println("master test dail to ", uri)
+		fmt.Println("master test dial to ", uri)
 		if uri == "error" {
 			err = fmt.Errorf("error")
 		} else {
@@ -990,7 +990,7 @@ func TestProxyForward(t *testing.T) {
 	}
 	var slaverEcho = NewEcho("slaver")
 	slaverHandler := NewNormalAcessHandler("slaver", DialRawF(func(sid uint64, uri string) (conn Conn, err error) {
-		fmt.Println("slaver test dail to ", uri)
+		fmt.Println("slaver test dial to ", uri)
 		conn = NewRawConn("", slaverEcho, 1024, sid, uri)
 		// err = fmt.Errorf("error")
 		return
@@ -1140,7 +1140,7 @@ func dialProxyConn(proxy, remote string, port uint16) (conn net.Conn, err error)
 
 func TestSocketProxyForward(t *testing.T) {
 	handler := NewNormalAcessHandler("master", DialRawF(func(sid uint64, uri string) (conn Conn, err error) {
-		fmt.Println("master test dail to", uri)
+		fmt.Println("master test dial to", uri)
 		if uri == "error" {
 			err = fmt.Errorf("error")
 		} else {
@@ -1161,7 +1161,7 @@ func TestSocketProxyForward(t *testing.T) {
 	}
 	var slaverEcho = NewEcho("slaver")
 	slaverHandler := NewNormalAcessHandler("slaver", DialRawF(func(sid uint64, uri string) (conn Conn, err error) {
-		fmt.Println("slaver test dail to ", uri)
+		fmt.Println("slaver test dial to ", uri)
 		conn = NewRawConn("", slaverEcho, 1024, sid, uri)
 		// err = fmt.Errorf("error")
 		return
@@ -1235,7 +1235,7 @@ func TestSocketProxyForward(t *testing.T) {
 
 func TestProxyTLS(t *testing.T) {
 	handler := NewNormalAcessHandler("master", DialRawF(func(sid uint64, uri string) (conn Conn, err error) {
-		fmt.Println("master test dail to ", uri)
+		fmt.Println("master test dial to ", uri)
 		if uri == "error" {
 			err = fmt.Errorf("error")
 		} else {
@@ -1257,7 +1257,7 @@ func TestProxyTLS(t *testing.T) {
 	}
 	var slaverEcho = NewEcho("slaver")
 	slaverHandler := NewNormalAcessHandler("slaver", DialRawF(func(sid uint64, uri string) (conn Conn, err error) {
-		fmt.Println("slaver test dail to ", uri)
+		fmt.Println("slaver test dial to ", uri)
 		conn = NewRawConn("", slaverEcho, 1024, sid, uri)
 		// err = fmt.Errorf("error")
 		return
@@ -1329,7 +1329,7 @@ func TestProxyClose(t *testing.T) {
 func TestProxyDialSync(t *testing.T) {
 	var masterEcho *Echo
 	handler := NewNormalAcessHandler("master", DialRawF(func(sid uint64, uri string) (conn Conn, err error) {
-		fmt.Println("master test dail to ", uri)
+		fmt.Println("master test dial to ", uri)
 		if uri == "error" {
 			err = fmt.Errorf("error")
 		} else {
@@ -1349,7 +1349,7 @@ func TestProxyDialSync(t *testing.T) {
 	}
 	var slaverEcho = NewEcho("slaver")
 	slaverHandler := NewNormalAcessHandler("slaver", DialRawF(func(sid uint64, uri string) (conn Conn, err error) {
-		fmt.Println("slaver test dail to ", uri)
+		fmt.Println("slaver test dial to ", uri)
 		conn = NewRawConn("", slaverEcho, 1024, sid, uri)
 		// err = fmt.Errorf("error")
 		return
