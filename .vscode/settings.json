@@ -3,5 +3,15 @@
         "other": true,
         "comments": true,
         "strings": false
-    }
+    },
+    "cSpell.words": [
+        "anims",
+        "bsbench",
+        "bsck",
+        "bsconsole",
+        "bsrouter",
+        "codingeasygo",
+        "xhttp",
+        "xmap"
+    ]
 }
