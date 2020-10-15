@@ -89,6 +89,7 @@ func runall(osArgs ...string) {
 	var command string
 	var args []string
 	dir, fn := filepath.Split(osArgs[0])
+	dir, _ = filepath.Abs(dir)
 	fn = strings.TrimSuffix(fn, ".exe")
 	if strings.HasPrefix(fn, "bs-") {
 		command = strings.TrimPrefix(fn, "bs-")
@@ -175,28 +176,6 @@ func runall(osArgs ...string) {
 		usage()
 		exit(1)
 		return
-		// case "bs-ping":
-		// 	ping = true
-		// case "bs-state":
-		// 	state = true
-		// case "bs-shell":
-		// 	shell = true
-		// case "bs-proxychains":
-		// 	proxychains = true
-		// case "bs-chrome":
-		// 	chrome = true
-		// default:
-		// 	flag.BoolVar(&conn, "conn", false, "redirect connection to stdio")
-		// 	flag.BoolVar(&ping, "ping", false, "send ping to uri")
-		// 	flag.BoolVar(&state, "state", false, "show node state")
-		// 	flag.BoolVar(&shell, "shell", false, "start shell which forwaring conn to uri")
-		// 	flag.BoolVar(&ssh, "ssh", false, "start ssh to uri")
-		// 	flag.BoolVar(&scp, "scp", false, "start scp to uri")
-		// 	flag.BoolVar(&sftp, "sftp", false, "start sftp to uri")
-		// 	flag.BoolVar(&proxychains, "proxychains", false, "start shell by proxychains")
-		// 	flag.BoolVar(&chrome, "chrome", false, "start chrome to forwarding all request to uri")
-		// 	flag.BoolVar(&install, "install", false, "install all command")
-		// 	flag.BoolVar(&uninstall, "uninstall", false, "uninstall all command")
 	}
 	//load slaver address
 	if len(slaver) < 1 {
@@ -248,6 +227,7 @@ func runall(osArgs ...string) {
 			return
 		}
 		fullURI := args[0]
+		fullURI = strings.Trim(fullURI, "'\"")
 		err = console.Redirect(fullURI, stdin, stdout, xio.CloserF(func() (err error) {
 			sig <- syscall.SIGABRT
 			return
@@ -265,6 +245,7 @@ func runall(osArgs ...string) {
 			return
 		}
 		fullURI := args[0]
+		fullURI = strings.Trim(fullURI, "'\"")
 		if !strings.HasSuffix(fullURI, "tcp://${HOST}") && !strings.HasSuffix(fullURI, "${URI}") {
 			fullURI += "tcp://${HOST}"
 		}
@@ -294,6 +275,7 @@ func runall(osArgs ...string) {
 		if len(args) > 0 {
 			fullURI = args[0]
 		}
+		fullURI = strings.Trim(fullURI, "'\"")
 		max := uint64(0)
 		if len(args) > 0 {
 			max, _ = strconv.ParseUint(args[1], 10, 64)
@@ -314,6 +296,7 @@ func runall(osArgs ...string) {
 		} else if len(args) > 0 {
 			fullURI = args[0]
 		}
+		fullURI = strings.Trim(fullURI, "'\"")
 		err = console.PrintState(fullURI, query)
 		if err != nil {
 			fmt.Printf("Print state done with %v\n", err)
@@ -327,6 +310,7 @@ func runall(osArgs ...string) {
 			return
 		}
 		fullURI := args[0]
+		fullURI = strings.Trim(fullURI, "'\"")
 		if !strings.HasSuffix(fullURI, "tcp://${HOST}") && !strings.HasSuffix(fullURI, "${URI}") {
 			fullURI += "tcp://${HOST}"
 		}
@@ -358,11 +342,12 @@ func runall(osArgs ...string) {
 			fullURI = args[0]
 			fullArgs = args[1:]
 		}
+		fullURI = strings.Trim(fullURI, "'\"")
 		proxyCommand := filepath.Join(dir, "bsconsole")
 		if runtime.GOOS == "windows" {
 			proxyCommand += ".exe"
 		}
-		proxyCommand += fmt.Sprintf(" conn --slaver=%v ${URI}", slaver)
+		proxyCommand += fmt.Sprintf(" conn --slaver=%v '${URI}'", slaver)
 		go func() {
 			<-sig
 			console.Close()
@@ -381,6 +366,7 @@ func runall(osArgs ...string) {
 		proxy.SetLogLevel(40)
 		bsck.SetLogLevel(40)
 		fullURI := args[0]
+		fullURI = strings.Trim(fullURI, "'\"")
 		if !strings.HasSuffix(fullURI, "tcp://${HOST}") && !strings.HasSuffix(fullURI, "${URI}") {
 			fullURI += "->tcp://${HOST}"
 		}
