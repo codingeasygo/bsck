@@ -4,10 +4,14 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"os/exec"
+	"os/user"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -39,6 +43,12 @@ func TestConsole(t *testing.T) {
 		t.Error(err)
 		return
 	}
+	usr, _ := user.Current()
+	sshKey := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		data, _ := ioutil.ReadFile(filepath.Join(usr.HomeDir, ".ssh", "id_rsa"))
+		w.Write(data)
+	}))
+	caller.AddForward("ssh-key", sshKey.URL)
 	time.Sleep(100 * time.Millisecond)
 	conf := &Config{}
 	json.Unmarshal([]byte(configTestCaller), conf)
@@ -78,13 +88,12 @@ func TestConsole(t *testing.T) {
 		}
 	}
 	{ //Ping
-		closer := console.StartPing("master", 10*time.Millisecond)
+		err := console.Ping("master", 10*time.Millisecond, 3)
 		if err != nil {
 			t.Error(err)
 			return
 		}
 		time.Sleep(100 * time.Millisecond)
-		closer()
 	}
 	{ //PrintState
 		conn, err := console.Dial("master->slaver->tcp://echo")
@@ -97,6 +106,32 @@ func TestConsole(t *testing.T) {
 		conn.Close()
 		console.PrintState("masterx", "*")
 	}
+	{ //parseProxyURI
+		if console.parseProxyURI("${URI}", "tcp://tcp-a.b.c") != "tcp://a.b.c" {
+			t.Error("error")
+			return
+		}
+		if console.parseProxyURI("${HOST}", "tcp://tcp-a.b.c") != "a.b.c" {
+			t.Error("error")
+			return
+		}
+		if console.parseProxyURI("${URI}", "tcp://a.b.c") != "tcp://a.b.c" {
+			t.Error("error")
+			return
+		}
+		if console.parseProxyURI("${HOST}", "tcp://a.b.c") != "a.b.c" {
+			t.Error("error")
+			return
+		}
+		if console.parseProxyURI("${URI}", "tcp://a") != "http://a" {
+			t.Error("error")
+			return
+		}
+		if console.parseProxyURI("${HOST}", "tcp://a") != "a" {
+			t.Error("error")
+			return
+		}
+	}
 	{ //Proxy
 		home, _ := exec.Command("bash", "-c", "echo $HOME").Output()
 		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -107,7 +142,7 @@ func TestConsole(t *testing.T) {
 		//
 		res.Reset()
 		log.Reset()
-		err := console.Proxy("master->tcp://${HOST}", nil, res, log, func(l net.Listener) (env []string, runner string, args []string, err error) {
+		err := console.ProxyExec("master->tcp://${HOST}", nil, res, log, func(l net.Listener) (env []string, runner string, args []string, err error) {
 			env = []string{"http_proxy=http://" + l.Addr().String(), "HOME=" + string(home)}
 			runner = "curl"
 			args = []string{"-v", ts.URL}
@@ -125,9 +160,21 @@ func TestConsole(t *testing.T) {
 			return
 		}
 		//
+		err = console.ProxyProcess("master->tcp://${HOST}", nil, os.Stdout, os.Stderr, func(l net.Listener) (env []string, runner string, args []string, err error) {
+			env = []string{"http_proxy=http://" + l.Addr().String(), "HOME=" + string(home)}
+			runner, err = exec.LookPath("curl")
+			args = []string{"-v", ts.URL}
+			return
+		})
+		if err != nil {
+			fmt.Printf("out is \n%v\n", string(log.Bytes()))
+			t.Error(err)
+			return
+		}
+		//
 		res.Reset()
 		log.Reset()
-		err = console.Proxy("master->tcp://${HOSTxx}", nil, res, log, func(l net.Listener) (env []string, runner string, args []string, err error) {
+		err = console.ProxyExec("master->tcp://${HOSTxx}", nil, res, log, func(l net.Listener) (env []string, runner string, args []string, err error) {
 			env = []string{"http_proxy=http://" + l.Addr().String(), "HOME=" + string(home)}
 			runner = "curl"
 			args = []string{"-v", ts.URL}
@@ -140,6 +187,21 @@ func TestConsole(t *testing.T) {
 		}
 		fmt.Printf("out is \n%v\n", string(log.Bytes()))
 		if string(res.Bytes()) == "OK" {
+			t.Error(string(res.Bytes()))
+			return
+		}
+		//
+		res.Reset()
+		log.Reset()
+		conn, _ := exec.LookPath("conn")
+		err = console.ProxySSH("dev.loc", bytes.NewBuffer(nil), res, log, conn+" tcp://dev.loc:22", "ssh", "-ltest", "echo", "-n", "OK")
+		if err != nil {
+			fmt.Printf("log is \n%v\n", string(log.Bytes()))
+			t.Error(err)
+			return
+		}
+		fmt.Printf("res is \n%v\n", string(res.Bytes()))
+		if string(res.Bytes()) != "OK" {
 			t.Error(string(res.Bytes()))
 			return
 		}

@@ -2,42 +2,39 @@ package main
 
 import (
 	"encoding/json"
-	"flag"
 	"fmt"
 	"io/ioutil"
 	"net"
 	"os"
+	"os/exec"
 	"os/signal"
 	"os/user"
 	"path/filepath"
-	"regexp"
+	"runtime"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
 	"github.com/codingeasygo/bsck"
+	"github.com/codingeasygo/util/proxy"
 	"github.com/codingeasygo/util/xio"
 )
 
 //Version is bsrouter version
 const Version = "2.0.0"
 
+var stdin = os.Stdin
+var stdout = os.Stdout
+var stderr = os.Stderr
+var exit = os.Exit
+var sig = make(chan os.Signal, 100)
+
 //Config is pojo for configure
 type Config struct {
 	Name    string `json:"name"`
-	Console string `json:"socks5"`
+	Console string `json:"console"`
 }
-
-var slaver string
-var quiet bool
-var conn bool
-var proxy bool
-var ping bool
-var state bool
-var shell bool
-var help bool
-var uninstall, install bool
-var closer = func() {}
 
 const proxyChainsConf = `
 strict_chain
@@ -52,125 +49,165 @@ socks5 	127.0.0.1 %v
 func usage() {
 	_, fn := filepath.Split(os.Args[0])
 	fn = strings.TrimSuffix(fn, ".exe")
-	fmt.Fprintf(os.Stderr, "Bond Socket Console Version %v\n", Version)
-	fmt.Fprintf(os.Stderr, "Usage:  %v [option] <forward uri>\n", fn)
-	fmt.Fprintf(os.Stderr, "        %v 'x->y->tcp://127.0.0.1:80'\n", fn)
-	fmt.Fprintf(os.Stderr, "%v options:\n", fn)
-	flag.PrintDefaults()
+	fmt.Fprintf(stderr, "Bond Socket Console Version %v\n", Version)
+	fmt.Fprintf(stderr, "Usage:  %v command <forward uri> [options]\n", fn)
+	fmt.Fprintf(stderr, "        %v conn 'x->y->tcp://127.0.0.1:80'\n", fn)
+	fmt.Fprintf(stderr, "%v command list:\n", fn)
+	fmt.Fprintf(stderr, "    conn        redirect uri connection to stdio\n")
+	fmt.Fprintf(stderr, "        %v conn 'x->y->tcp://127.0.0.1:80'\n", fn)
+	fmt.Fprintf(stderr, "\n")
+	fmt.Fprintf(stderr, "    proxychains start shell by proxychains\n")
+	fmt.Fprintf(stderr, "        %v proxychains 'x->y' bash\n", fn)
+	fmt.Fprintf(stderr, "\n")
+	fmt.Fprintf(stderr, "    ping        send ping to uri\n")
+	fmt.Fprintf(stderr, "        %v ping 'x->y'\n", fn)
+	fmt.Fprintf(stderr, "\n")
+	fmt.Fprintf(stderr, "    state       show node state\n")
+	fmt.Fprintf(stderr, "        %v state 'x->y'\n", fn)
+	fmt.Fprintf(stderr, "\n")
+	fmt.Fprintf(stderr, "    shell       start shell which forwaring conn to uri\n")
+	fmt.Fprintf(stderr, "        %v shell 'x->y' http_proxy,https_proxy bash\n", fn)
+	fmt.Fprintf(stderr, "\n")
+	fmt.Fprintf(stderr, "    ssh         start ssh to uri\n")
+	fmt.Fprintf(stderr, "        %v ssh 'x->y' -l root\n", fn)
+	fmt.Fprintf(stderr, "\n")
+	fmt.Fprintf(stderr, "    scp         start scp to uri\n")
+	fmt.Fprintf(stderr, "        %v scp 'x->y' root@bshost:/tmp/xx /tmp/\n", fn)
+	fmt.Fprintf(stderr, "\n")
+	fmt.Fprintf(stderr, "    sftp        start sftp to uri\n")
+	fmt.Fprintf(stderr, "        %v sftp 'x->y' root@bshost:/tmp/xx\n", fn)
+	fmt.Fprintf(stderr, "\n")
 }
 
 func main() {
-	var showVersion bool
-	flag.StringVar(&slaver, "slaver", "", "the slaver console address")
-	flag.BoolVar(&quiet, "q", false, "quiet mode")
-	flag.BoolVar(&help, "h", false, "show help")
-	flag.BoolVar(&showVersion, "v", false, "show version")
-	_, fn := filepath.Split(os.Args[0])
+	runall(os.Args...)
+}
+
+var env []string
+
+func runall(osArgs ...string) {
+	var command string
+	var args []string
+	dir, fn := filepath.Split(osArgs[0])
 	fn = strings.TrimSuffix(fn, ".exe")
-	switch fn {
-	case "bs-conn":
-		conn = true
-	case "bs-proxy":
-		proxy = true
-	case "bs-ping":
-		ping = true
-	case "bs-state":
-		state = true
-	case "bs-shell":
-		shell = true
-	default:
-		flag.BoolVar(&conn, "conn", false, "redirect connection to stdio")
-		flag.BoolVar(&proxy, "proxy", false, "redirect connection to std proxy")
-		flag.BoolVar(&ping, "ping", false, "send ping to uri")
-		flag.BoolVar(&state, "state", false, "show node state")
-		flag.BoolVar(&shell, "shell", false, "start shell which forwaring conn to uri")
-		flag.BoolVar(&install, "install", false, "install all command")
-		flag.BoolVar(&uninstall, "uninstall", false, "uninstall all command")
+	if strings.HasPrefix(fn, "bs-") {
+		command = strings.TrimPrefix(fn, "bs-")
+		args = osArgs[1:]
+	} else {
+		if len(osArgs) < 2 {
+			usage()
+			exit(1)
+			return
+		}
+		command = osArgs[1]
+		args = osArgs[2:]
 	}
-	flag.Parse()
-	if showVersion {
-		fmt.Println(Version)
-		os.Exit(1)
+	var slaver string
+	if len(args) > 0 && (strings.HasPrefix(args[0], "-slaver=") || strings.HasPrefix(args[0], "--slaver=")) {
+		slaver = args[0]
+		slaver = strings.TrimPrefix(slaver, "-slaver=")
+		slaver = strings.TrimPrefix(slaver, "--slaver=")
+		args = args[1:]
+	}
+	switch command {
+	case "install":
+		fmt.Printf("start install command\n")
+		var err error
+		filename, _ := filepath.Abs(osArgs[0])
+		filedir, _ := filepath.Split(filename)
+		err = mklink(filepath.Join(filedir, "bs-conn"), filename)
+		if err != nil {
+			exit(1)
+		}
+		err = mklink(filepath.Join(filedir, "bs-proxychains"), filename)
+		if err != nil {
+			exit(1)
+		}
+		err = mklink(filepath.Join(filedir, "bs-ping"), filename)
+		if err != nil {
+			exit(1)
+		}
+		err = mklink(filepath.Join(filedir, "bs-state"), filename)
+		if err != nil {
+			exit(1)
+		}
+		err = mklink(filepath.Join(filedir, "bs-shell"), filename)
+		if err != nil {
+			exit(1)
+		}
+		err = mklink(filepath.Join(filedir, "bs-chrome"), filename)
+		if err != nil {
+			exit(1)
+		}
+		err = mklink(filepath.Join(filedir, "bs-scp"), filename)
+		if err != nil {
+			exit(1)
+		}
+		err = mklink(filepath.Join(filedir, "bs-sftp"), filename)
+		if err != nil {
+			exit(1)
+		}
+		err = mklink(filepath.Join(filedir, "bs-ssh"), filename)
+		if err != nil {
+			exit(1)
+		}
+		fmt.Printf("Install is done\n")
 		return
-	}
-	if help {
-		usage()
-		os.Exit(1)
-		return
-	}
-	if uninstall {
+	case "uninstall":
 		fmt.Printf("start uninstall command\n")
-		filename, _ := filepath.Abs(os.Args[0])
+		filename, _ := filepath.Abs(osArgs[0])
 		filedir, _ := filepath.Split(filename)
 		removeFile(filepath.Join(filedir, "bs-conn"))
-		removeFile(filepath.Join(filedir, "bs-proxy"))
+		removeFile(filepath.Join(filedir, "bs-proxychains"))
 		removeFile(filepath.Join(filedir, "bs-ping"))
 		removeFile(filepath.Join(filedir, "bs-state"))
 		removeFile(filepath.Join(filedir, "bs-shell"))
+		removeFile(filepath.Join(filedir, "bs-chrome"))
 		removeFile(filepath.Join(filedir, "bs-scp"))
 		removeFile(filepath.Join(filedir, "bs-sftp"))
 		removeFile(filepath.Join(filedir, "bs-ssh"))
 		fmt.Printf("Uninstall is done\n")
 		return
-	}
-	if install {
-		fmt.Printf("start install command\n")
-		var err error
-		filename, _ := filepath.Abs(os.Args[0])
-		filedir, _ := filepath.Split(filename)
-		err = mklink(filepath.Join(filedir, "bs-conn"), filename)
-		if err != nil {
-			os.Exit(1)
-		}
-		err = mklink(filepath.Join(filedir, "bs-proxy"), filename)
-		if err != nil {
-			os.Exit(1)
-		}
-		err = mklink(filepath.Join(filedir, "bs-ping"), filename)
-		if err != nil {
-			os.Exit(1)
-		}
-		err = mklink(filepath.Join(filedir, "bs-state"), filename)
-		if err != nil {
-			os.Exit(1)
-		}
-		err = mklink(filepath.Join(filedir, "bs-shell"), filename)
-		if err != nil {
-			os.Exit(1)
-		}
-		err = scriptWrite(filepath.Join(filedir, "bs-scp"), scriptSCP)
-		if err != nil {
-			os.Exit(1)
-		}
-		err = scriptWrite(filepath.Join(filedir, "bs-sftp"), scriptSFTP)
-		if err != nil {
-			os.Exit(1)
-		}
-		err = scriptWrite(filepath.Join(filedir, "bs-ssh"), scriptSSH)
-		if err != nil {
-			os.Exit(1)
-		}
-		fmt.Printf("Install is done\n")
+	case "version":
+		fmt.Println(Version)
 		return
+	case "help":
+		usage()
+		exit(1)
+		return
+		// case "bs-ping":
+		// 	ping = true
+		// case "bs-state":
+		// 	state = true
+		// case "bs-shell":
+		// 	shell = true
+		// case "bs-proxychains":
+		// 	proxychains = true
+		// case "bs-chrome":
+		// 	chrome = true
+		// default:
+		// 	flag.BoolVar(&conn, "conn", false, "redirect connection to stdio")
+		// 	flag.BoolVar(&ping, "ping", false, "send ping to uri")
+		// 	flag.BoolVar(&state, "state", false, "show node state")
+		// 	flag.BoolVar(&shell, "shell", false, "start shell which forwaring conn to uri")
+		// 	flag.BoolVar(&ssh, "ssh", false, "start ssh to uri")
+		// 	flag.BoolVar(&scp, "scp", false, "start scp to uri")
+		// 	flag.BoolVar(&sftp, "sftp", false, "start sftp to uri")
+		// 	flag.BoolVar(&proxychains, "proxychains", false, "start shell by proxychains")
+		// 	flag.BoolVar(&chrome, "chrome", false, "start chrome to forwarding all request to uri")
+		// 	flag.BoolVar(&install, "install", false, "install all command")
+		// 	flag.BoolVar(&uninstall, "uninstall", false, "uninstall all command")
 	}
-	var fullURI string
-	args := flag.Args()
-	if len(args) > 0 && regexp.MustCompile("^(socks5)://.*$").MatchString(args[0]) {
-		slaver = flag.Arg(0)
-		if len(args) < 2 {
-			fmt.Fprintf(os.Stderr, "forwarding uri is not setted\n")
-			usage()
-			os.Exit(1)
-			return
-		}
-		fullURI = args[1]
-		args = args[2:]
-	} else if len(slaver) < 1 {
+	//load slaver address
+	if len(slaver) < 1 {
+		slaver = os.Getenv("BS_CONSOLE_ADDR")
+	}
+	if len(slaver) < 1 {
 		var err error
 		var data []byte
 		var path string
 		u, _ := user.Current()
-		for _, path = range []string{"./.bsrouter.json", "./bsrouter.json", u.HomeDir + "/.bsrouter/bsrouter.json", u.HomeDir + "/.bsrouter.json", "/etc/bsrouter/bsrouter.json", "/etc/bsrouer.json"} {
+		for _, path = range []string{"./.bsrouter.json", "./bsrouter.json", u.HomeDir + "/.bsrouter/bsrouter.json", u.HomeDir + "/.bsrouter.json", "/etc/bsrouter/bsrouter.json", "/etc/bsrouter.json"} {
 			data, err = ioutil.ReadFile(path)
 			if err == nil {
 				fmt.Printf("bsconsole using config %v\n", path)
@@ -178,94 +215,123 @@ func main() {
 			}
 		}
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "read config from .bsrouter.json or ~/.bsrouter/bsrouter.json  or ~/.bsrouter.json or /etc/bsrouter/bsrouter.json or /etc/bsrouter.json fail with %v\n", err)
-			os.Exit(1)
+			fmt.Fprintf(stderr, "read config from .bsrouter.json or ~/.bsrouter/bsrouter.json  or ~/.bsrouter.json or /etc/bsrouter/bsrouter.json or /etc/bsrouter.json fail with %v\n", err)
+			exit(1)
 		}
 		var config Config
 		err = json.Unmarshal(data, &config)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "parse config fail with %v\n", err)
-			os.Exit(1)
+			fmt.Fprintf(stderr, "parse config fail with %v\n", err)
+			exit(1)
 		}
 		if len(config.Console) > 0 {
-			slaver = "socks5://" + config.Console
+			slaver = config.Console
 		} else {
-			fmt.Fprintf(os.Stderr, "not client access listen on config %v\n", path)
-			os.Exit(1)
-		}
-		if len(args) > 0 {
-			fullURI = args[0]
-			args = args[1:]
-		}
-	} else {
-		if len(args) > 0 {
-			fullURI = args[0]
-			args = args[1:]
+			fmt.Fprintf(stderr, "not client access listen on config %v\n", path)
+			exit(1)
 		}
 	}
+	if !strings.HasPrefix(slaver, "socks5://") {
+		slaver = "socks5://" + slaver
+	}
+	signal.Notify(sig, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
 	var err error
-	var closer func()
 	console := bsck.NewConsole(slaver)
+	console.Env = env
 	defer console.Close()
-	if conn {
-		closer = func() {}
-		err = console.Redirect(fullURI, os.Stdin, os.Stdout, xio.CloserF(func() (err error) {
-			if !quiet {
-				fmt.Printf("Conn done with remote closed\n")
-			}
+	switch command {
+	case "conn":
+		if len(args) < 1 {
+			fmt.Fprintf(stderr, "uri is not setted\n")
+			usage()
+			exit(1)
+			return
+		}
+		fullURI := args[0]
+		err = console.Redirect(fullURI, stdin, stdout, xio.CloserF(func() (err error) {
+			sig <- syscall.SIGABRT
 			return
 		}))
 		if err != nil {
-			if !quiet {
-				fmt.Printf("Conn done with %v\n", err)
-			}
-			os.Exit(1)
+			exit(1)
 		}
-	} else if proxy {
-		if len(args) < 1 {
-			fmt.Fprintf(os.Stderr, "ProxyRunner is not setting\n")
+		<-sig
+		console.Close()
+	case "proxychains":
+		if len(args) < 2 {
+			fmt.Fprintf(stderr, "uri/runner is not setting\n")
 			usage()
-			os.Exit(1)
+			exit(1)
 			return
 		}
-		err = console.Proxy(fullURI, os.Stdin, os.Stdout, os.Stderr, func(listener net.Listener) (env []string, runnerName string, runnerArgs []string, err error) {
+		fullURI := args[0]
+		if !strings.HasSuffix(fullURI, "tcp://${HOST}") && !strings.HasSuffix(fullURI, "${URI}") {
+			fullURI += "tcp://${HOST}"
+		}
+		var tempFile *os.File
+		err = console.ProxyExec(fullURI, stdin, stdout, stderr, func(listener net.Listener) (env []string, runnerName string, runnerArgs []string, err error) {
 			_, port, _ := net.SplitHostPort(listener.Addr().String())
-			confFile, err := ioutil.TempFile("", "proxychains-*.conf")
+			tempFile, err = ioutil.TempFile("", "proxychains-*.conf")
 			if err != nil {
 				return
 			}
-			confFile.WriteString(fmt.Sprintf(proxyChainsConf, port))
-			confFile.Close()
+			tempFile.WriteString(fmt.Sprintf(proxyChainsConf, port))
+			tempFile.Close()
 			runnerName = "proxychains4"
-			runnerArgs = append(runnerArgs, "-q", "-f", confFile.Name())
-			runnerArgs = append(runnerArgs, args...)
+			runnerArgs = append(runnerArgs, "-q", "-f", tempFile.Name())
+			runnerArgs = append(runnerArgs, args[1:]...)
 			return
 		})
-		if err != nil {
-			fmt.Printf("Proxy done with %v\n", err)
-			os.Exit(1)
+		if tempFile != nil {
+			os.Remove(tempFile.Name())
 		}
-	} else if ping {
-		closer = console.StartPing(fullURI, time.Second)
-	} else if state {
-		var query string
+		fmt.Printf("Proxychains done with %v\n", err)
+		if err != nil {
+			exit(1)
+		}
+	case "ping":
+		fullURI := ""
 		if len(args) > 0 {
-			query = args[0]
+			fullURI = args[0]
+		}
+		max := uint64(0)
+		if len(args) > 0 {
+			max, _ = strconv.ParseUint(args[1], 10, 64)
+		}
+		go func() {
+			<-sig
+			console.Close()
+		}()
+		err = console.Ping(fullURI, time.Second, max)
+		if err != nil {
+			exit(1)
+		}
+	case "state":
+		var fullURI, query string
+		if len(args) > 1 {
+			fullURI = args[0]
+			query = args[1]
+		} else if len(args) > 0 {
+			fullURI = args[0]
 		}
 		err = console.PrintState(fullURI, query)
 		if err != nil {
 			fmt.Printf("Print state done with %v\n", err)
-			os.Exit(1)
+			exit(1)
 		}
-	} else if shell {
-		if len(args) < 2 {
-			fmt.Fprintf(os.Stderr, "ProxyKey/ProxyRunner is not setting\n")
+	case "shell":
+		if len(args) < 3 {
+			fmt.Fprintf(stderr, "key/runner is not setting\n")
 			usage()
-			os.Exit(1)
+			exit(1)
 			return
 		}
-		err = console.Proxy(fullURI, os.Stdin, os.Stdout, os.Stderr, func(listener net.Listener) (env []string, runnerName string, runnerArgs []string, err error) {
-			keys := args[0]
+		fullURI := args[0]
+		if !strings.HasSuffix(fullURI, "tcp://${HOST}") && !strings.HasSuffix(fullURI, "${URI}") {
+			fullURI += "tcp://${HOST}"
+		}
+		err = console.ProxyExec(fullURI, stdin, stdout, stderr, func(listener net.Listener) (env []string, runnerName string, runnerArgs []string, err error) {
+			keys := args[1]
 			keys = strings.ReplaceAll(keys, "${HOST}", listener.Addr().String())
 			env = strings.Split(keys, ",")
 			for i, e := range env {
@@ -275,28 +341,125 @@ func main() {
 					env[i] = fmt.Sprintf("%v=socks5://%v", e, listener.Addr())
 				}
 			}
-			runnerName = args[1]
-			for _, arg := range args[2:] {
+			runnerName = args[2]
+			for _, arg := range args[3:] {
 				runnerArgs = append(runnerArgs, strings.ReplaceAll(arg, "${PROXY_HOST}", listener.Addr().String()))
 			}
 			return
 		})
+		fmt.Printf("Shell done with %v\n", err)
 		if err != nil {
-			fmt.Printf("Shell done with %v\n", err)
-			os.Exit(1)
+			exit(1)
 		}
-	} else {
+	case "ssh", "scp", "sftp":
+		fullURI := ""
+		fullArgs := args
+		if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+			fullURI = args[0]
+			fullArgs = args[1:]
+		}
+		proxyCommand := filepath.Join(dir, "bsconsole")
+		if runtime.GOOS == "windows" {
+			proxyCommand += ".exe"
+		}
+		proxyCommand += fmt.Sprintf(" conn --slaver=%v ${URI}", slaver)
+		go func() {
+			<-sig
+			console.Close()
+		}()
+		err = console.ProxySSH(fullURI, stdin, stdout, stderr, proxyCommand, command, fullArgs...)
+		if err != nil {
+			exit(1)
+		}
+	case "chrome":
+		if len(args) < 1 {
+			fmt.Fprintf(stderr, "uri is not setting\n")
+			usage()
+			exit(1)
+			return
+		}
+		proxy.SetLogLevel(40)
+		bsck.SetLogLevel(40)
+		fullURI := args[0]
+		if !strings.HasSuffix(fullURI, "tcp://${HOST}") && !strings.HasSuffix(fullURI, "${URI}") {
+			fullURI += "->tcp://${HOST}"
+		}
+		runnerPath := ""
+		runnerPath, err = exec.LookPath("./chrome")
+		if err != nil {
+			runnerPath, err = exec.LookPath("chrome")
+		}
+		if err != nil {
+			runnerPath, err = exec.LookPath("./google-chrome")
+		}
+		if err != nil {
+			runnerPath, err = exec.LookPath("google-chrome")
+		}
+		if err != nil {
+			runnerPath, err = exec.LookPath("./Google Chrome")
+		}
+		if err != nil {
+			runnerPath, err = exec.LookPath("Google-Chrome")
+		}
+		if err != nil && runtime.GOOS == "windows" {
+			runnerPath, err = exec.LookPath(`C:\Program Files (x86)\Google\Chrome\Application\chrome.exe`)
+		}
+		if err != nil && runtime.GOOS == "windows" {
+			runnerPath, err = exec.LookPath(`C:\Program Files\Google\Chrome\Application\chrome.exe`)
+		}
+		if err != nil && runtime.GOOS == "darwin" {
+			runnerPath, err = exec.LookPath(`/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`)
+		}
+		if err != nil {
+			fmt.Printf("Chrome search google chrome fail, add it to path\n")
+			exit(1)
+			return
+		}
+		fmt.Printf("Chrome using google chrome on %v\n", runnerPath)
+		go func() {
+			<-sig
+			console.Close()
+		}()
+		err = console.ProxyProcess(fullURI, stdin, stdout, stderr, func(listener net.Listener) (env []string, runnerName string, runnerArgs []string, err error) {
+			runnerName = runnerPath
+			runnerArgs = append(runnerArgs, fmt.Sprintf("--proxy-server=socks5://%v", listener.Addr()))
+			runnerArgs = append(runnerArgs, args[1:]...)
+			return
+		})
+		fmt.Printf("Chrome done with %v\n", err)
+		if err != nil {
+			exit(1)
+		}
+	default:
+		fmt.Fprintf(stderr, "%v is not supported\n", command)
 		usage()
-		os.Exit(1)
+		exit(1)
 	}
-	if closer != nil {
-		sigc := make(chan os.Signal, 1)
-		signal.Notify(sigc,
-			syscall.SIGHUP,
-			syscall.SIGINT,
-			syscall.SIGTERM,
-			syscall.SIGQUIT)
-		<-sigc
-		closer()
+}
+
+func mklink(link, target string) (err error) {
+	var runner string
+	var args []string
+	if runtime.GOOS == "windows" {
+		runner = "cmd"
+		args = []string{"/c", "mklink", link + ".exe", target}
+	} else {
+		runner = "ln"
+		args = []string{"-s", target, link}
 	}
+	cmd := exec.Command(runner, args...)
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
+	err = cmd.Run()
+	if err != nil {
+		fmt.Printf("link %v %v fail with %v\n", link, target, err)
+	}
+	return
+}
+
+func removeFile(target string) (err error) {
+	fmt.Printf("remove %v\n", target)
+	os.Remove(target)
+	os.Remove(target + ".exe")
+	return
 }

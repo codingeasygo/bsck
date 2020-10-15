@@ -9,8 +9,10 @@
         "bsbench",
         "bsck",
         "bsconsole",
+        "bshost",
         "bsrouter",
         "codingeasygo",
+        "mklink",
         "xhttp",
         "xmap"
     ]
