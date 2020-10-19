@@ -562,6 +562,9 @@ func (r *Router) loopReadRaw(channel Conn) {
 				delete(bond.channels, channel.Index())
 			}
 			bond.channelLck.Unlock()
+			if len(bond.channels) < 1 {
+				delete(r.channel, channel.Name())
+			}
 			InfoLog("Router(%v) remove channel(%v) success", r.Name, channel)
 		}
 		r.channelLck.Unlock()
