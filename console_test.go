@@ -193,7 +193,11 @@ func TestConsole(t *testing.T) {
 		//
 		res.Reset()
 		log.Reset()
-		conn, _ := exec.LookPath("conn")
+		conn, err := exec.LookPath("conn")
+		if err != nil {
+			t.Errorf("find conn command is fail with %v", err)
+			return
+		}
 		err = console.ProxySSH("dev.loc", bytes.NewBuffer(nil), res, log, conn+" tcp://dev.loc:22", "ssh", "-ltest", "echo", "-n", "OK")
 		if err != nil {
 			fmt.Printf("log is \n%v\n", string(log.Bytes()))
