@@ -56,6 +56,9 @@ func usage() {
 	fmt.Fprintf(stderr, "    conn        redirect uri connection to stdio\n")
 	fmt.Fprintf(stderr, "        %v conn 'x->y->tcp://127.0.0.1:80'\n", fn)
 	fmt.Fprintf(stderr, "\n")
+	fmt.Fprintf(stderr, "    proxy       redirect local connection to uri\n")
+	fmt.Fprintf(stderr, "        %v conn 'x->y' :100322\n", fn)
+	fmt.Fprintf(stderr, "\n")
 	fmt.Fprintf(stderr, "    proxychains start shell by proxychains\n")
 	fmt.Fprintf(stderr, "        %v proxychains 'x->y' bash\n", fn)
 	fmt.Fprintf(stderr, "\n")
@@ -86,6 +89,16 @@ func main() {
 var env []string
 
 func runall(osArgs ...string) {
+	for _, arg := range osArgs {
+		if arg == "-v" {
+			fmt.Printf("%v\n", Version)
+			return
+		}
+		if arg == "-h" || arg == "--help" {
+			usage()
+			return
+		}
+	}
 	var command string
 	var args []string
 	dir, fn := filepath.Split(osArgs[0])
