@@ -272,14 +272,20 @@ func (c *Console) parseProxyURI(uri, target string) string {
 	return targetURI
 }
 
-//Proxy will start shell by runner and rewrite all tcp connection by console
-func (c *Console) Proxy(uri string, process func(listener net.Listener) (err error)) (err error) {
-	server := proxy.NewServer(xio.PiperDialerF(func(target string, bufferSize int) (raw xio.Piper, err error) {
+//StartProxy will start proxy local to uri
+func (c *Console) StartProxy(loc, uri string) (server *proxy.Server, listener net.Listener, err error) {
+	server = proxy.NewServer(xio.PiperDialerF(func(target string, bufferSize int) (raw xio.Piper, err error) {
 		targetURI := c.parseProxyURI(uri, target)
 		raw, err = c.DialPiper(targetURI, bufferSize)
 		return
 	}))
-	listener, err := server.Start("127.0.0.1:0")
+	listener, err = server.Start(loc)
+	return
+}
+
+//Proxy will start shell by runner and rewrite all tcp connection by console
+func (c *Console) Proxy(uri string, process func(listener net.Listener) (err error)) (err error) {
+	server, listener, err := c.StartProxy("127.0.0.1:0", uri)
 	if err == nil {
 		c.locker.Lock()
 		c.running[fmt.Sprintf("%p", server)] = server

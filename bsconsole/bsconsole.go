@@ -120,6 +120,10 @@ func runall(osArgs ...string) {
 		if err != nil {
 			exit(1)
 		}
+		err = mklink(filepath.Join(filedir, "bs-proxy"), filename)
+		if err != nil {
+			exit(1)
+		}
 		err = mklink(filepath.Join(filedir, "bs-proxychains"), filename)
 		if err != nil {
 			exit(1)
@@ -159,6 +163,7 @@ func runall(osArgs ...string) {
 		filename, _ := filepath.Abs(osArgs[0])
 		filedir, _ := filepath.Split(filename)
 		removeFile(filepath.Join(filedir, "bs-conn"))
+		removeFile(filepath.Join(filedir, "bs-proxy"))
 		removeFile(filepath.Join(filedir, "bs-proxychains"))
 		removeFile(filepath.Join(filedir, "bs-ping"))
 		removeFile(filepath.Join(filedir, "bs-state"))
@@ -237,6 +242,30 @@ func runall(osArgs ...string) {
 		}
 		<-sig
 		console.Close()
+	case "proxy":
+		if len(args) < 2 {
+			fmt.Fprintf(stderr, "uri/local is not setting\n")
+			usage()
+			exit(1)
+			return
+		}
+		proxy.SetLogLevel(40)
+		bsck.SetLogLevel(40)
+		fullURI := args[0]
+		fullURI = strings.Trim(fullURI, "'\"")
+		if !strings.HasSuffix(fullURI, "tcp://${HOST}") && !strings.HasSuffix(fullURI, "${URI}") {
+			fullURI += "->tcp://${HOST}"
+		}
+		locAddr := args[1]
+		server, listener, err := console.StartProxy(locAddr, fullURI)
+		if err != nil {
+			fmt.Printf("Proxy done with %v\n", err)
+			exit(1)
+		}
+		<-sig
+		server.Close()
+		listener.Close()
+		console.Close()
 	case "proxychains":
 		if len(args) < 2 {
 			fmt.Fprintf(stderr, "uri/runner is not setting\n")
@@ -247,7 +276,7 @@ func runall(osArgs ...string) {
 		fullURI := args[0]
 		fullURI = strings.Trim(fullURI, "'\"")
 		if !strings.HasSuffix(fullURI, "tcp://${HOST}") && !strings.HasSuffix(fullURI, "${URI}") {
-			fullURI += "tcp://${HOST}"
+			fullURI += "->tcp://${HOST}"
 		}
 		var tempFile *os.File
 		err = console.ProxyExec(fullURI, stdin, stdout, stderr, func(listener net.Listener) (env []string, runnerName string, runnerArgs []string, err error) {
@@ -277,7 +306,7 @@ func runall(osArgs ...string) {
 		}
 		fullURI = strings.Trim(fullURI, "'\"")
 		max := uint64(0)
-		if len(args) > 0 {
+		if len(args) > 1 {
 			max, _ = strconv.ParseUint(args[1], 10, 64)
 		}
 		go func() {
@@ -312,7 +341,7 @@ func runall(osArgs ...string) {
 		fullURI := args[0]
 		fullURI = strings.Trim(fullURI, "'\"")
 		if !strings.HasSuffix(fullURI, "tcp://${HOST}") && !strings.HasSuffix(fullURI, "${URI}") {
-			fullURI += "tcp://${HOST}"
+			fullURI += "->tcp://${HOST}"
 		}
 		err = console.ProxyExec(fullURI, stdin, stdout, stderr, func(listener net.Listener) (env []string, runnerName string, runnerArgs []string, err error) {
 			keys := args[1]
