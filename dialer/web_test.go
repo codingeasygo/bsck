@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/codingeasygo/util/xhttp"
+	"github.com/codingeasygo/util/xmap"
 )
 
 func TestWebDialer(t *testing.T) {
@@ -18,13 +19,15 @@ func TestWebDialer(t *testing.T) {
 		t.Error(err)
 		return
 	}
-	dialer := NewWebDialer("dav", NewWebdavHandler())
+	dialer := NewWebDialer("dav", NewWebdavHandler(xmap.M{
+		"t0": "/tmp",
+	}))
 	dialer.Bootstrap(nil)
-	if dialer.Matched("tcp://dav?dir=/tmp") {
+	if dialer.Matched("tcp://dav?dir=t0") {
 		t.Error("error")
 		return
 	}
-	if !dialer.Matched("http://dav?dir=/tmp") {
+	if !dialer.Matched("http://dav?dir=t0") {
 		t.Error("error")
 		return
 	}
@@ -36,7 +39,7 @@ func TestWebDialer(t *testing.T) {
 			if err != nil {
 				break
 			}
-			raw, err := dialer.Dial(cid, "http://dav?dir=/tmp", nil)
+			raw, err := dialer.Dial(cid, "http://dav?dir=t0", nil)
 			if err != nil {
 				panic(err)
 			}
@@ -59,7 +62,7 @@ func TestWebDialer(t *testing.T) {
 	//
 	//test pipe
 	cona, conb, _ := CreatePipedConn()
-	_, err = dialer.Dial(100, "http://dav?dir=/tmp", conb)
+	_, err = dialer.Dial(100, "http://dav?dir=t0", conb)
 	if err != nil {
 		t.Error(err)
 		return
@@ -71,7 +74,7 @@ func TestWebDialer(t *testing.T) {
 	//for cover
 	fmt.Printf("%v,%v\n", dialer.Addr(), dialer.Network())
 	//test web conn
-	conn, _, err := PipeWebDialerConn(100, "http://dav?dir=/tmp")
+	conn, _, err := PipeWebDialerConn(100, "http://dav?dir=t0")
 	if err != nil {
 		t.Error(err)
 		return

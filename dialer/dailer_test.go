@@ -18,26 +18,18 @@ func TestPool(t *testing.T) {
 				"matcher": "^proxy://.*$",
 			},
 			{
-				"type": "echo",
-			},
-			{
 				"id":      "t1",
 				"type":    "socks",
 				"matcher": "^socks://.*$",
 			},
-			{
-				"type": "web",
-			},
-			{
-				"type": "tcp",
-			},
 		},
+		"std": 1,
 	})
 	if err != nil {
 		t.Error(err)
 		return
 	}
-	_, err = pool.Dial(10, "http://web?dir=/tmp", nil)
+	_, err = pool.Dial(10, "http://dav?dir=/tmp", nil)
 	if err != nil {
 		t.Error(err)
 		return
@@ -45,7 +37,7 @@ func TestPool(t *testing.T) {
 
 	//test not dialer
 	pool = NewPool("test")
-	_, err = pool.Dial(10, "http://web?dir=/tmp", nil)
+	_, err = pool.Dial(10, "http://dav?dir=/tmp", nil)
 	if err == nil {
 		t.Error(err)
 		return

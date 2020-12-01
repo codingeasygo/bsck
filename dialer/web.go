@@ -275,13 +275,15 @@ func (p *PipedConn) String() string {
 type WebdavHandler struct {
 	davsLck sync.RWMutex
 	davs    map[string]*WebdavFileHandler
+	dirs    xmap.M
 }
 
 //NewWebdavHandler will return new WebdavHandler
-func NewWebdavHandler() (handler *WebdavHandler) {
+func NewWebdavHandler(dirs xmap.M) (handler *WebdavHandler) {
 	handler = &WebdavHandler{
 		davsLck: sync.RWMutex{},
 		davs:    map[string]*WebdavFileHandler{},
+		dirs:    dirs,
 	}
 	return
 }
@@ -300,12 +302,13 @@ func (web *WebdavHandler) ServeHTTP(resp http.ResponseWriter, req *http.Request)
 		dir = req.URL.Query().Get("dir")
 	}
 	if len(dir) < 1 {
-		err = fmt.Errorf("the dir arguemnt is required")
+		err = fmt.Errorf("the dir argument is required")
 		WarnLog("WebdavHandler parset remote address %v fail with %v", req.RemoteAddr, err)
 		fmt.Fprintf(resp, "%v", err)
 		return
 	}
 	web.davsLck.Lock()
+	dir = web.dirs.StrDef(dir, "dir")
 	dav := web.davs[dir]
 	if dav == nil {
 		dav = NewWebdavFileHandler(dir)

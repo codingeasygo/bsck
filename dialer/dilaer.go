@@ -115,8 +115,9 @@ func (p *Pool) Bootstrap(options xmap.M) error {
 		InfoLog("Pool(%v) add echo dialer to pool", p.Name)
 	}
 	if options.Value("dav") != nil || options.IntDef(0, "standard") > 0 || options.IntDef(0, "std") > 0 {
-		web := NewWebDialer("dav", NewWebdavHandler())
-		web.Bootstrap(options.MapDef(xmap.M{}, "dav"))
+		conf := options.MapDef(xmap.M{}, "dav")
+		web := NewWebDialer("dav", NewWebdavHandler(conf.MapDef(xmap.M{}, "dirs")))
+		web.Bootstrap(conf)
 		p.Dialers = append(p.Dialers, web)
 		InfoLog("Pool(%v) add dav dialer to pool", p.Name)
 	}
@@ -160,14 +161,8 @@ func DefaultDialerCreator(t string) (dialer Dialer) {
 	switch t {
 	case "balance":
 		dialer = NewBalancedDialer()
-	case "echo":
-		dialer = NewEchoDialer()
 	case "socks":
 		dialer = NewSocksProxyDialer()
-	case "tcp":
-		dialer = NewTCPDialer()
-	case "dav":
-		dialer = NewWebDialer("dav", NewWebdavHandler())
 	}
 	return
 }
