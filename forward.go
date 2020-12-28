@@ -23,6 +23,15 @@ func (f ForwardUri) String() string {
 	return strings.Join(f, "->")
 }
 
+type forwardTransport http.Transport
+
+func (f *forwardTransport) RoundTrip(req *http.Request) (res *http.Response, err error) {
+	req.Close = true
+	transport := (*http.Transport)(f)
+	res, err = transport.RoundTrip(req)
+	return
+}
+
 type Forward struct {
 	webMapping map[string]ForwardUri
 	wsMapping  map[string]ForwardUri
@@ -132,7 +141,7 @@ func (f *Forward) ProcRouter(router ForwardUri, w http.ResponseWriter, req *http
 			req.URL.Host = req.Host
 			req.URL.Scheme = remote.Scheme
 		},
-		Transport: &http.Transport{
+		Transport: &forwardTransport{
 			Dial: func(network, addr string) (raw net.Conn, err error) {
 				return f.procDial(network, addr, remoteURI)
 			},
