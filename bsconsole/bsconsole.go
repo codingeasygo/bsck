@@ -101,8 +101,13 @@ func runall(osArgs ...string) {
 	}
 	var command string
 	var args []string
-	dir, fn := filepath.Split(osArgs[0])
-	dir, _ = filepath.Abs(dir)
+	runner, err := os.Executable()
+	if err != nil {
+		fmt.Printf("%v\n", err)
+		exit(1)
+		return
+	}
+	dir, fn := filepath.Split(runner)
 	fn = strings.TrimSuffix(fn, ".exe")
 	if strings.HasPrefix(fn, "bs-") {
 		command = strings.TrimPrefix(fn, "bs-")
@@ -169,6 +174,10 @@ func runall(osArgs ...string) {
 		if err != nil {
 			exit(1)
 		}
+		err = mklink(filepath.Join(filedir, "bs-ssh-copy-id"), filename)
+		if err != nil {
+			exit(1)
+		}
 		fmt.Printf("Install is done\n")
 		return
 	case "uninstall":
@@ -185,6 +194,7 @@ func runall(osArgs ...string) {
 		removeFile(filepath.Join(filedir, "bs-scp"))
 		removeFile(filepath.Join(filedir, "bs-sftp"))
 		removeFile(filepath.Join(filedir, "bs-ssh"))
+		removeFile(filepath.Join(filedir, "bs-ssh-copy-id"))
 		fmt.Printf("Uninstall is done\n")
 		return
 	case "version":
@@ -232,7 +242,6 @@ func runall(osArgs ...string) {
 		slaver = "socks5://" + slaver
 	}
 	signal.Notify(sig, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
-	var err error
 	console := bsck.NewConsole(slaver)
 	console.Env = env
 	defer console.Close()
@@ -377,7 +386,7 @@ func runall(osArgs ...string) {
 		if err != nil {
 			exit(1)
 		}
-	case "ssh", "scp", "sftp":
+	case "ssh", "scp", "sftp", "ssh-copy-id":
 		fullURI := ""
 		fullArgs := args
 		if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
