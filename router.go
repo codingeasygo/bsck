@@ -104,7 +104,8 @@ type writeDeadlinable interface {
 //RawConn is an implementation of the Conn interface for raw network connections.
 type RawConn struct {
 	//the raw connection
-	io.ReadWriteCloser
+	*frame.BaseReadWriteCloser
+	Raw          io.ReadWriteCloser
 	name         string
 	sid          uint64
 	uri          string
@@ -122,14 +123,15 @@ type RawConn struct {
 // NewRawConn returns a new RawConn by raw connection/session id/uri
 func NewRawConn(name string, raw io.ReadWriteCloser, bufferSize int, sid uint64, uri string) (conn *RawConn) {
 	conn = &RawConn{
-		ReadWriteCloser: raw,
-		name:            name,
-		sid:             sid,
-		uri:             uri,
-		readyLocker:     sync.RWMutex{},
-		closeLocker:     sync.RWMutex{},
-		buffer:          make([]byte, bufferSize),
-		context:         xmap.M{},
+		BaseReadWriteCloser: frame.NewReadWriteCloser(raw, bufferSize),
+		Raw:                 raw,
+		name:                name,
+		sid:                 sid,
+		uri:                 uri,
+		readyLocker:         sync.RWMutex{},
+		closeLocker:         sync.RWMutex{},
+		buffer:              make([]byte, bufferSize),
+		context:             xmap.M{},
 	}
 	conn.readyLocker.Lock()
 	return
@@ -137,22 +139,32 @@ func NewRawConn(name string, raw io.ReadWriteCloser, bufferSize int, sid uint64,
 
 func (r *RawConn) Write(p []byte) (n int, err error) {
 	// panic("not supported")
-	n, err = r.ReadWriteCloser.Write(p)
+	n, err = r.Raw.Write(p)
 	return
 }
 
 func (r *RawConn) Read(b []byte) (n int, err error) {
 	// panic("not supported")
-	n, err = r.ReadWriteCloser.Read(b)
+	n, err = r.Raw.Read(b)
+	return
+}
+
+func (r *RawConn) ReadFrom(reader io.Reader) (w int64, err error) {
+	w, err = io.CopyBuffer(r.Raw, reader, make([]byte, r.BufferSize))
+	return
+}
+
+func (r *RawConn) WriteTo(w io.Writer) (n int64, err error) {
+	n, err = io.CopyBuffer(w, r.Raw, make([]byte, r.BufferSize))
 	return
 }
 
 //ReadFrame will read frame from raw
 func (r *RawConn) ReadFrame() (frame []byte, err error) {
-	if timeout, ok := r.ReadWriteCloser.(readDeadlinable); r.readTimeout > 0 && ok {
+	if timeout, ok := r.Raw.(readDeadlinable); r.readTimeout > 0 && ok {
 		timeout.SetReadDeadline(time.Now().Add(r.readTimeout))
 	}
-	n, err := r.ReadWriteCloser.Read(r.buffer[13:])
+	n, err := r.Raw.Read(r.buffer[13:])
 	if err != nil {
 		return
 	}
@@ -169,10 +181,10 @@ func (r *RawConn) WriteFrame(buffer []byte) (n int, err error) {
 		err = fmt.Errorf("error frame")
 		return
 	}
-	if timeout, ok := r.ReadWriteCloser.(writeDeadlinable); r.writeTimeout > 0 && ok {
+	if timeout, ok := r.Raw.(writeDeadlinable); r.writeTimeout > 0 && ok {
 		timeout.SetWriteDeadline(time.Now().Add(r.readTimeout))
 	}
-	n, err = r.ReadWriteCloser.Write(buffer[13:])
+	n, err = r.Raw.Write(buffer[13:])
 	n += 13
 	return
 }
@@ -195,8 +207,8 @@ func (r *RawConn) SetTimeout(timeout time.Duration) {
 
 //Close will close the raw connection
 func (r *RawConn) Close() (err error) {
-	if _, ok := r.ReadWriteCloser.(ReadyWaiter); ok {
-		return r.ReadWriteCloser.Close()
+	if _, ok := r.Raw.(ReadyWaiter); ok {
+		return r.Raw.Close()
 	}
 	r.closeLocker.Lock()
 	if r.closed > 0 {
@@ -210,23 +222,24 @@ func (r *RawConn) Close() (err error) {
 	if ready < 1 {
 		r.readyLocker.Unlock()
 	}
-	err = r.ReadWriteCloser.Close()
+	err = r.Raw.Close()
 	return
 }
 
 //Wait is ConnectedWaiter impl
 func (r *RawConn) Wait() error {
-	if waiter, ok := r.ReadWriteCloser.(ReadyWaiter); ok {
+	if waiter, ok := r.Raw.(ReadyWaiter); ok {
 		return waiter.Wait()
 	}
 	r.readyLocker.Lock()
+	_ = r //do nothing for warning
 	r.readyLocker.Unlock()
 	return r.failed
 }
 
 //Ready is ConnectedWaiter impl
 func (r *RawConn) Ready(failed error, next func(err error)) {
-	if waiter, ok := r.ReadWriteCloser.(ReadyWaiter); ok {
+	if waiter, ok := r.Raw.(ReadyWaiter); ok {
 		waiter.Ready(failed, next)
 		return
 	}
@@ -274,7 +287,7 @@ func (r *RawConn) String() string {
 	ts := strings.Split(r.uri, "->")
 	uri, err := url.Parse(ts[len(ts)-1])
 	if err != nil {
-		return fmt.Sprintf("raw{error:%v,info:%v}", err, r.ReadWriteCloser)
+		return fmt.Sprintf("raw{error:%v,info:%v}", err, r.Raw)
 	}
 	router := uri.Query().Get("router")
 	router = strings.SplitN(router, "?", 2)[0]
@@ -283,7 +296,7 @@ func (r *RawConn) String() string {
 	args.Del("cols")
 	args.Del("rows")
 	uri.RawQuery = args.Encode()
-	return fmt.Sprintf("raw{sid:%v,uri:%v,router:%v,info:%v}", r.sid, uri, router, r.ReadWriteCloser)
+	return fmt.Sprintf("raw{sid:%v,uri:%v,router:%v,info:%v}", r.sid, uri, router, r.Raw)
 }
 
 //Channel is an implementation of the Conn interface for channel network connections.
@@ -446,7 +459,7 @@ func (r *Router) addChannel(channel Conn) {
 		bond = newBondChannel()
 	}
 	bond.channelLck.Lock()
-	old, _ := bond.channels[channel.Index()]
+	old := bond.channels[channel.Index()]
 	bond.channels[channel.Index()] = channel
 	bond.channelLck.Unlock()
 	r.channel[channel.Name()] = bond
@@ -497,7 +510,6 @@ func (r *Router) addTable(src Conn, srcSid uint64, dst Conn, dstSid uint64, conn
 	r.table[fmt.Sprintf("%v-%v", src.ID(), srcSid)] = router
 	r.table[fmt.Sprintf("%v-%v", dst.ID(), dstSid)] = router
 	r.tableLck.Unlock()
-	return
 }
 
 func (r *Router) removeTable(conn Conn, sid uint64) TableRouter {
@@ -1111,6 +1123,7 @@ func NewWaitedPiper() (piper *WaitedPiper) {
 //Wait will wait piper is ready
 func (r *WaitedPiper) Wait() error {
 	r.readyLocker.Lock()
+	_ = r //do nothing for warning
 	r.readyLocker.Unlock()
 	return r.failed
 }
@@ -1154,6 +1167,7 @@ func (r *WaitedPiper) PipeConn(conn io.ReadWriteCloser, target string) (err erro
 func (r *WaitedPiper) Read(p []byte) (n int, err error) {
 	if r.ready == 0 {
 		r.baseLocker.Lock()
+		_ = r //do nothing for warning
 		r.baseLocker.Unlock()
 	}
 	err = r.failed
@@ -1166,6 +1180,7 @@ func (r *WaitedPiper) Read(p []byte) (n int, err error) {
 func (r *WaitedPiper) Write(p []byte) (n int, err error) {
 	if r.ready == 0 {
 		r.baseLocker.Lock()
+		_ = r //do nothing for warning
 		r.baseLocker.Unlock()
 	}
 	err = r.failed

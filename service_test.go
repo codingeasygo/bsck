@@ -2,10 +2,15 @@ package bsck
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
+	"net"
 	"net/http"
+	"net/http/httputil"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
@@ -17,6 +22,8 @@ import (
 	"github.com/codingeasygo/util/xhttp"
 	"github.com/codingeasygo/util/xio"
 	"github.com/codingeasygo/util/xmap"
+	"github.com/codingeasygo/web"
+	"github.com/codingeasygo/web/httptest"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -73,6 +80,7 @@ var configTest2 = `
 
 func TestService(t *testing.T) {
 	socks.SetLogLevel(socks.LogLevelDebug)
+	SetLogLevel(LogLevelDebug)
 	ioutil.WriteFile("/tmp/test.json", []byte(configTest1), os.ModePerm)
 	defer os.Remove("/tmp/test.json")
 	service := NewService()
@@ -99,7 +107,7 @@ func TestService(t *testing.T) {
 	time.Sleep(10 * time.Millisecond)
 	ioutil.WriteFile("/tmp/test.json", []byte(configTest2), os.ModePerm)
 	err = service.ReloadConfig()
-	time.Sleep(10 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond)
 	runTestEcho := func(name string, echoa, echob *xio.PipeReadWriteCloser) {
 		wc := make(chan int, 1)
 		go func() {
@@ -437,4 +445,138 @@ func TestState(t *testing.T) {
 	slaver.Stop()
 	master.Stop()
 	time.Sleep(100 * time.Millisecond)
+}
+
+type TestReverseDialer struct {
+	Web0 *httptest.Server
+	Web1 *httptest.Server
+}
+
+func (t *TestReverseDialer) Name() string {
+	return "TestReverseDialer"
+}
+
+//initial dialer
+func (t *TestReverseDialer) Bootstrap(options xmap.M) error {
+	return nil
+}
+
+//shutdown
+func (t *TestReverseDialer) Shutdown() error {
+	return nil
+}
+
+//
+func (t *TestReverseDialer) Options() xmap.M {
+	return xmap.M{}
+}
+
+//match uri
+func (t *TestReverseDialer) Matched(uri string) bool {
+	return strings.HasPrefix(uri, "xx://")
+}
+
+//dial raw connection
+func (t *TestReverseDialer) Dial(sid uint64, uri string, raw io.ReadWriteCloser) (conn dialer.Conn, err error) {
+	targetURL, err := url.Parse(uri)
+	if err != nil {
+		return
+	}
+	var rawConn net.Conn
+	switch targetURL.Host {
+	case "web0":
+		rawConn, err = net.Dial("tcp", strings.TrimPrefix(t.Web0.URL, "http://"))
+	case "web1":
+		rawConn, err = net.Dial("tcp", strings.TrimPrefix(t.Web1.URL, "http://"))
+	default:
+		err = fmt.Errorf("remote %v is not exists", targetURL.Host)
+	}
+	if err == nil {
+		conn = dialer.NewCopyPipable(rawConn)
+	}
+	return
+}
+
+func TestReverseWeb(t *testing.T) {
+	master := NewService()
+	master.Config = &Config{
+		Name:   "master",
+		Listen: ":12663",
+		ACL: map[string]string{
+			"slaver": "123",
+		},
+		Access: [][]string{{".*", ".*"}},
+	}
+	err := master.Start()
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	slaver := NewService()
+	slaver.Config = &Config{
+		Name: "slaver",
+		Channels: []xmap.M{
+			{
+				"enable": 1,
+				"index":  1,
+				"remote": ":12663",
+				"token":  "123",
+			},
+		},
+		Access: [][]string{{".*", ".*"}},
+	}
+	err = slaver.Start()
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	time.Sleep(time.Millisecond * 100)
+
+	//mock remote http server
+	webSlaver0 := httptest.NewMuxServer()
+	webSlaver0.Mux.HandleFunc("/test", func(s *web.Session) web.Result {
+		return s.SendPlainText("web0")
+	})
+	webSlaver1 := httptest.NewMuxServer()
+	webSlaver1.Mux.HandleFunc("/test", func(s *web.Session) web.Result {
+		return s.SendPlainText("web1")
+	})
+
+	//register remote http server dialer
+	dialerSlaver := &TestReverseDialer{
+		Web0: webSlaver0,
+		Web1: webSlaver1,
+	}
+	slaver.Dialer.AddDialer(dialerSlaver)
+
+	//reverse remote handler
+	handlerMaster := func(s *web.Session) web.Result {
+		remoteID := strings.SplitN(strings.TrimPrefix(s.R.URL.Path, "/remote/"), "/", 2)[0]
+		remoteHost := fmt.Sprintf("slaver->xx://%v", remoteID)
+		reverseAddr := fmt.Sprintf("http://base64-%v/", base64.RawURLEncoding.EncodeToString([]byte(remoteHost)))
+		reverseURL, _ := url.Parse(reverseAddr)
+		proxy := httputil.NewSingleHostReverseProxy(reverseURL)
+		proxy.Transport = &http.Transport{
+			Dial: master.DialNet,
+		}
+		proxy.ServeHTTP(s.W, s.R)
+		return web.Return
+	}
+
+	//mocker master http acceept
+	webMaster := httptest.NewMuxServer()
+	webMaster.Mux.HandleFunc("^/remote/.*$", handlerMaster)
+
+	//request to web0
+	web0Resp, err := webMaster.GetText("/remote/web0/test")
+	if err != nil || web0Resp != "web0" {
+		t.Errorf("%v,%v", err, web0Resp)
+		return
+	}
+	//request to web1
+	web1Resp, err := webMaster.GetText("/remote/web1/test")
+	if err != nil || web1Resp != "web1" {
+		t.Error(err)
+		return
+	}
 }
