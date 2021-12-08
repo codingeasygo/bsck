@@ -16,7 +16,6 @@ func (e ErroPool) Get(uri string) (address string, err error) {
 }
 
 func (e ErroPool) Done(address, uri string, err error) {
-	return
 }
 
 func TestSocksProxy(t *testing.T) {
@@ -78,6 +77,10 @@ func TestSocksProxy(t *testing.T) {
 		"id":      "testing",
 		"address": "127.0.0.1:12210",
 	})
+	if err != nil {
+		t.Error(err)
+		return
+	}
 	_, err = dailer2.Dial(10, "tcp://127.0.0.1:100", nil)
 	if err == nil {
 		t.Error(err)

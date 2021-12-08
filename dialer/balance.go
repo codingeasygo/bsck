@@ -123,7 +123,6 @@ func (b *BalancedDialer) AddDialer(dialers ...Dialer) {
 		b.dialersHostUsed[name] = map[string][]int64{}
 	}
 	b.dialersLock <- 1
-	return
 }
 
 func (b *BalancedDialer) Name() string {

@@ -202,10 +202,9 @@ func TestBalancedDialerDefaul(t *testing.T) {
 }
 
 type TimeDialer struct {
-	ID     string
-	dialed int
-	conf   xmap.M
-	last   int64
+	ID   string
+	conf xmap.M
+	last int64
 }
 
 func (t *TimeDialer) Name() string {

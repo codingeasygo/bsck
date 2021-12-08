@@ -193,7 +193,7 @@ func (c *Console) Ping(uri string, delay time.Duration, max uint64) (err error) 
 			time.Sleep(delay)
 			continue
 		}
-		pingUsed := time.Now().Sub(pingStart)
+		pingUsed := time.Since(pingStart)
 		fmt.Printf("%v Bytes from %v time=%v\n", len(buf), uri, pingUsed)
 		conn.Close()
 		time.Sleep(delay)
@@ -306,6 +306,9 @@ func (c *Console) Proxy(uri string, process func(listener net.Listener) (err err
 func (c *Console) ProxyExec(uri string, stdin io.Reader, stdout, stderr io.Writer, prepare func(listener net.Listener) (env []string, runner string, args []string, err error)) (err error) {
 	err = c.Proxy(uri, func(listener net.Listener) (err error) {
 		env, runner, args, err := prepare(listener)
+		if err != nil {
+			return
+		}
 		cmd := exec.Command(runner, args...)
 		cmd.Env = append(cmd.Env, c.Env...)
 		cmd.Env = append(cmd.Env, env...)
@@ -327,6 +330,9 @@ func (c *Console) ProxyExec(uri string, stdin io.Reader, stdout, stderr io.Write
 func (c *Console) ProxyProcess(uri string, stdin, stdout, stderr *os.File, prepare func(listener net.Listener) (env []string, runner string, args []string, err error)) (err error) {
 	err = c.Proxy(uri, func(listener net.Listener) (err error) {
 		env, runner, args, err := prepare(listener)
+		if err != nil {
+			return
+		}
 		// InfoLog("Console proxy process %v by\narg:%v\nenv:%v\n", runner, args, env)
 		process, err := os.StartProcess(runner, append([]string{runner}, args...), &os.ProcAttr{
 			Env:   append(c.Env, env...),

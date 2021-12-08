@@ -548,7 +548,7 @@ func (i *InfoRWC) String() string {
 
 //EncodeWebURI will replace string in () as base64 encoding
 func EncodeWebURI(format string, args ...interface{}) string {
-	return regexp.MustCompile("\\([^\\)]*\\)").ReplaceAllStringFunc(fmt.Sprintf(format, args...), func(having string) string {
+	return regexp.MustCompile(`\([^\\)]*\)`).ReplaceAllStringFunc(fmt.Sprintf(format, args...), func(having string) string {
 		having = strings.Trim(having, "()")
 		return "base64-" + base64.RawURLEncoding.EncodeToString([]byte(having))
 	})

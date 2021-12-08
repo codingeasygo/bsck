@@ -149,14 +149,14 @@ func TestConsole(t *testing.T) {
 			return
 		})
 		if err != nil {
-			fmt.Printf("out is \n%v\n", string(log.Bytes()))
+			fmt.Printf("out is \n%v\n", log.String())
 			t.Error(err)
 			return
 		}
-		fmt.Printf("out is \n%v\n", string(log.Bytes()))
+		fmt.Printf("out is \n%v\n", log.String())
 		ts.Close()
-		if string(res.Bytes()) != "OK" {
-			t.Error(string(res.Bytes()))
+		if res.String() != "OK" {
+			t.Error(res.String())
 			return
 		}
 		//
@@ -167,7 +167,7 @@ func TestConsole(t *testing.T) {
 			return
 		})
 		if err != nil {
-			fmt.Printf("out is \n%v\n", string(log.Bytes()))
+			fmt.Printf("out is \n%v\n", log.String())
 			t.Error(err)
 			return
 		}
@@ -181,13 +181,13 @@ func TestConsole(t *testing.T) {
 			return
 		})
 		if err != nil {
-			fmt.Printf("out is \n%v\n", string(log.Bytes()))
+			fmt.Printf("out is \n%v\n", log.String())
 			t.Error(err)
 			return
 		}
-		fmt.Printf("out is \n%v\n", string(log.Bytes()))
-		if string(res.Bytes()) == "OK" {
-			t.Error(string(res.Bytes()))
+		fmt.Printf("out is \n%v\n", log.String())
+		if res.String() == "OK" {
+			t.Error(res.String())
 			return
 		}
 		//
@@ -200,13 +200,13 @@ func TestConsole(t *testing.T) {
 		}
 		err = console.ProxySSH("dev.loc", bytes.NewBuffer(nil), res, log, conn+" tcp://dev.loc:22", "ssh", "-ltest", "echo", "-n", "OK")
 		if err != nil {
-			fmt.Printf("log is \n%v\n", string(log.Bytes()))
+			fmt.Printf("log is \n%v\n", log.String())
 			t.Error(err)
 			return
 		}
-		fmt.Printf("res is \n%v\n", string(res.Bytes()))
-		if string(res.Bytes()) != "OK" {
-			t.Error(string(res.Bytes()))
+		fmt.Printf("res is \n%v\n", res.String())
+		if res.String() != "OK" {
+			t.Error(res.String())
 			return
 		}
 	}

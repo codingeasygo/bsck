@@ -11,6 +11,7 @@ import (
 	"os/signal"
 	"runtime"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/codingeasygo/bsck"
@@ -101,7 +102,7 @@ func main() {
 	switch os.Args[1] {
 	case "node":
 		wc := make(chan os.Signal, 1)
-		signal.Notify(wc, os.Interrupt, os.Kill)
+		signal.Notify(wc, os.Interrupt, syscall.SIGTERM)
 		<-wc
 	case "bandwidth":
 		Bandwidth(service, uri)
@@ -291,7 +292,7 @@ func Benchmark(service *bsck.Service, uri string, concurrent, total int64) (err 
 		task <- -1
 	}
 	waiter.Wait()
-	used := time.Now().Sub(begin)
+	used := time.Since(begin)
 	InfoLog("Benchmark test done with total:%v,concurrent:%v,used:%v,avg:%v", total, concurrent, used, used/time.Duration(total))
 	return
 }

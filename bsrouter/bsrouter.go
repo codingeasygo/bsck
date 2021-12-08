@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/signal"
 	"os/user"
+	"syscall"
 
 	"github.com/codingeasygo/bsck"
 )
@@ -63,8 +64,11 @@ func main() {
 	service := bsck.NewService()
 	service.ConfigPath = configPath
 	err = service.Start()
+	if err != nil {
+		panic(err)
+	}
 	wc := make(chan os.Signal, 1)
-	signal.Notify(wc, os.Interrupt, os.Kill)
+	signal.Notify(wc, os.Interrupt, syscall.SIGTERM)
 	<-wc
 	service.Stop()
 }

@@ -105,7 +105,7 @@ func (web *WebDialer) Accept() (conn net.Conn, err error) {
 //FindConn will find connection by id
 func (web *WebDialer) FindConn(sid string) (conn *WebDialerConn) {
 	web.consLck.Lock()
-	conn, _ = web.cons[sid]
+	conn = web.cons[sid]
 	web.consLck.Unlock()
 	return
 }

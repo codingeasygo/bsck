@@ -161,7 +161,7 @@ func TestProxy(t *testing.T) {
 		//close
 		slaver2Echo.Close()
 		<-masterEcho.R
-		fmt.Printf("test slaver2->master->server use %v\n", time.Now().Sub(begin))
+		fmt.Printf("test slaver2->master->server use %v\n", time.Since(begin))
 	}
 	{ //test slaver2->master->slaver->server
 		begin := time.Now()
@@ -186,7 +186,7 @@ func TestProxy(t *testing.T) {
 		//close
 		slaver2Echo.Close()
 		<-slaver1Echo.R
-		fmt.Printf("test slaver2->master->slaver1->server use %v\n", time.Now().Sub(begin))
+		fmt.Printf("test slaver2->master->slaver1->server use %v\n", time.Since(begin))
 	}
 	{ //multi channel
 		begin := time.Now()
@@ -243,7 +243,7 @@ func TestProxy(t *testing.T) {
 			<-msEcho.R
 		}
 		ms0.Close()
-		fmt.Printf("test multi channel use %v\n", time.Now().Sub(begin))
+		fmt.Printf("test multi channel use %v\n", time.Since(begin))
 	}
 	{ //channel close
 		begin := time.Now()
@@ -283,7 +283,7 @@ func TestProxy(t *testing.T) {
 		<-slaver3Echo.R
 		<-slaver2Echo.R
 		slaver3.Close()
-		fmt.Printf("test channel close use %v\n", time.Now().Sub(begin))
+		fmt.Printf("test channel close use %v\n", time.Since(begin))
 	}
 	{ //dial remote fail
 		begin := time.Now()
@@ -299,7 +299,7 @@ func TestProxy(t *testing.T) {
 			t.Error("error")
 			return
 		}
-		fmt.Printf("test dial remote fail use %v\n", time.Now().Sub(begin))
+		fmt.Printf("test dial remote fail use %v\n", time.Since(begin))
 	}
 	{ //login channel fail
 		time.Sleep(3 * time.Second)
@@ -326,7 +326,7 @@ func TestProxy(t *testing.T) {
 		}
 		time.Sleep(time.Millisecond)
 		slaver4.Close()
-		fmt.Printf("test login channel fail use %v\n", time.Now().Sub(begin))
+		fmt.Printf("test login channel fail use %v\n", time.Since(begin))
 	}
 	fmt.Printf("\n\n\nall test done\n")
 }
@@ -620,7 +620,7 @@ func TestMultiProxy(t *testing.T) {
 		waitc <- -1
 	}
 	waiter.Wait()
-	used := time.Now().Sub(begin)
+	used := time.Since(begin)
 	fmt.Printf("total:%v,used:%v,avg:%v\n", totalc, used, used/time.Duration(totalc))
 	fmt.Printf("all test done\n")
 	// logf, err := os.OpenFile("a.log", os.O_CREATE|os.O_WRONLY, os.ModePerm)
@@ -728,7 +728,7 @@ func TestProxyError(t *testing.T) {
 		//
 		//test proc dial fail
 		buf := make([]byte, 1024)
-		data := []byte{}
+		var data []byte
 		//
 		data = []byte("url")
 		copy(buf[13:], data)

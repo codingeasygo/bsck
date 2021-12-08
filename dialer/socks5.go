@@ -44,7 +44,6 @@ func (s StringAddressPooler) Get(uri string) (address string, err error) {
 
 //Done will mark one address is fress
 func (s StringAddressPooler) Done(address, uri string, err error) {
-	return
 }
 
 //SocksProxyDialer is an implementation of the Dialer interface for dial by socks proxy.
@@ -82,7 +81,7 @@ func (s *SocksProxyDialer) Bootstrap(options xmap.M) (err error) {
 	if len(matcher) > 0 {
 		s.matcher, err = regexp.Compile(matcher)
 	}
-	return nil
+	return
 }
 
 //Options is options getter
