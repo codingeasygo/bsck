@@ -580,3 +580,59 @@ func TestReverseWeb(t *testing.T) {
 		return
 	}
 }
+
+func TestSlaverHandler(t *testing.T) {
+	master := NewService()
+	master.Config = &Config{
+		Name:   "master",
+		Listen: ":12663",
+		ACL: map[string]string{
+			"slaver": "123",
+		},
+		Access: [][]string{{".*", ".*"}},
+	}
+	err := master.Start()
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	slaver := NewService()
+	slaver.Config = &Config{
+		Name: "slaver",
+		Channels: []xmap.M{
+			{
+				"enable": 1,
+				"index":  1,
+				"remote": ":12663",
+				"token":  "123",
+			},
+		},
+		Access: [][]string{{".*", ".*"}},
+	}
+	err = slaver.Start()
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	time.Sleep(time.Millisecond * 100)
+
+	//mock remote http server
+	webMux := web.NewSessionMux("")
+	webMux.HandleFunc("/test", func(s *web.Session) web.Result {
+		return s.SendPlainText("handler")
+	})
+
+	//register remote http server dialer
+	dialerSlaver := dialer.NewWebDialer("handler", webMux)
+	dialerSlaver.Bootstrap(xmap.M{})
+	slaver.Dialer.AddDialer(dialerSlaver)
+
+	//request to web1
+	remoteHost := "slaver->http://handler"
+	reverseAddr := fmt.Sprintf("http://base64-%v/", base64.RawURLEncoding.EncodeToString([]byte(remoteHost)))
+	handlerResp, err := master.Client.GetText("%v/test", reverseAddr)
+	if err != nil || handlerResp != "handler" {
+		t.Error(err)
+		return
+	}
+}
