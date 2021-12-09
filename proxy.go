@@ -343,7 +343,7 @@ func (p *Proxy) loopMaster(l net.Listener) {
 			break
 		}
 		DebugLog("Proxy(%v) master accepting connection from %v", p.Name, conn.RemoteAddr())
-		p.Router.Accept(NewInfoRWC(frame.NewReadWriteCloser(conn, p.BufferSize), conn.RemoteAddr().String()))
+		p.Router.Accept(NewInfoRWC(conn, frame.NewReadWriteCloser(conn, p.BufferSize), conn.RemoteAddr().String()))
 	}
 	l.Close()
 	InfoLog("Proxy(%v) master accept on %v is stopped", p.Name, l.Addr())
@@ -522,7 +522,7 @@ func (p *Proxy) Login(option xmap.M) (channel *Channel, result xmap.M, err error
 	}
 	auth["index"] = index
 	auth["name"] = p.Name
-	channel, result, err = p.JoinConn(NewInfoRWC(frame.NewReadWriteCloser(conn, p.BufferSize), conn.RemoteAddr().String()), index, auth)
+	channel, result, err = p.JoinConn(NewInfoRWC(conn, frame.NewReadWriteCloser(conn, p.BufferSize), conn.RemoteAddr().String()), index, auth)
 	if err == nil {
 		channel.Context()["option"] = option
 		channel.Context()["login_conn"] = 1
@@ -534,12 +534,17 @@ func (p *Proxy) Login(option xmap.M) (channel *Channel, result xmap.M, err error
 //InfoRWC is external ReadWriteCloser to get info to String
 type InfoRWC struct {
 	frame.ReadWriteCloser
+	Raw  interface{}
 	Info string
 }
 
 //NewInfoRWC will return new nfoRWC
-func NewInfoRWC(raw frame.ReadWriteCloser, info string) *InfoRWC {
-	return &InfoRWC{ReadWriteCloser: raw, Info: info}
+func NewInfoRWC(raw interface{}, rwc frame.ReadWriteCloser, info string) *InfoRWC {
+	return &InfoRWC{Raw: raw, ReadWriteCloser: rwc, Info: info}
+}
+
+func (i *InfoRWC) RawValue() interface{} {
+	return i.Raw
 }
 
 func (i *InfoRWC) String() string {

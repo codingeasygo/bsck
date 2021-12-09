@@ -63,6 +63,10 @@ func cmdString(cmd byte) string {
 	}
 }
 
+type RawValuable interface {
+	RawValue() interface{}
+}
+
 //Conn is the interface that wraps the connection will be running on Router.
 //
 //ID is the unique of connection
@@ -339,6 +343,14 @@ func (c *Channel) Context() xmap.M {
 // 	DebugLog("Channel %v is closed by \n%v", c, debug.CallStack())
 // 	return
 // }
+
+func (c *Channel) RawValue() (raw interface{}) {
+	valuable, ok := c.ReadWriteCloser.(RawValuable)
+	if ok {
+		raw = valuable.RawValue()
+	}
+	return
+}
 
 func (c *Channel) String() string {
 	return fmt.Sprintf("channel{name:%v,index:%v,cid:%v,info:%v}", c.name, c.index, c.cid, c.ReadWriteCloser)
