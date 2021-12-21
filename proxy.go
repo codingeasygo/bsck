@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/http"
 	"net/url"
 	"regexp"
 	"strings"
@@ -18,6 +19,8 @@ import (
 	"github.com/codingeasygo/util/xio"
 	"github.com/codingeasygo/util/xio/frame"
 	"github.com/codingeasygo/util/xmap"
+	"github.com/codingeasygo/util/xnet"
+	"golang.org/x/net/websocket"
 )
 
 // //AuthOption is a struct struct to login auth.
@@ -264,6 +267,7 @@ func NewProxy(name string, handler ProxyHandler) (proxy *Proxy) {
 
 //ListenMaster will listen master router on address
 func (p *Proxy) ListenMaster(addr string) (err error) {
+	var tlsConfig *tls.Config
 	if len(p.Cert) > 0 {
 		InfoLog("Proxy(%v) load x509 cert:%v,key:%v", p.Name, p.Cert, p.Key)
 		var cert tls.Certificate
@@ -272,15 +276,41 @@ func (p *Proxy) ListenMaster(addr string) (err error) {
 			ErrorLog("Proxy(%v) load cert fail with %v", p.Name, err)
 			return
 		}
-		config := &tls.Config{Certificates: []tls.Certificate{cert}, InsecureSkipVerify: true}
-		config.Rand = rand.Reader
-		p.master, err = tls.Listen("tcp", addr, config)
-	} else {
-		p.master, err = net.Listen("tcp", addr)
+		tlsConfig = &tls.Config{Certificates: []tls.Certificate{cert}, InsecureSkipVerify: true}
+		tlsConfig.Rand = rand.Reader
 	}
-	if err == nil {
+	addrParts := strings.SplitN(addr, "://", 2)
+	addrListen := addr
+	if len(addrParts) > 1 {
+		addrListen = addrParts[1]
+	}
+	if tlsConfig != nil {
+		p.master, err = tls.Listen("tcp", addrListen, tlsConfig)
+	} else {
+		p.master, err = net.Listen("tcp", addrListen)
+	}
+	if err != nil {
+		return
+	}
+	switch addrParts[0] {
+	case "ws", "wss":
+		server := http.Server{
+			Handler: websocket.Server{
+				Handler: p.AcceptWsConn,
+				Handshake: func(c *websocket.Config, r *http.Request) (xerr error) {
+					c.Origin, xerr = url.Parse("tcp://" + r.RemoteAddr)
+					if xerr == nil {
+						c.Origin.Scheme = ""
+					}
+					return xerr
+				},
+			},
+		}
+		go server.Serve(p.master)
+		InfoLog("Proxy(%v) listen web master on %v", p.Name, addr)
+	default:
 		go p.loopMaster(p.master)
-		InfoLog("Proxy(%v) listen master on %v", p.Name, addr)
+		InfoLog("Proxy(%v) listen tcp master on %v", p.Name, addr)
 	}
 	return
 }
@@ -347,6 +377,11 @@ func (p *Proxy) loopMaster(l net.Listener) {
 	}
 	l.Close()
 	InfoLog("Proxy(%v) master accept on %v is stopped", p.Name, l.Addr())
+}
+
+func (p *Proxy) AcceptWsConn(conn *websocket.Conn) {
+	DebugLog("Proxy(%v) master accepting connection from %v", p.Name, conn.RemoteAddr())
+	p.Router.AcceptSync(NewInfoRWC(conn, frame.NewReadWriteCloser(conn, p.BufferSize), conn.RemoteAddr().String()))
 }
 
 func (p *Proxy) loopForward(l net.Listener, name string, listen *url.URL, uri string) {
@@ -489,28 +524,37 @@ func (p *Proxy) Login(option xmap.M) (channel *Channel, result xmap.M, err error
 	if err != nil {
 		return
 	}
-	var dialer net.Dialer
-	if len(local) > 0 {
-		dialer.LocalAddr, err = net.ResolveTCPAddr("tcp", local)
-		if err != nil {
-			return
-		}
-	}
 	var conn net.Conn
-	if len(tlsCert) > 0 {
-		InfoLog("Proxy(%v) start dial to %v by x509 cert:%v,key:%v", p.Name, remote, tlsCert, tlsKey)
-		var cert tls.Certificate
-		cert, err = tls.LoadX509KeyPair(tlsCert, tlsKey)
-		if err != nil {
-			ErrorLog("Proxy(%v) load cert fail with %v", p.Name, err)
-			return
+	if strings.HasPrefix(remote, "ws://") || strings.HasPrefix(remote, "wss://") {
+		var rawConn io.ReadWriteCloser
+		dialer := xnet.NewWebsocketDialer()
+		rawConn, err = dialer.Dial(remote)
+		if err == nil {
+			conn = rawConn.(net.Conn)
 		}
-		config := &tls.Config{Certificates: []tls.Certificate{cert}, InsecureSkipVerify: true}
-		config.Rand = rand.Reader
-		conn, err = tls.DialWithDialer(&dialer, "tcp", remote, config)
 	} else {
-		InfoLog("Router(%v) start dial to %v", p.Name, remote)
-		conn, err = dialer.Dial("tcp", remote)
+		var dialer net.Dialer
+		if len(local) > 0 {
+			dialer.LocalAddr, err = net.ResolveTCPAddr("tcp", local)
+			if err != nil {
+				return
+			}
+		}
+		if len(tlsCert) > 0 {
+			InfoLog("Proxy(%v) start dial to %v by x509 cert:%v,key:%v", p.Name, remote, tlsCert, tlsKey)
+			var cert tls.Certificate
+			cert, err = tls.LoadX509KeyPair(tlsCert, tlsKey)
+			if err != nil {
+				ErrorLog("Proxy(%v) load cert fail with %v", p.Name, err)
+				return
+			}
+			config := &tls.Config{Certificates: []tls.Certificate{cert}, InsecureSkipVerify: true}
+			config.Rand = rand.Reader
+			conn, err = tls.DialWithDialer(&dialer, "tcp", remote, config)
+		} else {
+			InfoLog("Router(%v) start dial to %v", p.Name, remote)
+			conn, err = dialer.Dial("tcp", remote)
+		}
 	}
 	if err != nil {
 		WarnLog("Proxy(%v) dial to %v fail with %v", p.Name, remote, err)

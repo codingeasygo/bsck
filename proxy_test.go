@@ -1264,13 +1264,17 @@ func TestProxyTLS(t *testing.T) {
 	}))
 	slaverHandler.DialAccess = [][]string{{".*", ".*"}}
 	slaver := NewProxy("slaver", slaverHandler)
-	slaver.Login(xmap.M{
+	_, _, err = slaver.Login(xmap.M{
 		"remote":   "localhost:9232",
 		"token":    "abc",
 		"index":    0,
 		"tls_cert": "bsrouter/bsrouter.pem",
 		"tls_key":  "bsrouter/bsrouter.key",
 	})
+	if err != nil {
+		t.Error(err)
+		return
+	}
 	//
 	client := NewProxy("client", NewNoneHandler())
 	_, _, err = client.Login(xmap.M{
@@ -1311,6 +1315,116 @@ func TestProxyTLS(t *testing.T) {
 		return
 	}
 	master.UniqueSid()
+	master.Close()
+}
+
+func TestProxyWs(t *testing.T) {
+	handler := NewNormalAcessHandler("master", DialRawF(func(sid uint64, uri string) (conn Conn, err error) {
+		fmt.Println("master test dial to ", uri)
+		if uri == "error" {
+			err = fmt.Errorf("error")
+		} else {
+			err = fmt.Errorf("it must be not reached")
+		}
+		// err = fmt.Errorf("error")
+		return
+	}))
+	handler.LoginAccess["slaver"] = "abc"
+	handler.LoginAccess["client"] = "abc"
+	handler.DialAccess = [][]string{{".*", ".*"}}
+	master := NewProxy("master", handler)
+	err := master.ListenMaster("ws://:9233")
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	var slaverEcho = NewEcho("slaver")
+	slaverHandler := NewNormalAcessHandler("slaver", DialRawF(func(sid uint64, uri string) (conn Conn, err error) {
+		fmt.Println("slaver test dial to ", uri)
+		conn = NewRawConn("", slaverEcho, 1024, sid, uri)
+		// err = fmt.Errorf("error")
+		return
+	}))
+	slaverHandler.DialAccess = [][]string{{".*", ".*"}}
+	slaver := NewProxy("slaver", slaverHandler)
+	_, _, err = slaver.Login(xmap.M{
+		"remote": "ws://localhost:9233",
+		"token":  "abc",
+		"index":  0,
+	})
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	//
+	client := NewProxy("client", NewNoneHandler())
+	_, _, err = client.Login(xmap.M{
+		"remote": "ws://localhost:9233",
+		"token":  "abc",
+		"index":  0,
+	})
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	slaver.Close()
+	client.Close()
+	master.Close()
+}
+
+func TestProxyWss(t *testing.T) {
+	handler := NewNormalAcessHandler("master", DialRawF(func(sid uint64, uri string) (conn Conn, err error) {
+		fmt.Println("master test dial to ", uri)
+		if uri == "error" {
+			err = fmt.Errorf("error")
+		} else {
+			err = fmt.Errorf("it must be not reached")
+		}
+		// err = fmt.Errorf("error")
+		return
+	}))
+	handler.LoginAccess["slaver"] = "abc"
+	handler.LoginAccess["client"] = "abc"
+	handler.DialAccess = [][]string{{".*", ".*"}}
+	master := NewProxy("master", handler)
+	master.Cert = "bsrouter/bsrouter.pem"
+	master.Key = "bsrouter/bsrouter.key"
+	err := master.ListenMaster("wss://:9233")
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	var slaverEcho = NewEcho("slaver")
+	slaverHandler := NewNormalAcessHandler("slaver", DialRawF(func(sid uint64, uri string) (conn Conn, err error) {
+		fmt.Println("slaver test dial to ", uri)
+		conn = NewRawConn("", slaverEcho, 1024, sid, uri)
+		// err = fmt.Errorf("error")
+		return
+	}))
+	slaverHandler.DialAccess = [][]string{{".*", ".*"}}
+	slaver := NewProxy("slaver", slaverHandler)
+	_, _, err = slaver.Login(xmap.M{
+		"remote": "wss://localhost:9233?skip_verify=1",
+		"token":  "abc",
+		"index":  0,
+	})
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	//
+	client := NewProxy("client", NewNoneHandler())
+	_, _, err = client.Login(xmap.M{
+		"remote": "wss://localhost:9233?skip_verify=1",
+		"token":  "abc",
+		"index":  0,
+	})
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	slaver.Close()
+	client.Close()
 	master.Close()
 }
 

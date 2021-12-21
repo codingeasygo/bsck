@@ -452,6 +452,17 @@ func (r *Router) Accept(raw frame.ReadWriteCloser) {
 	go r.loopReadRaw(channel)
 }
 
+//Accept one raw connection as channel, and loop read it
+//it will auth the raw connection by ACL.
+func (r *Router) AcceptSync(raw frame.ReadWriteCloser) {
+	channel := &Channel{
+		ReadWriteCloser: raw,
+		cid:             atomic.AddUint64(&r.connectSequence, 1),
+		context:         xmap.M{},
+	}
+	r.loopReadRaw(channel)
+}
+
 //Register one login raw connection to channel,
 func (r *Router) Register(channel Conn) {
 	r.addChannel(channel)
