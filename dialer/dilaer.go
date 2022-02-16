@@ -163,6 +163,8 @@ func DefaultDialerCreator(t string) (dialer Dialer) {
 		dialer = NewBalancedDialer()
 	case "socks":
 		dialer = NewSocksProxyDialer()
+	case "schema":
+		dialer = NewSchemaDialer()
 	}
 	return
 }
