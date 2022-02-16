@@ -56,6 +56,9 @@ func (t *SchemaDialer) Matched(uri string) bool {
 		return false
 	}
 	remoteAddr := t.supported[fmt.Sprintf("%v://%v", checkURI.Scheme, checkURI.Host)]
+	if len(remoteAddr) < 1 {
+		remoteAddr = t.supported[fmt.Sprintf("%v://%v", checkURI.Scheme, "*")]
+	}
 	return len(remoteAddr) > 0
 }
 
@@ -65,10 +68,12 @@ func (t *SchemaDialer) Dial(sid uint64, uri string, pipe io.ReadWriteCloser) (ra
 	if err != nil {
 		return
 	}
-	remoteKey := fmt.Sprintf("%v://%v", targetURI.Scheme, targetURI.Host)
-	remoteAddr := t.supported[remoteKey]
+	remoteAddr := t.supported[fmt.Sprintf("%v://%v", targetURI.Scheme, targetURI.Host)]
 	if len(remoteAddr) < 1 {
-		err = fmt.Errorf("schema %v is not supported", remoteKey)
+		remoteAddr = t.supported[fmt.Sprintf("%v://%v", targetURI.Scheme, "*")]
+	}
+	if len(remoteAddr) < 1 {
+		err = fmt.Errorf("schema %v is not supported", targetURI.Scheme)
 		return
 	}
 	remoteURI, err := url.Parse(remoteAddr)

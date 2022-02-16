@@ -14,9 +14,14 @@ func TestSchemaDialer(t *testing.T) {
 			"test://loc1": "http://localhost",
 			"test://loc2": "https://localhost",
 			"test://err":  "https://xx/%EX%B8%AD%E8%AF%AD%E8%A8%80",
+			"abc://*":     "http://localhost",
 		},
 	})
 	if !dialer.Matched("test://loc1") {
+		t.Error("error")
+		return
+	}
+	if !dialer.Matched("abc://xxx") {
 		t.Error("error")
 		return
 	}
@@ -32,6 +37,13 @@ func TestSchemaDialer(t *testing.T) {
 	con.Close()
 	//
 	con, err = dialer.Dial(10, "test://loc2", nil)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	con.Close()
+	//
+	con, err = dialer.Dial(10, "abc://xxx", nil)
 	if err != nil {
 		t.Error(err)
 		return
