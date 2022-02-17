@@ -61,7 +61,7 @@ func TestWebDialer(t *testing.T) {
 	fmt.Println(xhttp.GetText("http://localhost:2422/"))
 	//
 	//test pipe
-	cona, conb, _ := CreatePipedConn()
+	cona, conb := CreatePipedConn()
 	_, err = dialer.Dial(100, "http://dav?dir=t0", conb)
 	if err != nil {
 		t.Error(err)
@@ -102,14 +102,9 @@ func TestWebDialer(t *testing.T) {
 }
 
 func TestPipedConne(t *testing.T) {
-	a, b, err := CreatePipedConn()
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	a, b := CreatePipedConn()
 	a.RemoteAddr()
 	a.LocalAddr()
-	a.Network()
 	fmt.Printf("-->%v\n", a)
 	b.Close()
 }

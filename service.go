@@ -443,7 +443,7 @@ func (s *Service) DialNet(network, addr string) (conn net.Conn, err error) {
 		}
 		addr = string(realAddr)
 	}
-	conn, raw, err := dialer.CreatePipedConn()
+	conn, raw := dialer.CreatePipedConn()
 	if err == nil {
 		_, err = s.DialAll(addr, raw, true)
 		if err != nil {
@@ -456,7 +456,7 @@ func (s *Service) DialNet(network, addr string) (conn net.Conn, err error) {
 
 //DialSSH is ssh dialer to ssh server
 func (s *Service) DialSSH(uri string, config *ssh.ClientConfig) (client *ssh.Client, err error) {
-	conn, raw, err := dialer.CreatePipedConn()
+	conn, raw := dialer.CreatePipedConn()
 	if err == nil {
 		_, err = s.DialAll(uri, raw, true)
 		if err != nil {

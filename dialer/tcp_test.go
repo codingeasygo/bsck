@@ -63,7 +63,7 @@ func TestTCPDialer(t *testing.T) {
 	con.Close()
 	//
 	//test pipe
-	cona, conb, _ := CreatePipedConn()
+	cona, conb := CreatePipedConn()
 	con, err = tcp.Dial(10, "http://localhost", conb)
 	if err != nil {
 		t.Error(err)

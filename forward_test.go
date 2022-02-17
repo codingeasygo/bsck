@@ -298,7 +298,7 @@ func TestForwadError(t *testing.T) {
 }
 
 func TestWaitReadWriteCloser(t *testing.T) {
-	cona, conb, _ := dialer.CreatePipedConn()
+	cona, conb := dialer.CreatePipedConn()
 	wrwc := NewWaitReadWriteCloser(conb)
 	fmt.Printf("%v\n", wrwc)
 	wrwc.ReadWriteCloser = nil

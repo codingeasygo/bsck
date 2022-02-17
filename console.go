@@ -116,7 +116,7 @@ func (c *Console) dialNet(network, addr string) (conn net.Conn, err error) {
 		}
 		addr = string(realAddr)
 	}
-	conn, raw, err := dialer.CreatePipedConn()
+	conn, raw := dialer.CreatePipedConn()
 	if err == nil {
 		_, err = c.dialAll(addr, raw)
 		if err != nil {
@@ -136,7 +136,7 @@ func (c *Console) Redirect(uri string, reader io.Reader, writer io.Writer, close
 
 //Dial will dial connection by uri
 func (c *Console) Dial(uri string) (conn io.ReadWriteCloser, err error) {
-	conn, raw, err := dialer.CreatePipedConn()
+	conn, raw := dialer.CreatePipedConn()
 	if err == nil {
 		_, err = c.dialAll(uri, raw)
 		if err != nil {

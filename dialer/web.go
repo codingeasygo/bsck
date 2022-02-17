@@ -6,9 +6,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"os"
 	"sync"
-	"time"
 
 	"github.com/codingeasygo/util/xmap"
 	"golang.org/x/net/webdav"
@@ -142,7 +140,7 @@ func PipeWebDialerConn(sid uint64, uri string) (conn *WebDialerConn, raw io.Read
 		SID: sid,
 		URI: uri,
 	}
-	conn.PipedConn, raw, err = CreatePipedConn()
+	conn.PipedConn, raw = CreatePipedConn()
 	return
 }
 
@@ -190,85 +188,26 @@ func (w *WebDialerAddr) String() string {
 
 //PipedConn is an implementation of the net.Conn interface for piped two connection.
 type PipedConn struct {
-	piped *DuplexPiped
-	up    bool
-}
-
-//CreatePipedConn will return two piped connection.
-func CreatePipedConn() (a, b *PipedConn, err error) {
-	piped := &DuplexPiped{}
-	piped.UpReader, piped.DownWriter, err = os.Pipe()
-	if err == nil {
-		piped.DownReader, piped.UpWriter, err = os.Pipe()
-	}
-	if err == nil {
-		a = &PipedConn{
-			piped: piped,
-			up:    true,
-		}
-		b = &PipedConn{
-			piped: piped,
-			up:    false,
-		}
-	}
-	return
-}
-
-func (p *PipedConn) Read(b []byte) (n int, err error) {
-	if p.up {
-		n, err = p.piped.UpReader.Read(b)
-	} else {
-		n, err = p.piped.DownReader.Read(b)
-	}
-	return
-}
-
-func (p *PipedConn) Write(b []byte) (n int, err error) {
-	if p.up {
-		n, err = p.piped.UpWriter.Write(b)
-	} else {
-		n, err = p.piped.DownWriter.Write(b)
-	}
-	return
-}
-
-//Close the piped connection
-func (p *PipedConn) Close() error {
-	return p.piped.Close()
-}
-
-//LocalAddr return self
-func (p *PipedConn) LocalAddr() net.Addr {
-	return p
-}
-
-//RemoteAddr return self
-func (p *PipedConn) RemoteAddr() net.Addr {
-	return p
-}
-
-//SetDeadline is empty
-func (p *PipedConn) SetDeadline(t time.Time) error {
-	return nil
-}
-
-//SetReadDeadline is empty
-func (p *PipedConn) SetReadDeadline(t time.Time) error {
-	return nil
-}
-
-//SetWriteDeadline is empty
-func (p *PipedConn) SetWriteDeadline(t time.Time) error {
-	return nil
-}
-
-//Network return "piped"
-func (p *PipedConn) Network() string {
-	return "piped"
+	net.Conn
+	Info string
 }
 
 func (p *PipedConn) String() string {
-	return "piped"
+	return p.Info
+}
+
+//CreatePipedConn will return two piped connection.
+func CreatePipedConn(info ...string) (a, b *PipedConn) {
+	a = &PipedConn{Info: "piped"}
+	if len(info) > 0 {
+		a.Info = info[0]
+	}
+	b = &PipedConn{Info: "piped"}
+	if len(info) > 1 {
+		b.Info = info[1]
+	}
+	a.Conn, b.Conn = net.Pipe()
+	return
 }
 
 //WebdavHandler is webdav handler

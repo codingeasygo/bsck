@@ -56,7 +56,7 @@ func TestSchemaDialer(t *testing.T) {
 	dialer.Shutdown()
 	//
 	//test pipe
-	cona, conb, _ := CreatePipedConn()
+	cona, conb := CreatePipedConn()
 	con, err = dialer.Dial(10, "test://loc1", conb)
 	if err != nil {
 		t.Error(err)

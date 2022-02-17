@@ -169,25 +169,21 @@ func (f *Forward) runWebsocket(conn *websocket.Conn, router string) {
 }
 
 func (f *Forward) procDial(network, addr string, router string) (raw net.Conn, err error) {
-	raw, piped, err := dialer.CreatePipedConn()
-	if err == nil {
-		_, err = f.Dialer(router, piped)
-		if err != nil {
-			raw.Close()
-			piped.Close()
-		}
+	raw, piped := dialer.CreatePipedConn()
+	_, err = f.Dialer(router, piped)
+	if err != nil {
+		raw.Close()
+		piped.Close()
 	}
 	return
 }
 
 func (f *Forward) procDialTLS(network, addr string, router string) (raw net.Conn, err error) {
-	rawConn, piped, err := dialer.CreatePipedConn()
-	if err == nil {
-		_, err = f.Dialer(router, piped)
-		if err != nil {
-			rawConn.Close()
-			piped.Close()
-		}
+	rawConn, piped := dialer.CreatePipedConn()
+	_, err = f.Dialer(router, piped)
+	if err != nil {
+		rawConn.Close()
+		piped.Close()
 	}
 	if err != nil {
 		return

@@ -87,7 +87,7 @@ func (c *ClosableBuffer) Close() error {
 }
 
 func TestCopyPipable(t *testing.T) {
-	cona, conb, _ := CreatePipedConn()
+	cona, conb := CreatePipedConn()
 	reader := NewClosableBuffer(bytes.NewBufferString("1234567890"))
 	piped := NewCopyPipable(reader)
 	piped.Pipe(conb)

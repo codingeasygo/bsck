@@ -35,7 +35,7 @@ func TestSocksProxy(t *testing.T) {
 		return
 	}
 	raw.Close()
-	cona, conb, _ := CreatePipedConn()
+	cona, conb := CreatePipedConn()
 	_, err = dailer.Dial(100, remote, conb)
 	if err != nil {
 		t.Error(err)

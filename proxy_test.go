@@ -1492,7 +1492,7 @@ func TestProxyDialSync(t *testing.T) {
 		client.Close()
 		time.Sleep(time.Second)
 	}()
-	cona, connb, _ := dialer.CreatePipedConn()
+	cona, connb := dialer.CreatePipedConn()
 	_, err = client.SyncDial("master->slaver->xxx", connb)
 	if err != nil {
 		t.Error("error")
