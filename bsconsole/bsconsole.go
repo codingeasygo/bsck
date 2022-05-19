@@ -18,6 +18,7 @@ import (
 
 	"github.com/codingeasygo/bsck"
 	"github.com/codingeasygo/util/proxy"
+	"github.com/codingeasygo/util/xhash"
 	"github.com/codingeasygo/util/xio"
 )
 
@@ -417,6 +418,7 @@ func runall(osArgs ...string) {
 		proxy.SetLogLevel(40)
 		bsck.SetLogLevel(40)
 		fullURI := args[0]
+		fullSHA := xhash.SHA1([]byte(fullURI))
 		fullURI = strings.Trim(fullURI, "'\"")
 		if !strings.HasSuffix(fullURI, "tcp://${HOST}") && !strings.HasSuffix(fullURI, "${URI}") {
 			fullURI += "->tcp://${HOST}"
@@ -457,9 +459,13 @@ func runall(osArgs ...string) {
 			<-sig
 			console.Close()
 		}()
+		dataDir, _ := os.UserHomeDir()
+		dataDir = filepath.Join(dataDir, ".bsrouter", "cache", "%v", fullSHA)
 		err = console.ProxyProcess(fullURI, stdin, stdout, stderr, func(listener net.Listener) (env []string, runnerName string, runnerArgs []string, err error) {
 			runnerName = runnerPath
 			runnerArgs = append(runnerArgs, fmt.Sprintf("--proxy-server=socks5://%v", listener.Addr()))
+			runnerArgs = append(runnerArgs, fmt.Sprintf("--proxy-bypass-list=\"%v\"", "<-loopback>"))
+			runnerArgs = append(runnerArgs, fmt.Sprintf("--user-data-dir=\"%v\"", dataDir))
 			runnerArgs = append(runnerArgs, args[1:]...)
 			return
 		})
