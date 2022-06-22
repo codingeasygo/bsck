@@ -254,7 +254,7 @@ func runall(osArgs ...string) {
 			fmt.Fprintf(stderr, "read hosts file %v fail with %v\n", hosts, err)
 			exit(1)
 		}
-		fmt.Println("-->", console.Hosts)
+		fmt.Printf("using hosts rewrite from %v\n", hosts)
 	}
 	defer console.Close()
 	switch command {
