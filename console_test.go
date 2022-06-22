@@ -107,27 +107,27 @@ func TestConsole(t *testing.T) {
 		console.PrintState("masterx", "*")
 	}
 	{ //parseProxyURI
-		if console.parseProxyURI("${URI}", "tcp://tcp-a.b.c") != "tcp://a.b.c" {
+		if result, _ := console.parseProxyURI("${URI}", "tcp://tcp-a.b.c"); result != "tcp://a.b.c" {
 			t.Error("error")
 			return
 		}
-		if console.parseProxyURI("${HOST}", "tcp://tcp-a.b.c") != "a.b.c" {
+		if result, _ := console.parseProxyURI("${HOST}", "tcp://tcp-a.b.c"); result != "a.b.c" {
 			t.Error("error")
 			return
 		}
-		if console.parseProxyURI("${URI}", "tcp://a.b.c") != "tcp://a.b.c" {
+		if result, _ := console.parseProxyURI("${URI}", "tcp://a.b.c"); result != "tcp://a.b.c" {
 			t.Error("error")
 			return
 		}
-		if console.parseProxyURI("${HOST}", "tcp://a.b.c") != "a.b.c" {
+		if result, _ := console.parseProxyURI("${HOST}", "tcp://a.b.c"); result != "a.b.c" {
 			t.Error("error")
 			return
 		}
-		if console.parseProxyURI("${URI}", "tcp://a") != "http://a" {
+		if result, _ := console.parseProxyURI("${URI}", "tcp://a"); result != "http://a" {
 			t.Error("error")
 			return
 		}
-		if console.parseProxyURI("${HOST}", "tcp://a") != "a" {
+		if result, _ := console.parseProxyURI("${HOST}", "tcp://a"); result != "a" {
 			t.Error("error")
 			return
 		}

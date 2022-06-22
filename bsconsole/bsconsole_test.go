@@ -297,3 +297,12 @@ func TestConsole(t *testing.T) {
 		runall("bsconsole")
 	}
 }
+
+func TestReadHosts(t *testing.T) {
+	hosts, err := readHosts("/etc/hosts")
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	fmt.Println(hosts)
+}

@@ -29,6 +29,7 @@ type Console struct {
 	SlaverAddress string
 	BufferSize    int
 	Env           []string
+	Hosts         map[string]string //hosts to rewrite
 	conns         map[string]net.Conn
 	running       map[string]io.Closer
 	locker        sync.RWMutex
@@ -39,6 +40,7 @@ func NewConsole(slaverAddress string) (console *Console) {
 	console = &Console{
 		SlaverAddress: slaverAddress,
 		BufferSize:    32 * 1024,
+		Hosts:         map[string]string{},
 		conns:         map[string]net.Conn{},
 		running:       map[string]io.Closer{},
 		locker:        sync.RWMutex{},
@@ -250,7 +252,7 @@ func (c *Console) DialPiper(uri string, bufferSize int) (raw xio.Piper, err erro
 	return
 }
 
-func (c *Console) parseProxyURI(uri, target string) string {
+func (c *Console) parseProxyURI(uri, target string) (string, error) {
 	targetURI := uri
 	if strings.HasPrefix(target, "tcp://tcp-") || strings.HasPrefix(target, "tcp://http-") || strings.HasPrefix(target, "tcp-") || strings.HasPrefix(target, "http-") {
 		target = strings.TrimPrefix(target, "tcp://")
@@ -260,8 +262,16 @@ func (c *Console) parseProxyURI(uri, target string) string {
 		targetURI = strings.ReplaceAll(targetURI, "${HOST}", parts[1])
 		targetURI = strings.ReplaceAll(targetURI, "${URI}", parts[0]+"://"+parts[1])
 	} else if strings.Contains(target, ".") {
-		targetURI = strings.ReplaceAll(targetURI, "${URI}", target)
-		targetURI = strings.ReplaceAll(targetURI, "${HOST}", strings.TrimPrefix(target, "tcp://"))
+		targetURL, err := url.Parse(target)
+		if err != nil {
+			return "", err
+		}
+		if rewrite, ok := c.Hosts[targetURL.Hostname()]; ok && len(rewrite) > 0 {
+			targetURL.Host = rewrite + ":" + targetURL.Port()
+			InfoLog("Console rewrite %v to %v", target, targetURL)
+		}
+		targetURI = strings.ReplaceAll(targetURI, "${URI}", targetURL.String())
+		targetURI = strings.ReplaceAll(targetURI, "${HOST}", targetURL.Host)
 	} else {
 		target = strings.TrimPrefix(target, "tcp://")
 		target = strings.TrimSuffix(target, ":80")
@@ -269,14 +279,16 @@ func (c *Console) parseProxyURI(uri, target string) string {
 		targetURI = strings.ReplaceAll(targetURI, "${HOST}", target)
 		targetURI = strings.ReplaceAll(targetURI, "${URI}", "http://"+target)
 	}
-	return targetURI
+	return targetURI, nil
 }
 
 //StartProxy will start proxy local to uri
 func (c *Console) StartProxy(loc, uri string) (server *proxy.Server, listener net.Listener, err error) {
 	server = proxy.NewServer(xio.PiperDialerF(func(target string, bufferSize int) (raw xio.Piper, err error) {
-		targetURI := c.parseProxyURI(uri, target)
-		raw, err = c.DialPiper(targetURI, bufferSize)
+		targetURI, err := c.parseProxyURI(uri, target)
+		if err == nil {
+			raw, err = c.DialPiper(targetURI, bufferSize)
+		}
 		return
 	}))
 	listener, err = server.Start(loc)

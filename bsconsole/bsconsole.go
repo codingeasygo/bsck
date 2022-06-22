@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -10,6 +12,7 @@ import (
 	"os/signal"
 	"os/user"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -245,6 +248,14 @@ func runall(osArgs ...string) {
 	signal.Notify(sig, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
 	console := bsck.NewConsole(slaver)
 	console.Env = env
+	if hosts := os.Getenv("BS_HOSTS_REWRITE"); len(hosts) > 0 {
+		console.Hosts, err = readHosts(hosts)
+		if err != nil {
+			fmt.Fprintf(stderr, "read hosts file %v fail with %v\n", hosts, err)
+			exit(1)
+		}
+		fmt.Println("-->", console.Hosts)
+	}
 	defer console.Close()
 	switch command {
 	case "conn":
@@ -454,18 +465,24 @@ func runall(osArgs ...string) {
 			exit(1)
 			return
 		}
-		fmt.Printf("Chrome using google chrome on %v\n", runnerPath)
+		dataDir, _ := os.UserHomeDir()
+		dataDir = filepath.Join(dataDir, ".bsrouter", "cache", fullSHA)
+		err = os.MkdirAll(dataDir, os.ModePerm)
+		if err != nil {
+			fmt.Printf("create datadir on %v fail with %v\n", dataDir, err)
+			exit(1)
+			return
+		}
+		fmt.Printf("Chrome using google chrome on %v, datadir on %v\n", runnerPath, dataDir)
 		go func() {
 			<-sig
 			console.Close()
 		}()
-		dataDir, _ := os.UserHomeDir()
-		dataDir = filepath.Join(dataDir, ".bsrouter", "cache", "%v", fullSHA)
 		err = console.ProxyProcess(fullURI, stdin, stdout, stderr, func(listener net.Listener) (env []string, runnerName string, runnerArgs []string, err error) {
 			runnerName = runnerPath
 			runnerArgs = append(runnerArgs, fmt.Sprintf("--proxy-server=socks5://%v", listener.Addr()))
 			runnerArgs = append(runnerArgs, fmt.Sprintf("--proxy-bypass-list=\"%v\"", "<-loopback>"))
-			runnerArgs = append(runnerArgs, fmt.Sprintf("--user-data-dir=\"%v\"", dataDir))
+			runnerArgs = append(runnerArgs, fmt.Sprintf("--user-data-dir=%v", dataDir))
 			runnerArgs = append(runnerArgs, args[1:]...)
 			return
 		})
@@ -504,5 +521,32 @@ func removeFile(target string) (err error) {
 	fmt.Printf("remove %v\n", target)
 	os.Remove(target)
 	os.Remove(target + ".exe")
+	return
+}
+
+func readHosts(filename string) (hosts map[string]string, err error) {
+	hosts = map[string]string{}
+	hostData, err := ioutil.ReadFile(filename)
+	if err != nil {
+		return
+	}
+	space := regexp.MustCompile(`\s+`)
+	reader := bufio.NewReader(bytes.NewBuffer(hostData))
+	for {
+		line, xerr := reader.ReadString('\n')
+		if xerr != nil {
+			break
+		}
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "#") {
+			continue
+		}
+		line = strings.SplitN(line, "#", 2)[0]
+		line = strings.TrimSpace(line)
+		parts := space.Split(line, -1)
+		for _, host := range parts[1:] {
+			hosts[host] = parts[0]
+		}
+	}
 	return
 }
