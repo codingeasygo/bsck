@@ -479,6 +479,7 @@ func runall(osArgs ...string) {
 			console.Close()
 		}()
 		err = console.ProxyProcess(fullURI, stdin, stdout, stderr, func(listener net.Listener) (env []string, runnerName string, runnerArgs []string, err error) {
+			fmt.Printf("Chrome proxy all to %v\n\n\n", listener.Addr())
 			runnerName = runnerPath
 			runnerArgs = append(runnerArgs, fmt.Sprintf("--proxy-server=socks5://%v", listener.Addr()))
 			runnerArgs = append(runnerArgs, fmt.Sprintf("--proxy-bypass-list=\"%v\"", "<-loopback>"))
