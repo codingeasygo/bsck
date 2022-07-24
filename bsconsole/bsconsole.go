@@ -1,8 +1,6 @@
 package main
 
 import (
-	"bufio"
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -532,12 +530,8 @@ func readHosts(filename string) (hosts map[string]string, err error) {
 		return
 	}
 	space := regexp.MustCompile(`\s+`)
-	reader := bufio.NewReader(bytes.NewBuffer(hostData))
-	for {
-		line, xerr := reader.ReadString('\n')
-		if xerr != nil {
-			break
-		}
+	lines := strings.Split(string(hostData), "\n")
+	for _, line := range lines {
 		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, "#") {
 			continue
@@ -545,6 +539,9 @@ func readHosts(filename string) (hosts map[string]string, err error) {
 		line = strings.SplitN(line, "#", 2)[0]
 		line = strings.TrimSpace(line)
 		parts := space.Split(line, -1)
+		if len(parts) < 2 {
+			continue
+		}
 		for _, host := range parts[1:] {
 			hosts[host] = parts[0]
 		}
