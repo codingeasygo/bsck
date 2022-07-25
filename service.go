@@ -81,6 +81,7 @@ type Web struct {
 //Config is struct for all configure
 type Config struct {
 	Name    string            `json:"name"`
+	Dir     string            `json:"dir"`
 	Cert    string            `json:"cert"`
 	Key     string            `json:"key"`
 	Listen  string            `json:"listen"`
@@ -101,26 +102,28 @@ type Config struct {
 }
 
 //ReadConfig will read configure from file
-func ReadConfig(path string) (config *Config, last int64, err error) {
-	var data []byte
-	var dataFile *os.File
-	var dataStat os.FileInfo
-	dataFile, err = os.Open(path)
-	if err == nil {
-		dataStat, err = dataFile.Stat()
-		if err == nil {
-			last = dataStat.ModTime().Local().UnixNano() / 1e6
-			data, err = ioutil.ReadAll(dataFile)
-		}
-		dataFile.Close()
+func ReadConfig(filename string) (config *Config, last int64, err error) {
+	configData, err := ioutil.ReadFile(filename)
+	if err != nil {
+		return
 	}
-	if err == nil {
-		user, _ := user.Current()
-		config = &Config{
-			RDPDir: filepath.Join(user.HomeDir, "Desktop"),
-			VNCDir: filepath.Join(user.HomeDir, "Desktop"),
-		}
-		err = json.Unmarshal(data, config)
+	if stat, xerr := os.Stat(filename); xerr != nil {
+		last = stat.ModTime().Local().UnixNano() / 1e6
+	}
+	user, _ := user.Current()
+	config = &Config{}
+	err = json.Unmarshal(configData, config)
+	if err != nil {
+		return
+	}
+	if len(config.Dir) < 1 {
+		config.Dir = filepath.Dir(filename)
+	}
+	if len(config.RDPDir) < 1 {
+		config.RDPDir = filepath.Join(user.HomeDir, "Desktop")
+	}
+	if len(config.VNCDir) < 1 {
+		config.VNCDir = filepath.Join(user.HomeDir, "Desktop")
 	}
 	return
 }
@@ -526,6 +529,7 @@ func (s *Service) Start() (err error) {
 		s.Handler = handler
 	}
 	s.Node = NewProxy(s.Config.Name, s.Handler)
+	s.Node.Dir = s.Config.Dir
 	s.Node.BufferSize = s.BufferSize
 	if len(s.Config.Cert) > 0 && !filepath.IsAbs(s.Config.Cert) {
 		s.Config.Cert = filepath.Join(filepath.Dir(s.ConfigPath), s.Config.Cert)

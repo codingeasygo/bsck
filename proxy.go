@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
@@ -243,6 +244,7 @@ type Proxy struct {
 	*Router                      //the router
 	Running        bool          //proxy is running.
 	ReconnectDelay time.Duration //reconnect delay
+	Dir            string        //the work dir
 	Cert           string        //the tls cert
 	Key            string        //the tls key
 	master         net.Listener
@@ -541,6 +543,12 @@ func (p *Proxy) Login(option xmap.M) (channel *Channel, result xmap.M, err error
 			}
 		}
 		if len(tlsCert) > 0 {
+			if !filepath.IsAbs(tlsCert) {
+				tlsCert = filepath.Join(p.Dir, tlsCert)
+			}
+			if !filepath.IsAbs(tlsKey) {
+				tlsKey = filepath.Join(p.Dir, tlsKey)
+			}
 			InfoLog("Proxy(%v) start dial to %v by x509 cert:%v,key:%v", p.Name, remote, tlsCert, tlsKey)
 			var cert tls.Certificate
 			cert, err = tls.LoadX509KeyPair(tlsCert, tlsKey)
