@@ -423,7 +423,7 @@ func runall(osArgs ...string) {
 		proxy.SetLogLevel(40)
 		bsck.SetLogLevel(40)
 		fullURI := args[0]
-		fullSHA := xhash.SHA1([]byte(fullURI))
+		fullSHA := xhash.SHA1([]byte(os.Getenv("BS_REWRITE_HOSTS") + "-" + fullURI))
 		fullURI = strings.Trim(fullURI, "'\"")
 		if !strings.HasSuffix(fullURI, "tcp://${HOST}") && !strings.HasSuffix(fullURI, "${URI}") {
 			fullURI += "->tcp://${HOST}"
