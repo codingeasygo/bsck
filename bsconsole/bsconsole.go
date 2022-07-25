@@ -235,7 +235,7 @@ func runall(osArgs ...string) {
 			exit(1)
 		}
 	} else {
-		if !strings.HasPrefix(slaverURI, "socks5://") {
+		if !strings.Contains(slaverURI, "://") {
 			slaverURI = "socks5://" + slaverURI
 		}
 		console = bsck.NewConsole(slaverURI)
