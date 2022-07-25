@@ -25,7 +25,7 @@ import (
 
 func init() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
-	go http.ListenAndServe(":6060", nil)
+	go http.ListenAndServe(":6063", nil)
 }
 
 type Echo struct {

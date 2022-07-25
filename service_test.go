@@ -256,7 +256,7 @@ var configTestMaster = `
     "name": "master",
     "listen": ":15023",
     "web": {},
-    "console": "",
+    "console": {},
     "forwards": {},
     "channels": [],
     "dialer": {
@@ -280,20 +280,20 @@ var configTestSlaver = `
     "name": "slaver",
     "listen": "",
     "web": {},
-    "console": "",
+    "console": {},
     "forwards": {},
     "channels": [
         {
-            "enable":1,
+            "enable": 1,
             "remote": "localhost:15023",
-            "token":  "abc",
-            "index":  0
+            "token": "abc",
+            "index": 0
         }
     ],
-    "dialer":{
+    "dialer": {
         "standard": 1
-	},
-	"access": [
+    },
+    "access": [
         [
             ".*",
             ".*"
@@ -307,17 +307,19 @@ var configTestCaller = `
     "name": "caller",
     "listen": "",
     "web": {},
-    "console": ":1701",
+    "console": {
+        "socks":":1701"
+    },
     "forwards": {},
     "channels": [
         {
-            "enable":1,
+            "enable": 1,
             "remote": "localhost:15023",
-            "token":  "abc",
-            "index":  0
+            "token": "abc",
+            "index": 0
         }
     ],
-    "dialer":{
+    "dialer": {
         "standard": 1
     }
 }
@@ -618,8 +620,20 @@ func TestSlaverHandler(t *testing.T) {
 
 	//mock remote http server
 	webMux := web.NewSessionMux("")
-	webMux.HandleFunc("/test", func(s *web.Session) web.Result {
+	webMux.HandleFunc("/query", func(s *web.Session) web.Result {
 		return s.SendPlainText("handler")
+	})
+	webMux.HandleFunc("/body/err", func(s *web.Session) web.Result {
+		n, err := io.Copy(s.W, s.R.Body)
+		fmt.Printf("copy %v bytes data, err is %v\n", n, err)
+		return web.Return
+	})
+	webMux.HandleFunc("/body/ok", func(s *web.Session) web.Result {
+		buffer := bytes.NewBuffer(nil)
+		n, err := io.Copy(buffer, s.R.Body)
+		io.Copy(s.W, buffer)
+		fmt.Printf("copy %v bytes data, err is %v\n", n, err)
+		return web.Return
 	})
 
 	//register remote http server dialer
@@ -630,8 +644,23 @@ func TestSlaverHandler(t *testing.T) {
 	//request to web1
 	remoteHost := "slaver->http://handler"
 	reverseAddr := fmt.Sprintf("http://base64-%v/", base64.RawURLEncoding.EncodeToString([]byte(remoteHost)))
-	handlerResp, err := master.Client.GetText("%v/test", reverseAddr)
-	if err != nil || handlerResp != "handler" {
+	for i := 0; i < 5; i++ {
+		handlerResp, err := master.Client.GetText("%v/query", reverseAddr)
+		if err != nil || handlerResp != "handler" {
+			t.Error(err)
+			return
+		}
+	}
+	data := make([]byte, 10240)
+	for i := 0; i < 5; i++ {
+		handlerResp, err := master.Client.PostJSONMap(xmap.M{"abc": 1, "data": data}, "%v/body/ok", reverseAddr)
+		if err != nil || handlerResp.IntDef(0, "abc") != 1 {
+			t.Error(err)
+			return
+		}
+	}
+	_, err = master.Client.PostJSONMap(xmap.M{"abc": 1, "data": data}, "%v/body/err", reverseAddr)
+	if err == nil {
 		t.Error(err)
 		return
 	}

@@ -24,3 +24,4 @@ bsrouter/bsrouter
 bsconsole/bsconsole
 *.exe
 bsconsole/bs-*
+temp.json

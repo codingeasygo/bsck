@@ -18,32 +18,33 @@ import (
 
 	"github.com/codingeasygo/bsck/dialer"
 	"github.com/codingeasygo/util/proxy"
-	"github.com/codingeasygo/util/proxy/socks"
+	sproxy "github.com/codingeasygo/util/proxy/socks"
+	wproxy "github.com/codingeasygo/util/proxy/ws"
 	"github.com/codingeasygo/util/xhttp"
 	"github.com/codingeasygo/util/xio"
 )
 
 //Console is node console to dial connection
 type Console struct {
-	Client        *xhttp.Client
-	SlaverAddress string
-	BufferSize    int
-	Env           []string
-	Hosts         map[string]string //hosts to rewrite
-	conns         map[string]net.Conn
-	running       map[string]io.Closer
-	locker        sync.RWMutex
+	Client     *xhttp.Client
+	SlaverURI  string
+	BufferSize int
+	Env        []string
+	Hosts      map[string]string //hosts to rewrite
+	conns      map[string]net.Conn
+	running    map[string]io.Closer
+	locker     sync.RWMutex
 }
 
 //NewConsole will return new Console
-func NewConsole(slaverAddress string) (console *Console) {
+func NewConsole(slaverURI string) (console *Console) {
 	console = &Console{
-		SlaverAddress: slaverAddress,
-		BufferSize:    32 * 1024,
-		Hosts:         map[string]string{},
-		conns:         map[string]net.Conn{},
-		running:       map[string]io.Closer{},
-		locker:        sync.RWMutex{},
+		SlaverURI:  slaverURI,
+		BufferSize: 32 * 1024,
+		Hosts:      map[string]string{},
+		conns:      map[string]net.Conn{},
+		running:    map[string]io.Closer{},
+		locker:     sync.RWMutex{},
 	}
 	client := &http.Client{
 		Transport: &http.Transport{
@@ -51,6 +52,26 @@ func NewConsole(slaverAddress string) (console *Console) {
 		},
 	}
 	console.Client = xhttp.NewClient(client)
+	return
+}
+
+func NewConsoleByConfig(config *Config) (console *Console, err error) {
+	uri := ""
+	if len(config.Console.SOCKS) > 0 {
+		uri = config.Console.SOCKS
+		if !strings.HasPrefix(uri, "socks5://") {
+			uri = "socks5://" + uri
+		}
+	} else if len(config.Console.WS) > 0 {
+		uri = config.Console.WS
+		if !strings.HasPrefix(uri, "ws://") && !strings.HasPrefix(uri, "wss://") {
+			uri = "ws://" + uri
+		}
+	} else {
+		err = fmt.Errorf("not console config found")
+		return
+	}
+	console = NewConsole(uri)
 	return
 }
 
@@ -72,17 +93,24 @@ func (c *Console) Close() (err error) {
 }
 
 func (c *Console) dialAll(uri string, raw io.ReadWriteCloser) (sid uint64, err error) {
-	DebugLog("Console start dial to %v on slaver %v", uri, c.SlaverAddress)
-	conn, err := socks.DialType(c.SlaverAddress, 0x05, uri)
+	DebugLog("Console start dial to %v on slaver %v", uri, c.SlaverURI)
+	var conn net.Conn
+	if strings.HasPrefix(c.SlaverURI, "socks5://") {
+		conn, err = sproxy.DialType(c.SlaverURI, 0x05, uri)
+	} else if strings.HasPrefix(c.SlaverURI, "ws://") || strings.HasPrefix(c.SlaverURI, "wss://") {
+		conn, err = wproxy.Dial(c.SlaverURI, uri)
+	} else {
+		err = fmt.Errorf("not supported slaver %v", c.SlaverURI)
+	}
 	if err != nil {
 		if waiter, ok := raw.(ReadyWaiter); ok {
 			waiter.Ready(err, nil)
 		}
 		raw.Close()
-		DebugLog("Console dial to %v on slaver %v fail with %v", uri, c.SlaverAddress, err)
+		DebugLog("Console dial to %v on slaver %v fail with %v", uri, c.SlaverURI, err)
 		return
 	}
-	DebugLog("Console dial to %v on slaver %v success", uri, c.SlaverAddress)
+	DebugLog("Console dial to %v on slaver %v success", uri, c.SlaverURI)
 	proc := func(err error) {
 		if err != nil {
 			conn.Close()

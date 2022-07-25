@@ -32,12 +32,6 @@ var stderr = os.Stderr
 var exit = os.Exit
 var sig = make(chan os.Signal, 100)
 
-//Config is pojo for configure
-type Config struct {
-	Name    string `json:"name"`
-	Console string `json:"console"`
-}
-
 const proxyChainsConf = `
 strict_chain
 proxy_dns
@@ -123,11 +117,11 @@ func runall(osArgs ...string) {
 		command = osArgs[1]
 		args = osArgs[2:]
 	}
-	var slaver string
+	var slaverURI string
 	if len(args) > 0 && (strings.HasPrefix(args[0], "-slaver=") || strings.HasPrefix(args[0], "--slaver=")) {
-		slaver = args[0]
-		slaver = strings.TrimPrefix(slaver, "-slaver=")
-		slaver = strings.TrimPrefix(slaver, "--slaver=")
+		slaverURI = args[0]
+		slaverURI = strings.TrimPrefix(slaverURI, "-slaver=")
+		slaverURI = strings.TrimPrefix(slaverURI, "--slaver=")
 		args = args[1:]
 	}
 	switch command {
@@ -208,10 +202,11 @@ func runall(osArgs ...string) {
 		return
 	}
 	//load slaver address
-	if len(slaver) < 1 {
-		slaver = os.Getenv("BS_CONSOLE_ADDR")
+	if len(slaverURI) < 1 {
+		slaverURI = os.Getenv("BS_CONSOLE_URI")
 	}
-	if len(slaver) < 1 {
+	var console *bsck.Console
+	if len(slaverURI) < 1 {
 		var err error
 		var data []byte
 		var path string
@@ -227,24 +222,24 @@ func runall(osArgs ...string) {
 			fmt.Fprintf(stderr, "read config from .bsrouter.json or ~/.bsrouter/bsrouter.json  or ~/.bsrouter.json or /etc/bsrouter/bsrouter.json or /etc/bsrouter.json fail with %v\n", err)
 			exit(1)
 		}
-		var config Config
+		var config bsck.Config
 		err = json.Unmarshal(data, &config)
 		if err != nil {
 			fmt.Fprintf(stderr, "parse config fail with %v\n", err)
 			exit(1)
 		}
-		if len(config.Console) > 0 {
-			slaver = config.Console
-		} else {
-			fmt.Fprintf(stderr, "not client access listen on config %v\n", path)
+		console, err = bsck.NewConsoleByConfig(&config)
+		if err != nil {
+			fmt.Fprintf(stderr, "new console from config %v fail with %v\n", path, err)
 			exit(1)
 		}
-	}
-	if !strings.HasPrefix(slaver, "socks5://") {
-		slaver = "socks5://" + slaver
+	} else {
+		if !strings.HasPrefix(slaverURI, "socks5://") {
+			slaverURI = "socks5://" + slaverURI
+		}
+		console = bsck.NewConsole(slaverURI)
 	}
 	signal.Notify(sig, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
-	console := bsck.NewConsole(slaver)
 	console.Env = env
 	if hosts := os.Getenv("BS_HOSTS_REWRITE"); len(hosts) > 0 {
 		console.Hosts, err = readHosts(hosts)
@@ -252,7 +247,7 @@ func runall(osArgs ...string) {
 			fmt.Fprintf(stderr, "read hosts file %v fail with %v\n", hosts, err)
 			exit(1)
 		}
-		fmt.Printf("using hosts rewrite from %v\n", hosts)
+		fmt.Printf("Console using hosts rewrite from %v\n", hosts)
 	}
 	defer console.Close()
 	switch command {
@@ -408,7 +403,7 @@ func runall(osArgs ...string) {
 		if runtime.GOOS == "windows" {
 			proxyCommand += ".exe"
 		}
-		proxyCommand += fmt.Sprintf(" conn --slaver=%v '${URI}'", slaver)
+		proxyCommand += fmt.Sprintf(" conn --slaver=%v '${URI}'", slaverURI)
 		go func() {
 			<-sig
 			console.Close()

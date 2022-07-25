@@ -24,6 +24,8 @@ import (
 
 	"github.com/codingeasygo/bsck/dialer"
 	"github.com/codingeasygo/util/proxy"
+	sproxy "github.com/codingeasygo/util/proxy/socks"
+	wproxy "github.com/codingeasygo/util/proxy/ws"
 	"github.com/codingeasygo/util/xhttp"
 	"github.com/codingeasygo/util/xio"
 	"github.com/codingeasygo/util/xmap"
@@ -78,13 +80,16 @@ type Web struct {
 
 //Config is struct for all configure
 type Config struct {
-	Name      string            `json:"name"`
-	Cert      string            `json:"cert"`
-	Key       string            `json:"key"`
-	Listen    string            `json:"listen"`
-	ACL       map[string]string `json:"acl"`
-	Access    [][]string        `json:"access"`
-	Console   string            `json:"console"`
+	Name    string            `json:"name"`
+	Cert    string            `json:"cert"`
+	Key     string            `json:"key"`
+	Listen  string            `json:"listen"`
+	ACL     map[string]string `json:"acl"`
+	Access  [][]string        `json:"access"`
+	Console struct {
+		SOCKS string `json:"socks"`
+		WS    string `json:"ws"`
+	} `json:"console"`
 	Web       Web               `json:"web"`
 	Log       int               `json:"log"`
 	Forwards  map[string]string `json:"forwards"`
@@ -139,9 +144,12 @@ func (f ForwardFinderF) FindForward(uri string) (target string, err error) {
 
 //Service is bound socket service
 type Service struct {
-	Name       string
-	Node       *Proxy
-	Console    *proxy.Server
+	Name    string
+	Node    *Proxy
+	Console struct {
+		SOCKS *sproxy.Server
+		WS    *wproxy.Server
+	}
 	Web        net.Listener
 	Forward    *Forward
 	Dialer     *dialer.Pool
@@ -499,9 +507,12 @@ func (s *Service) Start() (err error) {
 	proxy.SetLogLevel(s.Config.Log)
 	SetLogLevel(s.Config.Log)
 	InfoLog("Server(%v) will start by config %v", s.Name, s.ConfigPath)
-	s.Console = proxy.NewServer(s)
-	s.Console.HTTP.BufferSize = s.BufferSize
+	s.Console.SOCKS = sproxy.NewServer()
+	s.Console.SOCKS.Dialer = s
 	s.Console.SOCKS.BufferSize = s.BufferSize
+	s.Console.WS = wproxy.NewServer()
+	s.Console.WS.Dialer = s
+	s.Console.WS.BufferSize = s.BufferSize
 	s.Forward = NewForward()
 	if s.Handler == nil {
 		handler := NewNormalAcessHandler(s.Config.Name, nil)
@@ -552,14 +563,23 @@ func (s *Service) Start() (err error) {
 			ErrorLog("Server(%v) add forward by %v->%v fail with %v", s.Name, loc, uri, err)
 		}
 	}
-	if len(s.Config.Console) > 0 {
-		_, err = s.Console.Start(s.Config.Console)
+	if len(s.Config.Console.SOCKS) > 0 {
+		_, err = s.Console.SOCKS.Start(s.Config.Console.SOCKS)
 		if err != nil {
-			ErrorLog("Server(%v) start console on %v fail with %v\n", s.Name, s.Config.Console, err)
+			ErrorLog("Server(%v) start socks console on %v fail with %v\n", s.Name, s.Config.Console.SOCKS, err)
 			s.Node.Close()
 			return
 		}
-		InfoLog("Server(%v) console listen on %v success", s.Name, s.Config.Console)
+		InfoLog("Server(%v) socks console listen on %v success", s.Name, s.Config.Console.SOCKS)
+	}
+	if len(s.Config.Console.WS) > 0 {
+		_, err = s.Console.WS.Start(s.Config.Console.WS)
+		if err != nil {
+			ErrorLog("Server(%v) start ws console on %v fail with %v\n", s.Name, s.Config.Console.WS, err)
+			s.Node.Close()
+			return
+		}
+		InfoLog("Server(%v) ws console listen on %v success", s.Name, s.Config.Console.WS)
 	}
 	s.Node.StartHeartbeat()
 	mux := http.NewServeMux()
@@ -590,9 +610,13 @@ func (s *Service) Stop() (err error) {
 		s.Node.Close()
 		s.Node = nil
 	}
-	if s.Console != nil {
-		s.Console.Close()
-		s.Console = nil
+	if s.Console.SOCKS != nil {
+		s.Console.SOCKS.Stop()
+		s.Console.SOCKS = nil
+	}
+	if s.Console.WS != nil {
+		s.Console.WS.Stop()
+		s.Console.WS = nil
 	}
 	if s.Web != nil {
 		s.Web.Close()
