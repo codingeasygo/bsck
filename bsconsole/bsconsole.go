@@ -103,7 +103,8 @@ func runall(osArgs ...string) {
 		exit(1)
 		return
 	}
-	dir, fn := filepath.Split(runner)
+	dir := filepath.Dir(runner)
+	_, fn := filepath.Split(osArgs[0])
 	fn = strings.TrimSuffix(fn, ".exe")
 	if strings.HasPrefix(fn, "bs-") {
 		command = strings.TrimPrefix(fn, "bs-")
