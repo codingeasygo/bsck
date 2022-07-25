@@ -10,7 +10,6 @@ import (
 	"os/signal"
 	"os/user"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -242,13 +241,13 @@ func runall(osArgs ...string) {
 	}
 	signal.Notify(sig, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
 	console.Env = env
-	if hosts := os.Getenv("BS_REWRITE_HOSTS"); len(hosts) > 0 {
-		console.Hosts, err = readHosts(hosts)
+	if hostFile := os.Getenv("BS_REWRITE_HOSTS"); len(hostFile) > 0 {
+		err = console.Hosts.Read(hostFile)
 		if err != nil {
-			fmt.Fprintf(stderr, "read hosts file %v fail with %v\n", hosts, err)
+			fmt.Fprintf(stderr, "read hosts file %v fail with %v\n", hostFile, err)
 			exit(1)
 		}
-		fmt.Printf("Console using hosts rewrite from %v\n", hosts)
+		fmt.Printf("Console using hosts rewrite from %v\n", hostFile)
 	}
 	defer console.Close()
 	switch command {
@@ -516,31 +515,5 @@ func removeFile(target string) (err error) {
 	fmt.Printf("remove %v\n", target)
 	os.Remove(target)
 	os.Remove(target + ".exe")
-	return
-}
-
-func readHosts(filename string) (hosts map[string]string, err error) {
-	hosts = map[string]string{}
-	hostData, err := ioutil.ReadFile(filename)
-	if err != nil {
-		return
-	}
-	space := regexp.MustCompile(`\s+`)
-	lines := strings.Split(string(hostData), "\n")
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "#") {
-			continue
-		}
-		line = strings.SplitN(line, "#", 2)[0]
-		line = strings.TrimSpace(line)
-		parts := space.Split(line, -1)
-		if len(parts) < 2 {
-			continue
-		}
-		for _, host := range parts[1:] {
-			hosts[host] = parts[0]
-		}
-	}
 	return
 }

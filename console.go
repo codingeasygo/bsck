@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -24,13 +25,72 @@ import (
 	"github.com/codingeasygo/util/xio"
 )
 
+type Hosts struct {
+	Wildcard map[string]string
+	Single   map[string]string
+}
+
+func NewHosts() (hosts *Hosts) {
+	hosts = &Hosts{
+		Wildcard: map[string]string{},
+		Single:   map[string]string{},
+	}
+	return
+}
+
+func (h *Hosts) Read(filename string) (err error) {
+	hostData, err := ioutil.ReadFile(filename)
+	if err != nil {
+		return
+	}
+	space := regexp.MustCompile(`\s+`)
+	lines := strings.Split(string(hostData), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "#") {
+			continue
+		}
+		line = strings.SplitN(line, "#", 2)[0]
+		line = strings.TrimSpace(line)
+		parts := space.Split(line, -1)
+		if len(parts) < 2 {
+			continue
+		}
+		for _, host := range parts[1:] {
+			if strings.HasPrefix(host, "*.") {
+				h.Wildcard[strings.TrimPrefix(host, "*")] = parts[0]
+			} else {
+				h.Single[host] = parts[0]
+			}
+		}
+	}
+	return
+}
+
+func (h *Hosts) Rewrite(host string) (rewrited string, ok bool) {
+	rewrited, ok = h.Single[host]
+	if ok {
+		return
+	}
+	for w, v := range h.Wildcard {
+		if strings.HasSuffix(host, w) {
+			rewrited, ok = v, true
+			break
+		}
+	}
+	if !ok {
+		rewrited = host
+	}
+	return
+}
+
 //Console is node console to dial connection
 type Console struct {
 	Client     *xhttp.Client
 	SlaverURI  string
 	BufferSize int
 	Env        []string
-	Hosts      map[string]string //hosts to rewrite
+	Hosts      *Hosts //hosts to rewrite
 	conns      map[string]net.Conn
 	running    map[string]io.Closer
 	locker     sync.RWMutex
@@ -41,7 +101,7 @@ func NewConsole(slaverURI string) (console *Console) {
 	console = &Console{
 		SlaverURI:  slaverURI,
 		BufferSize: 32 * 1024,
-		Hosts:      map[string]string{},
+		Hosts:      NewHosts(),
 		conns:      map[string]net.Conn{},
 		running:    map[string]io.Closer{},
 		locker:     sync.RWMutex{},
@@ -294,7 +354,7 @@ func (c *Console) parseProxyURI(uri, target string) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		if rewrite, ok := c.Hosts[targetURL.Hostname()]; ok && len(rewrite) > 0 {
+		if rewrite, ok := c.Hosts.Rewrite(targetURL.Hostname()); ok && len(rewrite) > 0 {
 			targetURL.Host = rewrite + ":" + targetURL.Port()
 			InfoLog("Console rewrite %v to %v", target, targetURL)
 		}

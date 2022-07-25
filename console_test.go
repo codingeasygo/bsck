@@ -15,8 +15,47 @@ import (
 	"testing"
 	"time"
 
+	"github.com/codingeasygo/util/converter"
 	"github.com/codingeasygo/util/proxy/socks"
 )
+
+func TestHosts(t *testing.T) {
+	hosts := NewHosts()
+	err := hosts.Read("/etc/hosts")
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	if _, ok := hosts.Rewrite("localhost"); !ok {
+		t.Error("error")
+		return
+	}
+	ioutil.WriteFile("/tmp/hosts", []byte(`127.0.0.1 a.test.loc *.xxx.loc`), os.ModePerm)
+	err = hosts.Read("/tmp/hosts")
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	if _, ok := hosts.Rewrite("a.test.loc"); !ok {
+		t.Error("error")
+		return
+	}
+	if _, ok := hosts.Rewrite("x.xxx.loc"); !ok {
+		t.Error("error")
+		return
+	}
+	if _, ok := hosts.Rewrite("none.loc"); ok {
+		t.Error("error")
+		return
+	}
+	fmt.Println(converter.JSON(hosts))
+	//
+	err = hosts.Read("/tmp/none")
+	if err == nil {
+		t.Error(err)
+		return
+	}
+}
 
 var configTestConsole1 = `
 {
