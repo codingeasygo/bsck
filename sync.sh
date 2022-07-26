@@ -7,7 +7,7 @@ util_sha=`git rev-parse HEAD`
 cd ~/go/src/github.com/codingeasygo/web
 web_sha=`git rev-parse HEAD`
 
-cd ~/go/src/sxbastudio.com/emall/emservice
+cd ~/go/src/github.com/codingeasygo/bsck
 go get github.com/codingeasygo/util@$util_sha
 go get github.com/codingeasygo/web@$web_sha
 go mod tidy
