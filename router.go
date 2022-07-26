@@ -310,7 +310,7 @@ type Channel struct {
 	name                  string
 	index                 int
 	context               xmap.M
-	Heartbeat             int64
+	Heartbeat             time.Time
 }
 
 //ID is an implementation of Conn
@@ -643,33 +643,37 @@ func (r *Router) loopHeartbeat() {
 	buf[4] = CmdHeartbeat
 	binary.BigEndian.PutUint32(buf[5:], 0)
 	copy(buf[13:], data)
-	last := time.Now().Local().UnixNano() / 1e6
-	showed := false
+	last := time.Now()
 	for {
-		now := time.Now().Local().UnixNano() / 1e6
-		all := []Conn{}
+		shouldKeep, shouldClose := []Conn{}, []Conn{}
 		r.channelLck.RLock()
 		for name, bond := range r.channel {
 			if len(bond.channels) < 1 {
 				continue
 			}
-			if now-last > 30000 {
+			if time.Since(last) > 30*time.Second {
 				InfoLog("Router(%v) send heartbeat to %v", r.Name, name)
-				showed = true
 			}
 			bond.channelLck.RLock()
 			for _, channel := range bond.channels {
-				all = append(all, channel)
+				if c, ok := channel.(*Channel); ok && time.Since(c.Heartbeat) > 3*r.Heartbeat {
+					shouldClose = append(shouldClose, channel)
+					WarnLog("Router(%v) send heartbeat to %v channel %v is out of sync, it will be closed", r.Name, name, c)
+				} else {
+					shouldKeep = append(shouldKeep, channel)
+				}
 			}
 			bond.channelLck.RUnlock()
 		}
 		r.channelLck.RUnlock()
-		for _, channel := range all {
+		for _, channel := range shouldKeep {
 			channel.WriteFrame(buf)
 		}
-		if showed {
-			last = time.Now().Local().UnixNano() / 1e6
-			showed = false
+		for _, channel := range shouldClose {
+			channel.Close()
+		}
+		if time.Since(last) > 30*time.Second {
+			last = time.Now()
 		}
 		time.Sleep(r.Heartbeat)
 	}
@@ -869,7 +873,7 @@ func (r *Router) procClosed(channel Conn, buf []byte) (err error) {
 
 func (r *Router) procHeartbeat(conn Conn, buf []byte) (err error) {
 	if channel, ok := conn.(*Channel); ok {
-		channel.Heartbeat = time.Now().Local().UnixNano() / 1e6
+		channel.Heartbeat = time.Now()
 	}
 	return
 }
