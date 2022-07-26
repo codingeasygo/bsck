@@ -448,6 +448,7 @@ func (r *Router) Accept(raw frame.ReadWriteCloser) {
 		ReadWriteCloser: raw,
 		cid:             atomic.AddUint64(&r.connectSequence, 1),
 		context:         xmap.M{},
+		Heartbeat:       time.Now(),
 	}
 	go r.loopReadRaw(channel)
 }
@@ -459,6 +460,7 @@ func (r *Router) AcceptSync(raw frame.ReadWriteCloser) {
 		ReadWriteCloser: raw,
 		cid:             atomic.AddUint64(&r.connectSequence, 1),
 		context:         xmap.M{},
+		Heartbeat:       time.Now(),
 	}
 	r.loopReadRaw(channel)
 }
@@ -987,6 +989,7 @@ func (r *Router) JoinConn(conn frame.ReadWriteCloser, index int, args interface{
 		name:            remoteName,
 		index:           index,
 		context:         xmap.M{},
+		Heartbeat:       time.Now(),
 	}
 	r.Register(channel)
 	InfoLog("Router(%v) login to %v success, bind to %v,%v", r.Name, conn, remoteName, index)

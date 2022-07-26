@@ -720,7 +720,7 @@ func TestProxyError(t *testing.T) {
 		}
 		//
 		echo := NewEcho("data")
-		err = master.Router.procLogin(&Channel{ReadWriteCloser: frame.NewReadWriteCloser(echo, 1024)}, make([]byte, 1024))
+		err = master.Router.procLogin(&Channel{ReadWriteCloser: frame.NewReadWriteCloser(echo, 1024), Heartbeat: time.Now()}, make([]byte, 1024))
 		if err != nil || echo.Recv != 1 {
 			t.Error(err)
 			return
@@ -733,7 +733,7 @@ func TestProxyError(t *testing.T) {
 		data = []byte("url")
 		copy(buf[13:], data)
 		echo = NewEcho("data")
-		err = master.Router.procDial(&Channel{ReadWriteCloser: frame.NewReadWriteCloser(echo, 16)}, buf)
+		err = master.Router.procDial(&Channel{ReadWriteCloser: frame.NewReadWriteCloser(echo, 16), Heartbeat: time.Now()}, buf)
 		if err != nil || echo.Recv != 1 {
 			t.Error(err)
 			return
@@ -742,7 +742,7 @@ func TestProxyError(t *testing.T) {
 		data = []byte("x@error")
 		copy(buf[13:], data)
 		echo = NewEcho("data")
-		err = master.Router.procDial(&Channel{ReadWriteCloser: frame.NewReadWriteCloser(echo, len(data)+13)}, buf)
+		err = master.Router.procDial(&Channel{ReadWriteCloser: frame.NewReadWriteCloser(echo, len(data)+13), Heartbeat: time.Now()}, buf)
 		time.Sleep(time.Second) //wait for go
 		if err != nil || echo.Recv != 1 {
 			t.Error(err)
@@ -752,7 +752,7 @@ func TestProxyError(t *testing.T) {
 		data = []byte("x@not->error")
 		copy(buf[13:], data)
 		echo = NewEcho("data")
-		err = master.Router.procDial(&Channel{ReadWriteCloser: frame.NewReadWriteCloser(echo, len(data)+13)}, buf)
+		err = master.Router.procDial(&Channel{ReadWriteCloser: frame.NewReadWriteCloser(echo, len(data)+13), Heartbeat: time.Now()}, buf)
 		if err != nil || echo.Recv != 1 {
 			t.Error(err)
 			return
@@ -761,7 +761,7 @@ func TestProxyError(t *testing.T) {
 		data = []byte("x@xx->error")
 		copy(buf[13:], data)
 		echo = NewEcho("data")
-		err = master.Router.procDial(&Channel{ReadWriteCloser: frame.NewReadWriteCloser(echo, len(data)+13)}, buf)
+		err = master.Router.procDial(&Channel{ReadWriteCloser: frame.NewReadWriteCloser(echo, len(data)+13), Heartbeat: time.Now()}, buf)
 		if err != nil || echo.Recv != 1 {
 			t.Error(err)
 			return
@@ -841,9 +841,9 @@ func TestProxyError(t *testing.T) {
 		//
 		//test dial fail
 		srcRaw := NewErrReadWriteCloser([]byte("error"), 10)
-		src := &Channel{ReadWriteCloser: frame.NewReadWriteCloser(srcRaw, 1024)}
+		src := &Channel{ReadWriteCloser: frame.NewReadWriteCloser(srcRaw, 1024), Heartbeat: time.Now()}
 		dstRaw := NewErrReadWriteCloser([]byte("error"), 10)
-		dst := &Channel{ReadWriteCloser: frame.NewReadWriteCloser(dstRaw, 1024)}
+		dst := &Channel{ReadWriteCloser: frame.NewReadWriteCloser(dstRaw, 1024), Heartbeat: time.Now()}
 		master.Router.addTable(src, 1000, dst, 1001, "")
 		buf := make([]byte, 1024)
 		copy(buf[13:], []byte("error"))
@@ -867,17 +867,17 @@ func TestProxyError(t *testing.T) {
 		//length error
 		binary.BigEndian.PutUint32(buf, 6)
 		srcRaw := NewErrReadWriteCloser(buf[0:10], 0)
-		src := &Channel{ReadWriteCloser: frame.NewReadWriteCloser(srcRaw, 1024)}
+		src := &Channel{ReadWriteCloser: frame.NewReadWriteCloser(srcRaw, 1024), Heartbeat: time.Now()}
 		master.Router.loopReadRaw(src)
 		//read cmd error
 		binary.BigEndian.PutUint32(buf, 100)
 		srcRaw = NewErrReadWriteCloser(buf[0:104], 0)
-		src = &Channel{ReadWriteCloser: frame.NewReadWriteCloser(srcRaw, 50)}
+		src = &Channel{ReadWriteCloser: frame.NewReadWriteCloser(srcRaw, 50), Heartbeat: time.Now()}
 		master.Router.loopReadRaw(src)
 		//cmd error
 		binary.BigEndian.PutUint32(buf, 100)
 		srcRaw = NewErrReadWriteCloser(buf[0:104], 0)
-		src = &Channel{ReadWriteCloser: frame.NewReadWriteCloser(srcRaw, 1024)}
+		src = &Channel{ReadWriteCloser: frame.NewReadWriteCloser(srcRaw, 1024), Heartbeat: time.Now()}
 		master.Router.loopReadRaw(src)
 	}
 	{ //test for cover
