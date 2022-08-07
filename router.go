@@ -529,6 +529,23 @@ func (r *Router) SelectChannel(name string) (dst Conn, err error) {
 	return
 }
 
+//CloseChannel will call close on all bond channle by name.
+func (r *Router) CloseChannel(name string) (err error) {
+	r.channelLck.RLock()
+	bond := r.channel[name]
+	if bond == nil || len(bond.channels) < 1 {
+		r.channelLck.RUnlock()
+		return
+	}
+	r.channelLck.RUnlock()
+	bond.channelLck.Lock()
+	defer bond.channelLck.Unlock()
+	for _, c := range bond.channels {
+		c.Close()
+	}
+	return
+}
+
 func (r *Router) addTable(src Conn, srcSid uint64, dst Conn, dstSid uint64, conn string) {
 	r.tableLck.Lock()
 	router := []interface{}{src, srcSid, dst, dstSid, conn}
@@ -660,7 +677,7 @@ func (r *Router) loopHeartbeat() {
 			for _, channel := range bond.channels {
 				if c, ok := channel.(*Channel); ok && time.Since(c.Heartbeat) > 3*r.Heartbeat {
 					shouldClose = append(shouldClose, channel)
-					WarnLog("Router(%v) send heartbeat to %v channel %v is out of sync, it will be closed", r.Name, name, c)
+					WarnLog("Router(%v) send heartbeat to %v channel %v is out of sync, it will be closed by %v", r.Name, name, c, c)
 				} else {
 					shouldKeep = append(shouldKeep, channel)
 				}
