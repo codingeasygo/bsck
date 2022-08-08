@@ -8,6 +8,10 @@ import (
 	"github.com/codingeasygo/util/xmap"
 )
 
+func init() {
+	SetLogLevel(LogLevelDebug)
+}
+
 func TestPool(t *testing.T) {
 	pool := NewPool("test")
 	err := pool.Bootstrap(xmap.M{
@@ -29,7 +33,7 @@ func TestPool(t *testing.T) {
 		t.Error(err)
 		return
 	}
-	_, err = pool.Dial(10, "http://dav?dir=/tmp", nil)
+	_, err = pool.Dial(nil, 10, "http://dav?dir=/tmp", nil)
 	if err != nil {
 		t.Error(err)
 		return
@@ -37,7 +41,7 @@ func TestPool(t *testing.T) {
 
 	//test not dialer
 	pool = NewPool("test")
-	_, err = pool.Dial(10, "http://dav?dir=/tmp", nil)
+	_, err = pool.Dial(nil, 10, "http://dav?dir=/tmp", nil)
 	if err == nil {
 		t.Error(err)
 		return

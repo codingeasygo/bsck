@@ -29,21 +29,21 @@ func TestSchemaDialer(t *testing.T) {
 		t.Error("error")
 		return
 	}
-	con, err := dialer.Dial(10, "test://loc1", nil)
+	con, err := dialer.Dial(nil, 10, "test://loc1", nil)
 	if err != nil {
 		t.Error(err)
 		return
 	}
 	con.Close()
 	//
-	con, err = dialer.Dial(10, "test://loc2", nil)
+	con, err = dialer.Dial(nil, 10, "test://loc2", nil)
 	if err != nil {
 		t.Error(err)
 		return
 	}
 	con.Close()
 	//
-	con, err = dialer.Dial(10, "abc://xxx", nil)
+	con, err = dialer.Dial(nil, 10, "abc://xxx", nil)
 	if err != nil {
 		t.Error(err)
 		return
@@ -57,7 +57,7 @@ func TestSchemaDialer(t *testing.T) {
 	//
 	//test pipe
 	cona, conb := CreatePipedConn()
-	con, err = dialer.Dial(10, "test://loc1", conb)
+	con, err = dialer.Dial(nil, 10, "test://loc1", conb)
 	if err != nil {
 		t.Error(err)
 		return
@@ -66,17 +66,17 @@ func TestSchemaDialer(t *testing.T) {
 	cona.Close()
 	//
 	//test error
-	_, err = dialer.Dial(10, "http://xxx", nil)
+	_, err = dialer.Dial(nil, 10, "http://xxx", nil)
 	if err == nil {
 		t.Error(err)
 		return
 	}
-	_, err = dialer.Dial(10, "https://xx/%EX%B8%AD%E8%AF%AD%E8%A8%80", nil)
+	_, err = dialer.Dial(nil, 10, "https://xx/%EX%B8%AD%E8%AF%AD%E8%A8%80", nil)
 	if err == nil {
 		t.Error(err)
 		return
 	}
-	_, err = dialer.Dial(10, "test://err", nil)
+	_, err = dialer.Dial(nil, 10, "test://err", nil)
 	if err == nil {
 		t.Error(err)
 		return

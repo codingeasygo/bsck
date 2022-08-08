@@ -39,7 +39,7 @@ func TestWebDialer(t *testing.T) {
 			if err != nil {
 				break
 			}
-			raw, err := dialer.Dial(cid, "http://dav?dir=t0", nil)
+			raw, err := dialer.Dial(nil, cid, "http://dav?dir=t0", nil)
 			if err != nil {
 				panic(err)
 			}
@@ -62,7 +62,7 @@ func TestWebDialer(t *testing.T) {
 	//
 	//test pipe
 	cona, conb := CreatePipedConn()
-	_, err = dialer.Dial(100, "http://dav?dir=t0", conb)
+	_, err = dialer.Dial(nil, 100, "http://dav?dir=t0", conb)
 	if err != nil {
 		t.Error(err)
 		return
@@ -74,7 +74,7 @@ func TestWebDialer(t *testing.T) {
 	//for cover
 	fmt.Printf("%v,%v\n", dialer.Addr(), dialer.Network())
 	//test web conn
-	conn, _, err := PipeWebDialerConn(100, "http://dav?dir=t0")
+	conn, _, err := PipeWebDialerConn(nil, 100, "http://dav?dir=t0")
 	if err != nil {
 		t.Error(err)
 		return
@@ -92,7 +92,7 @@ func TestWebDialer(t *testing.T) {
 		return
 	}
 	//
-	_, err = dialer.Dial(100, "://", nil)
+	_, err = dialer.Dial(nil, 100, "://", nil)
 	if err == nil {
 		t.Error(err)
 		return

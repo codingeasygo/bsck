@@ -96,7 +96,7 @@ func (s *SocksProxyDialer) Matched(uri string) bool {
 }
 
 //Dial one connection by uri
-func (s *SocksProxyDialer) Dial(sid uint64, uri string, pipe io.ReadWriteCloser) (raw Conn, err error) {
+func (s *SocksProxyDialer) Dial(channel Channel, sid uint64, uri string, pipe io.ReadWriteCloser) (raw Conn, err error) {
 	remote, err := url.Parse(uri)
 	if err != nil {
 		return

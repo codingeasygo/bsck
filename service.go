@@ -434,8 +434,8 @@ func (s *Service) dialOne(uri string, raw io.ReadWriteCloser, sync bool) (sid ui
 }
 
 //DialRaw is router dial implemnet
-func (s *Service) DialRaw(sid uint64, uri string) (conn Conn, err error) {
-	raw, err := s.Dialer.Dial(sid, uri, nil)
+func (s *Service) DialRaw(channel Conn, sid uint64, uri string) (conn Conn, err error) {
+	raw, err := s.Dialer.Dial(channel, sid, uri, nil)
 	if err == nil {
 		conn = NewRawConn(fmt.Sprintf("%v", sid), raw, s.Node.BufferSize, sid, uri)
 	}

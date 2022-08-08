@@ -19,7 +19,7 @@ func TestEcho(t *testing.T) {
 		t.Error("error")
 		return
 	}
-	conn, err := dialer.Dial(10, "tcp://echo", nil)
+	conn, err := dialer.Dial(nil, 10, "tcp://echo", nil)
 	if err != nil {
 		t.Error(err)
 		return
@@ -37,7 +37,7 @@ func TestEcho(t *testing.T) {
 	//
 	//test pipe
 	cona, conb := CreatePipedConn()
-	_, err = dialer.Dial(10, "tcp://echo", conb)
+	_, err = dialer.Dial(nil, 10, "tcp://echo", conb)
 	if err != nil {
 		t.Error(err)
 		return

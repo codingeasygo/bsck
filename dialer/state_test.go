@@ -21,7 +21,7 @@ func (s *StateData) State(args ...interface{}) xmap.M {
 func TestState(t *testing.T) {
 	dialer := NewStateDialer("test", &StateData{})
 	cona, conb := CreatePipedConn()
-	_, err := dialer.Dial(0, "test", conb)
+	_, err := dialer.Dial(nil, 0, "test", conb)
 	if err != nil {
 		t.Error(err)
 		return

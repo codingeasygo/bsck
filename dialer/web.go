@@ -71,14 +71,14 @@ func (web *WebDialer) Matched(uri string) bool {
 }
 
 //Dial to web server
-func (web *WebDialer) Dial(sid uint64, uri string, pipe io.ReadWriteCloser) (raw Conn, err error) {
+func (web *WebDialer) Dial(channel Channel, sid uint64, uri string, pipe io.ReadWriteCloser) (raw Conn, err error) {
 	web.consLck.Lock()
 	defer web.consLck.Unlock()
 	if web.stopped {
 		err = fmt.Errorf("stopped")
 		return
 	}
-	conn, basic, err := PipeWebDialerConn(sid, uri)
+	conn, basic, err := PipeWebDialerConn(channel, sid, uri)
 	if err != nil {
 		return
 	}
@@ -100,11 +100,43 @@ func (web *WebDialer) Accept() (conn net.Conn, err error) {
 	return
 }
 
-//FindConn will find connection by id
-func (web *WebDialer) FindConn(sid string) (conn *WebDialerConn) {
+//FindConnByID will find connection by id
+func (web *WebDialer) FindConnByID(sid string) (conn *WebDialerConn, err error) {
 	web.consLck.Lock()
 	conn = web.cons[sid]
 	web.consLck.Unlock()
+	if conn == nil {
+		err = fmt.Errorf("conn is not exits by %v", sid)
+	}
+	return
+}
+
+//FindConnByRequest will find connection by id
+func (web *WebDialer) FindConnByRequest(req *http.Request) (conn *WebDialerConn, err error) {
+	remoteArgs, err := url.ParseQuery(req.RemoteAddr)
+	if err != nil {
+		return
+	}
+	sid := remoteArgs.Get("session_id")
+	if len(sid) < 1 {
+		err = fmt.Errorf("session_id is not exits on RemoteAddr, req is not WebDialer Request")
+		return
+	}
+	conn, err = web.FindConnByID(sid)
+	return
+}
+
+//FindConnByRequest will find connection by id
+func (web *WebDialer) FindChannelByRequest(req *http.Request) (channel Channel, err error) {
+	conn, err := web.FindConnByRequest(req)
+	if err != nil {
+		return
+	}
+	if conn.Channel == nil {
+		err = fmt.Errorf("channel is nil on conn %v", conn.SID)
+		return
+	}
+	channel = conn.Channel
 	return
 }
 
@@ -129,16 +161,18 @@ func (web *WebDialer) String() string {
 
 //WebDialerConn is an implementation of the net.Conn interface for pipe WebDialerConn to raw connection.
 type WebDialerConn struct {
-	*PipedConn        //the piped connection
+	*PipedConn //the piped connection
+	Channel    Channel
 	SID        uint64 //session id
 	URI        string //target uri
 }
 
 //PipeWebDialerConn will return new WebDialerConn and piped raw connection.
-func PipeWebDialerConn(sid uint64, uri string) (conn *WebDialerConn, raw io.ReadWriteCloser, err error) {
+func PipeWebDialerConn(channel Channel, sid uint64, uri string) (conn *WebDialerConn, raw io.ReadWriteCloser, err error) {
 	conn = &WebDialerConn{
-		SID: sid,
-		URI: uri,
+		Channel: channel,
+		SID:     sid,
+		URI:     uri,
 	}
 	conn.PipedConn, raw = CreatePipedConn()
 	return
@@ -146,12 +180,20 @@ func PipeWebDialerConn(sid uint64, uri string) (conn *WebDialerConn, raw io.Read
 
 //LocalAddr return self
 func (w *WebDialerConn) LocalAddr() net.Addr {
-	return NewWebDialerAddr(fmt.Sprintf("%v", w.SID), w.URI)
+	return NewWebDialerAddr("bs", "local")
 }
 
 //RemoteAddr return self
 func (w *WebDialerConn) RemoteAddr() net.Addr {
-	return NewWebDialerAddr(fmt.Sprintf("%v", w.SID), w.URI)
+	args := url.Values{}
+	if w.Channel != nil {
+		args.Set("channel_id", fmt.Sprintf("%d", w.Channel.ID()))
+	} else {
+		args.Set("channel_id", fmt.Sprintf("%d", 0))
+	}
+	args.Set("session_id", fmt.Sprintf("%d", w.SID))
+	args.Set("uri", w.URI)
+	return NewWebDialerAddr("bs", args.Encode())
 }
 
 //Network return WebDialerConn
@@ -229,20 +271,28 @@ func NewWebdavHandler(dirs xmap.M) (handler *WebdavHandler) {
 
 func (web *WebdavHandler) ServeHTTP(resp http.ResponseWriter, req *http.Request) {
 	DebugLog("WebdavHandler access %v from %v", req.URL.RequestURI(), req.RemoteAddr)
-	args, err := url.Parse(req.RemoteAddr)
+	remoteArgs, err := url.ParseQuery(req.RemoteAddr)
 	if err != nil {
 		WarnLog("WebdavHandler parset remote address %v fail with %v", req.RemoteAddr, err)
 		resp.WriteHeader(404)
 		fmt.Fprintf(resp, "%v", err)
 		return
 	}
-	dir := args.Query().Get("dir")
-	if len(dir) < 1 {
-		dir = req.URL.Query().Get("dir")
+	dir := req.URL.Query().Get("dir")
+	if uriStr := remoteArgs.Get("uri"); len(uriStr) > 0 {
+		uri, err := url.Parse(uriStr)
+		if err != nil {
+			WarnLog("WebdavHandler parset uri %v fail with %v", uri, err)
+			resp.WriteHeader(404)
+			fmt.Fprintf(resp, "%v", err)
+			return
+		}
+		dir = uri.Query().Get("dir")
 	}
 	if len(dir) < 1 {
 		err = fmt.Errorf("the dir argument is required")
 		WarnLog("WebdavHandler parset remote address %v fail with %v", req.RemoteAddr, err)
+		resp.WriteHeader(http.StatusBadRequest)
 		fmt.Fprintf(resp, "%v", err)
 		return
 	}

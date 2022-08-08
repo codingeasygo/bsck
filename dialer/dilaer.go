@@ -53,6 +53,17 @@ func (c *CopyPipable) String() string {
 	return fmt.Sprintf("%v", c.ReadWriteCloser)
 }
 
+type Channel interface {
+	//the connection id
+	ID() uint64
+	//the channel name
+	Name() string
+	//the channel index.
+	Index() int
+	//conn context getter
+	Context() xmap.M
+}
+
 // Dialer is the interface that wraps the dialer
 type Dialer interface {
 	Name() string
@@ -65,7 +76,7 @@ type Dialer interface {
 	//match uri
 	Matched(uri string) bool
 	//dial raw connection
-	Dial(sid uint64, uri string, raw io.ReadWriteCloser) (r Conn, err error)
+	Dial(channel Channel, sid uint64, uri string, raw io.ReadWriteCloser) (r Conn, err error)
 }
 
 //Pool is the set of Dialer
@@ -139,11 +150,11 @@ func (p *Pool) Bootstrap(options xmap.M) error {
 }
 
 //Dial the uri by dialer poo
-func (p *Pool) Dial(sid uint64, uri string, pipe io.ReadWriteCloser) (r Conn, err error) {
+func (p *Pool) Dial(channel Channel, sid uint64, uri string, pipe io.ReadWriteCloser) (r Conn, err error) {
 	DebugLog("Pool(%v) try dial to %v", p.Name, uri)
 	for _, dialer := range p.Dialers {
 		if dialer.Matched(uri) {
-			r, err = dialer.Dial(sid, uri, pipe)
+			r, err = dialer.Dial(channel, sid, uri, pipe)
 			return
 		}
 	}

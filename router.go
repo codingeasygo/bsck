@@ -392,7 +392,7 @@ func (t TableRouter) String() string {
 //Handler is the interface that wraps the handler of Router.
 type Handler interface {
 	//dial raw connection
-	DialRaw(sid uint64, uri string) (raw Conn, err error)
+	DialRaw(channel Conn, sid uint64, uri string) (raw Conn, err error)
 	//on connection dial uri
 	OnConnDialURI(channel Conn, conn string, parts []string) (err error)
 	//on connection login
@@ -730,7 +730,7 @@ func (r *Router) procLogin(conn Conn, buf []byte) (err error) {
 
 func (r *Router) procRawDial(channel Conn, sid uint64, conn, uri string) (err error) {
 	dstSid := atomic.AddUint64(&r.connectSequence, 1)
-	raw, rawError := r.Handler.DialRaw(dstSid, uri)
+	raw, rawError := r.Handler.DialRaw(channel, dstSid, uri)
 	if rawError != nil {
 		DebugLog("Router(%v) dial(%v) to %v fail on channel(%v) by %v", r.Name, sid, conn, channel, rawError)
 		message := []byte(fmt.Sprintf("dial to uri(%v) fail with %v", uri, rawError))
@@ -922,7 +922,7 @@ func (r *Router) DialConn(uri string, raw io.ReadWriteCloser) (sid uint64, conn 
 	if len(parts) < 2 {
 		DebugLog("Router(%v) start raw dial to %v", r.Name, uri)
 		sid = r.UniqueSid()
-		conn, err = r.Handler.DialRaw(sid, uri)
+		conn, err = r.Handler.DialRaw(nil, sid, uri)
 		if err != nil {
 			if waiter, ok := raw.(ReadyWaiter); ok {
 				waiter.Ready(err, nil)

@@ -49,17 +49,17 @@ import (
 // }
 
 //DialRawF is a function type to dial raw connection.
-type DialRawF func(sid uint64, uri string) (raw Conn, err error)
+type DialRawF func(channel Conn, sid uint64, uri string) (raw Conn, err error)
 
 //DialRaw will dial raw connection
-func (d DialRawF) DialRaw(sid uint64, uri string) (raw Conn, err error) {
-	raw, err = d(sid, uri)
+func (d DialRawF) DialRaw(channel Conn, sid uint64, uri string) (raw Conn, err error) {
+	raw, err = d(channel, sid, uri)
 	return
 }
 
 //RawDialer is dialer to dial raw by uri
 type RawDialer interface {
-	DialRaw(sid uint64, uri string) (raw Conn, err error)
+	DialRaw(channel Conn, sid uint64, uri string) (raw Conn, err error)
 }
 
 //NormalAcessHandler is normal access handler for proxy handler
@@ -83,12 +83,12 @@ func NewNormalAcessHandler(name string, dialer RawDialer) (handler *NormalAcessH
 }
 
 //DialRaw is proxy handler to dial remove
-func (n *NormalAcessHandler) DialRaw(sid uint64, uri string) (raw Conn, err error) {
+func (n *NormalAcessHandler) DialRaw(channel Conn, sid uint64, uri string) (raw Conn, err error) {
 	if n.Dialer == nil {
 		err = fmt.Errorf("not supported")
 		return
 	}
-	raw, err = n.Dialer.DialRaw(sid, uri)
+	raw, err = n.Dialer.DialRaw(channel, sid, uri)
 	return
 }
 
@@ -195,7 +195,7 @@ func NewNoneHandler() (handler *NoneHandler) {
 }
 
 //DialRaw will dial raw connection by uri
-func (n *NoneHandler) DialRaw(sid uint64, uri string) (raw Conn, err error) {
+func (n *NoneHandler) DialRaw(channel Conn, sid uint64, uri string) (raw Conn, err error) {
 	err = fmt.Errorf("not supported")
 	return
 }
@@ -225,7 +225,7 @@ func (n *NoneHandler) OnConnJoin(channel *Channel, option, result xmap.M) (err e
 //ProxyHandler is proxy handler
 type ProxyHandler interface {
 	//DialRaw will dial raw connection by uri
-	DialRaw(sid uint64, uri string) (raw Conn, err error)
+	DialRaw(channel Conn, sid uint64, uri string) (raw Conn, err error)
 	//OnConnLogin is event on connection login
 	OnConnLogin(channel Conn, args string) (name string, index int, result xmap.M, err error)
 	//OnConnDialURI is event on connection dial to remote
@@ -442,12 +442,12 @@ func (p *Proxy) runReconnect(args xmap.M) {
 }
 
 //DialRaw will dial raw connection
-func (p *Proxy) DialRaw(sid uint64, uri string) (raw Conn, err error) {
+func (p *Proxy) DialRaw(channel Conn, sid uint64, uri string) (raw Conn, err error) {
 	if p.Handler == nil {
 		err = fmt.Errorf("not supported")
 		return
 	}
-	raw, err = p.Handler.DialRaw(sid, uri)
+	raw, err = p.Handler.DialRaw(channel, sid, uri)
 	return
 }
 

@@ -29,14 +29,14 @@ func TestSocksProxy(t *testing.T) {
 		t.Error("error")
 		return
 	}
-	raw, err := dailer.Dial(100, remote, nil)
+	raw, err := dailer.Dial(nil, 100, remote, nil)
 	if err != nil {
 		t.Error(err)
 		return
 	}
 	raw.Close()
 	cona, conb := CreatePipedConn()
-	_, err = dailer.Dial(100, remote, conb)
+	_, err = dailer.Dial(nil, 100, remote, conb)
 	if err != nil {
 		t.Error(err)
 		return
@@ -48,17 +48,17 @@ func TestSocksProxy(t *testing.T) {
 	dailer.Options()
 	//
 	//test error
-	_, err = dailer.Dial(10, "%AX", nil)
+	_, err = dailer.Dial(nil, 10, "%AX", nil)
 	if err == nil {
 		t.Error(err)
 		return
 	}
-	_, err = dailer.Dial(10, "tcp://abc", nil)
+	_, err = dailer.Dial(nil, 10, "tcp://abc", nil)
 	if err == nil {
 		t.Error(err)
 		return
 	}
-	_, err = dailer.Dial(10, "tcp://abc:abc", nil)
+	_, err = dailer.Dial(nil, 10, "tcp://abc:abc", nil)
 	if err == nil {
 		t.Error(err)
 		return
@@ -81,7 +81,7 @@ func TestSocksProxy(t *testing.T) {
 		t.Error(err)
 		return
 	}
-	_, err = dailer2.Dial(10, "tcp://127.0.0.1:100", nil)
+	_, err = dailer2.Dial(nil, 10, "tcp://127.0.0.1:100", nil)
 	if err == nil {
 		t.Error(err)
 		return
@@ -124,37 +124,37 @@ func TestSocksProxy(t *testing.T) {
 		}
 	}()
 	mode = 0
-	_, err = dailer2.Dial(10, "tcp://127.0.0.1:100", nil)
+	_, err = dailer2.Dial(nil, 10, "tcp://127.0.0.1:100", nil)
 	if err == nil {
 		t.Error(err)
 		return
 	}
 	mode = 1
-	_, err = dailer2.Dial(10, "tcp://127.0.0.1:100", nil)
+	_, err = dailer2.Dial(nil, 10, "tcp://127.0.0.1:100", nil)
 	if err == nil {
 		t.Error(err)
 		return
 	}
 	mode = 2
-	_, err = dailer2.Dial(10, "tcp://127.0.0.1:100", nil)
+	_, err = dailer2.Dial(nil, 10, "tcp://127.0.0.1:100", nil)
 	if err == nil {
 		t.Error(err)
 		return
 	}
 	mode = 3
-	_, err = dailer2.Dial(10, "tcp://127.0.0.1:100", nil)
+	_, err = dailer2.Dial(nil, 10, "tcp://127.0.0.1:100", nil)
 	if err == nil {
 		t.Error(err)
 		return
 	}
 	mode = 4
-	_, err = dailer2.Dial(10, "tcp://127.0.0.1:100", nil)
+	_, err = dailer2.Dial(nil, 10, "tcp://127.0.0.1:100", nil)
 	if err == nil {
 		t.Error(err)
 		return
 	}
 	mode = 5
-	_, err = dailer2.Dial(10, "tcp://127.0.0.1:100", nil)
+	_, err = dailer2.Dial(nil, 10, "tcp://127.0.0.1:100", nil)
 	if err == nil {
 		t.Error(err)
 		return
@@ -163,7 +163,7 @@ func TestSocksProxy(t *testing.T) {
 	//test pool error
 	dailer2 = NewSocksProxyDialer()
 	dailer2.Pooler = ErroPool("")
-	_, err = dailer2.Dial(10, "tcp://127.0.0.1:100", nil)
+	_, err = dailer2.Dial(nil, 10, "tcp://127.0.0.1:100", nil)
 	if err == nil {
 		t.Error(err)
 		return

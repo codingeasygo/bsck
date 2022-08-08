@@ -191,7 +191,7 @@ func (b *BalancedDialer) Matched(uri string) bool {
 	return b.matcher.MatchString(uri)
 }
 
-func (b *BalancedDialer) Dial(sid uint64, uri string, pipe io.ReadWriteCloser) (r Conn, err error) {
+func (b *BalancedDialer) Dial(channel Channel, sid uint64, uri string, pipe io.ReadWriteCloser) (r Conn, err error) {
 	for _, f := range b.Filters {
 		if f.Matcher.MatchString(uri) {
 			if f.Access < 1 {
@@ -288,7 +288,7 @@ func (b *BalancedDialer) Dial(sid uint64, uri string, pipe io.ReadWriteCloser) (
 			used[1]++
 			hostUsed[1]++
 			b.dialersLock <- 1
-			r, err = dialer.Dial(sid, uri, pipe)
+			r, err = dialer.Dial(channel, sid, uri, pipe)
 			<-b.dialersLock
 			if err == nil {
 				used[2] = 0

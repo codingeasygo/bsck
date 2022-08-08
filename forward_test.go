@@ -51,7 +51,7 @@ func TestForward(t *testing.T) {
 			err = fmt.Errorf("test error")
 		} else {
 			sid = atomic.AddUint64(&sidSequence, 1)
-			_, err = dialerPool.Dial(sid, uri, raw)
+			_, err = dialerPool.Dial(nil, sid, uri, raw)
 		}
 		fmt.Println("dial to ", uri, err)
 		return

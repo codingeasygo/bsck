@@ -138,7 +138,7 @@ func TestService(t *testing.T) {
 			"id":      "testing",
 			"address": "localhost:10322",
 		})
-		_, err = dialer.Dial(1000, "echo", echob)
+		_, err = dialer.Dial(nil, 1000, "echo", echob)
 		if err != nil {
 			t.Error(err)
 			return
@@ -479,7 +479,7 @@ func (t *TestReverseDialer) Matched(uri string) bool {
 }
 
 //dial raw connection
-func (t *TestReverseDialer) Dial(sid uint64, uri string, raw io.ReadWriteCloser) (conn dialer.Conn, err error) {
+func (t *TestReverseDialer) Dial(channel dialer.Channel, sid uint64, uri string, raw io.ReadWriteCloser) (conn dialer.Conn, err error) {
 	targetURL, err := url.Parse(uri)
 	if err != nil {
 		return
