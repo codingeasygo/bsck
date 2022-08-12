@@ -163,6 +163,7 @@ type Service struct {
 	Client     *xhttp.Client
 	Webs       map[string]http.Handler
 	BufferSize int
+	OnReady    func()
 	configLock sync.RWMutex
 	configLast int64
 	alias      map[string]string
@@ -558,9 +559,6 @@ func (s *Service) Start() (err error) {
 		}
 		InfoLog("Server(%v) node listen on %v success", s.Name, s.Config.Listen)
 	}
-	if len(s.Config.Channels) > 0 {
-		go s.Node.LoginChannel(true, s.Config.Channels...)
-	}
 	for loc, uri := range s.Config.Forwards {
 		err = s.AddForward(loc, uri)
 		if err != nil {
@@ -603,6 +601,12 @@ func (s *Service) Start() (err error) {
 		go func() {
 			server.Serve(s.Web)
 		}()
+	}
+	if s.OnReady != nil {
+		s.OnReady()
+	}
+	if len(s.Config.Channels) > 0 {
+		go s.Node.LoginChannel(true, s.Config.Channels...)
 	}
 	return
 }
