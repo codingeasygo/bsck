@@ -370,6 +370,37 @@ func (c *Console) parseProxyURI(uri, target string) (string, error) {
 	return targetURI, nil
 }
 
+func (c *Console) StartForward(loc string, uri string) (listener net.Listener, err error) {
+	listener, err = net.Listen("tcp", loc)
+	if err != nil {
+		return
+	}
+	c.locker.Lock()
+	c.running[fmt.Sprintf("%p", listener)] = listener
+	c.locker.Unlock()
+	InfoLog("Console start forward %v to %v", loc, uri)
+	go func() {
+		defer func() {
+			c.locker.Lock()
+			delete(c.running, fmt.Sprintf("%p", listener))
+			c.locker.Unlock()
+		}()
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				break
+			}
+			_, err = c.dialAll(uri, conn)
+			if err == nil {
+				InfoLog("Console start transfer %v to %v", conn.RemoteAddr(), uri)
+			} else {
+				WarnLog("Console transfer %v to %v fail with %v", loc, uri, err)
+			}
+		}
+	}()
+	return
+}
+
 //StartProxy will start proxy local to uri
 func (c *Console) StartProxy(loc, uri string) (server *proxy.Server, listener net.Listener, err error) {
 	server = proxy.NewServer(xio.PiperDialerF(func(target string, bufferSize int) (raw xio.Piper, err error) {

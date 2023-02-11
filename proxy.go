@@ -503,6 +503,7 @@ func (p *Proxy) LoginChannel(reconnect bool, channels ...xmap.M) (err error) {
 		if err == nil {
 			continue
 		}
+		WarnLog("Proxy(%v) login to %v fail with %v", p.Name, channel.StrDef("", "remote"), err)
 		if reconnect {
 			go p.runReconnect(channel)
 		} else {
@@ -517,7 +518,7 @@ func (p *Proxy) Login(option xmap.M) (channel *Channel, result xmap.M, err error
 	var index int
 	var local, remote, tlsCert, tlsKey string
 	err = option.ValidFormat(`
-		index,R|I,R:-1;
+		index,O|I,R:-1;
 		local,O|S,L:0;
 		remote,R|S,L:0;
 		tls_cert,O|S,L:0;

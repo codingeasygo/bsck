@@ -134,6 +134,12 @@ func runall(osArgs ...string) {
 		if err != nil {
 			exit(1)
 		}
+		fmt.Printf("link bs-conn success\n")
+		err = mklink(filepath.Join(filedir, "bs-forward"), filename)
+		if err != nil {
+			exit(1)
+		}
+		fmt.Printf("link bs-forward success\n")
 		err = mklink(filepath.Join(filedir, "bs-proxy"), filename)
 		if err != nil {
 			exit(1)
@@ -142,6 +148,7 @@ func runall(osArgs ...string) {
 		if err != nil {
 			exit(1)
 		}
+		fmt.Printf("link bs-proxychains success\n")
 		err = mklink(filepath.Join(filedir, "bs-ping"), filename)
 		if err != nil {
 			exit(1)
@@ -181,6 +188,7 @@ func runall(osArgs ...string) {
 		filename, _ := filepath.Abs(osArgs[0])
 		filedir, _ := filepath.Split(filename)
 		removeFile(filepath.Join(filedir, "bs-conn"))
+		removeFile(filepath.Join(filedir, "bs-forward"))
 		removeFile(filepath.Join(filedir, "bs-proxy"))
 		removeFile(filepath.Join(filedir, "bs-proxychains"))
 		removeFile(filepath.Join(filedir, "bs-ping"))
@@ -266,6 +274,27 @@ func runall(osArgs ...string) {
 		}))
 		if err != nil {
 			exit(1)
+		}
+		<-sig
+		console.Close()
+	case "forward":
+		if len(args) < 2 {
+			fmt.Fprintf(stderr, "local/uri is not setting\n")
+			usage()
+			exit(1)
+			return
+		}
+		proxy.SetLogLevel(40)
+		bsck.SetLogLevel(40)
+		n := len(args) / 2
+		for i := 0; i < n; i++ {
+			locAddr := args[2*i]
+			fullURI := args[2*i+1]
+			_, err = console.StartForward(locAddr, fullURI)
+			if err != nil {
+				fmt.Printf("start forward fail with %v\n", err)
+				exit(1)
+			}
 		}
 		<-sig
 		console.Close()
