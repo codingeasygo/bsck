@@ -16,7 +16,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/codingeasygo/bsck"
+	"github.com/codingeasygo/bsck/router"
 	"github.com/codingeasygo/util/proxy"
 	"github.com/codingeasygo/util/xhash"
 	"github.com/codingeasygo/util/xio"
@@ -213,7 +213,7 @@ func runall(osArgs ...string) {
 	if len(slaverURI) < 1 {
 		slaverURI = os.Getenv("BS_CONSOLE_URI")
 	}
-	var console *bsck.Console
+	var console *router.Console
 	if len(slaverURI) < 1 {
 		var err error
 		var data []byte
@@ -230,13 +230,13 @@ func runall(osArgs ...string) {
 			fmt.Fprintf(stderr, "read config from .bsrouter.json or ~/.bsrouter/bsrouter.json  or ~/.bsrouter.json or /etc/bsrouter/bsrouter.json or /etc/bsrouter.json fail with %v\n", err)
 			exit(1)
 		}
-		var config bsck.Config
+		var config router.Config
 		err = json.Unmarshal(data, &config)
 		if err != nil {
 			fmt.Fprintf(stderr, "parse config fail with %v\n", err)
 			exit(1)
 		}
-		console, err = bsck.NewConsoleByConfig(&config)
+		console, err = router.NewConsoleByConfig(&config)
 		if err != nil {
 			fmt.Fprintf(stderr, "new console from config %v fail with %v\n", path, err)
 			exit(1)
@@ -245,7 +245,7 @@ func runall(osArgs ...string) {
 		if !strings.Contains(slaverURI, "://") {
 			slaverURI = "socks5://" + slaverURI
 		}
-		console = bsck.NewConsole(slaverURI)
+		console = router.NewConsole(slaverURI)
 	}
 	signal.Notify(sig, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
 	console.Env = env
@@ -285,7 +285,7 @@ func runall(osArgs ...string) {
 			return
 		}
 		proxy.SetLogLevel(40)
-		bsck.SetLogLevel(40)
+		router.SetLogLevel(40)
 		n := len(args) / 2
 		for i := 0; i < n; i++ {
 			locAddr := args[2*i]
@@ -306,7 +306,7 @@ func runall(osArgs ...string) {
 			return
 		}
 		proxy.SetLogLevel(40)
-		bsck.SetLogLevel(40)
+		router.SetLogLevel(40)
 		fullURI := args[0]
 		fullURI = strings.Trim(fullURI, "'\"")
 		if !strings.HasSuffix(fullURI, "tcp://${HOST}") && !strings.HasSuffix(fullURI, "${URI}") {
@@ -449,7 +449,7 @@ func runall(osArgs ...string) {
 			return
 		}
 		proxy.SetLogLevel(40)
-		bsck.SetLogLevel(40)
+		router.SetLogLevel(40)
 		fullURI := args[0]
 		fullSHA := xhash.SHA1([]byte(os.Getenv("BS_REWRITE_HOSTS") + "-" + fullURI))
 		fullURI = strings.Trim(fullURI, "'\"")

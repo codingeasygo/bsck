@@ -14,7 +14,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/codingeasygo/bsck"
+	"github.com/codingeasygo/bsck/router"
 	"github.com/codingeasygo/util/xio"
 	"github.com/codingeasygo/util/xmap"
 )
@@ -38,7 +38,7 @@ func main() {
 	var total, concurrent int64
 	flag.StringVar(&debug, "debug", "", "debug listen address")
 	flag.IntVar(&bufferSize, "bs", 64, "the buffer size by KB")
-	flag.IntVar(&log, "log", bsck.LogLevelError, "the log level")
+	flag.IntVar(&log, "log", router.LogLevelError, "the log level")
 	switch os.Args[1] {
 	case "node":
 		flag.StringVar(&listen, "listen", "", "listen address")
@@ -71,7 +71,7 @@ func main() {
 		os.Exit(1)
 		return
 	}
-	config := &bsck.Config{
+	config := &router.Config{
 		Name:   args[0],
 		Listen: listen,
 		ACL:    map[string]string{".*": ".*"},
@@ -87,7 +87,7 @@ func main() {
 			"token":  config.Name,
 		})
 	}
-	service := bsck.NewService()
+	service := router.NewService()
 	service.BufferSize = bufferSize * 1024
 	service.Config = config
 	err := service.Start()
@@ -169,7 +169,7 @@ func bandwithInfo(speed int64) string {
 }
 
 // Bandwidth will test bandwidth
-func Bandwidth(service *bsck.Service, uri string) (err error) {
+func Bandwidth(service *router.Service, uri string) (err error) {
 	uri = uri + "->tcp://echo"
 	conn := NewBandwidthConn(service.BufferSize)
 	conn.Waiter.Add(1)
@@ -243,7 +243,7 @@ func (b *BenchmarkConn) String() string {
 }
 
 // Benchmark will do benchmark test to uri
-func Benchmark(service *bsck.Service, uri string, concurrent, total int64) (err error) {
+func Benchmark(service *router.Service, uri string, concurrent, total int64) (err error) {
 	uri = uri + "->tcp://echo"
 	waitConn0, waitConn1, _ := xio.Pipe()
 	for {

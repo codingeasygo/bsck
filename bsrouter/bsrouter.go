@@ -7,7 +7,7 @@ import (
 	"os/user"
 	"syscall"
 
-	"github.com/codingeasygo/bsck"
+	"github.com/codingeasygo/bsck/router"
 )
 
 // Version is bsrouter version
@@ -57,11 +57,11 @@ func main() {
 			}
 		}
 		if err != nil {
-			bsck.ErrorLog("bsrouter read config from .bsrouter.json or ~/.bsrouter.json or /etc/bsrouter/bsrouter.json or /etc/bsrouter.json fail with %v\n", err)
+			router.ErrorLog("bsrouter read config from .bsrouter.json or ~/.bsrouter.json or /etc/bsrouter/bsrouter.json or /etc/bsrouter.json fail with %v\n", err)
 			exitf(1)
 		}
 	}
-	service := bsck.NewService()
+	service := router.NewService()
 	service.ConfigPath = configPath
 	err = service.Start()
 	if err != nil {

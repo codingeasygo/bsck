@@ -18,7 +18,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/codingeasygo/bsck"
+	"github.com/codingeasygo/bsck/router"
 	"github.com/codingeasygo/util/proxy/socks"
 	"github.com/codingeasygo/util/xio"
 )
@@ -105,21 +105,21 @@ func TestConsole(t *testing.T) {
 	socks.SetLogLevel(socks.LogLevelDebug)
 	var err error
 
-	master := bsck.NewService()
+	master := router.NewService()
 	json.Unmarshal([]byte(configTestMaster), &master.Config)
 	err = master.Start()
 	if err != nil {
 		t.Error(err)
 		return
 	}
-	slaver := bsck.NewService()
+	slaver := router.NewService()
 	json.Unmarshal([]byte(configTestSlaver), &slaver.Config)
 	err = slaver.Start()
 	if err != nil {
 		t.Error(err)
 		return
 	}
-	caller := bsck.NewService()
+	caller := router.NewService()
 	json.Unmarshal([]byte(configTestCaller), &caller.Config)
 	err = caller.Start()
 	if err != nil {

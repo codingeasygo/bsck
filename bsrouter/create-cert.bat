@@ -1,1 +1,1 @@
-openssl req -new -nodes -x509 -out bsrouter.pem -keyout bsrouter.key -days 3650 -subj "/C=CN/ST=NRW/L=Earth/O=Random Company/OU=IT/CN=bsck.snows.io/emailAddress=bsck@snows.io"
+openssl req -new -nodes -x509 -out bsrouter.pem -keyout bsrouter.key -days 3650 -subj "/C=CN/ST=NRW/L=Earth/O=Random Company/OU=IT/CN=router.snows.io/emailAddress=bsck@snows.io"

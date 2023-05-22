@@ -3,7 +3,7 @@
 // the supported router is client->(slaver->master->slaver)*-server,
 //
 // the channel of slaver to master can be multi physical tcp connect by different router
-package bsck
+package router
 
 import (
 	"encoding/base64"
