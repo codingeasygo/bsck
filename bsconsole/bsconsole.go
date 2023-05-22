@@ -22,7 +22,7 @@ import (
 	"github.com/codingeasygo/util/xio"
 )
 
-//Version is bsrouter version
+// Version is bsrouter version
 const Version = "2.0.0"
 
 var stdin = os.Stdin

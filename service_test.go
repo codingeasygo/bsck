@@ -458,27 +458,26 @@ func (t *TestReverseDialer) Name() string {
 	return "TestReverseDialer"
 }
 
-//initial dialer
+// initial dialer
 func (t *TestReverseDialer) Bootstrap(options xmap.M) error {
 	return nil
 }
 
-//shutdown
+// shutdown
 func (t *TestReverseDialer) Shutdown() error {
 	return nil
 }
 
-//
 func (t *TestReverseDialer) Options() xmap.M {
 	return xmap.M{}
 }
 
-//match uri
+// match uri
 func (t *TestReverseDialer) Matched(uri string) bool {
 	return strings.HasPrefix(uri, "xx://")
 }
 
-//dial raw connection
+// dial raw connection
 func (t *TestReverseDialer) Dial(channel dialer.Channel, sid uint64, uri string, raw io.ReadWriteCloser) (conn dialer.Conn, err error) {
 	targetURL, err := url.Parse(uri)
 	if err != nil {

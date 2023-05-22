@@ -199,7 +199,7 @@ func (f *Forward) procDialTLS(network, addr string, router string) (raw net.Conn
 	return
 }
 
-//AddForward by local uri and remote uri
+// AddForward by local uri and remote uri
 func (f *Forward) AddForward(loc, uri string) (err error) {
 	f.lck.Lock()
 	defer f.lck.Unlock()
@@ -227,7 +227,7 @@ func (f *Forward) AddForward(loc, uri string) (err error) {
 	return
 }
 
-//RemoveForward by alias name
+// RemoveForward by alias name
 func (f *Forward) RemoveForward(name string) (err error) {
 	f.lck.Lock()
 	defer f.lck.Unlock()
@@ -236,7 +236,7 @@ func (f *Forward) RemoveForward(name string) (err error) {
 	return
 }
 
-//FindForward will return the forward
+// FindForward will return the forward
 func (f *Forward) FindForward(name string) (uri ForwardUri) {
 	f.lck.Lock()
 	defer f.lck.Unlock()

@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/codingeasygo/util/proxy"
 	"github.com/codingeasygo/util/proxy/socks"
 	"github.com/codingeasygo/util/xio"
 	"github.com/codingeasygo/util/xio/frame"
@@ -48,21 +49,21 @@ import (
 // 	Index int `json:"index"`
 // }
 
-//DialRawF is a function type to dial raw connection.
+// DialRawF is a function type to dial raw connection.
 type DialRawF func(channel Conn, sid uint64, uri string) (raw Conn, err error)
 
-//DialRaw will dial raw connection
+// DialRaw will dial raw connection
 func (d DialRawF) DialRaw(channel Conn, sid uint64, uri string) (raw Conn, err error) {
 	raw, err = d(channel, sid, uri)
 	return
 }
 
-//RawDialer is dialer to dial raw by uri
+// RawDialer is dialer to dial raw by uri
 type RawDialer interface {
 	DialRaw(channel Conn, sid uint64, uri string) (raw Conn, err error)
 }
 
-//NormalAcessHandler is normal access handler for proxy handler
+// NormalAcessHandler is normal access handler for proxy handler
 type NormalAcessHandler struct {
 	Name        string            //the access name
 	LoginAccess map[string]string //the access control
@@ -71,7 +72,7 @@ type NormalAcessHandler struct {
 	Dialer      RawDialer
 }
 
-//NewNormalAcessHandler will return new handler
+// NewNormalAcessHandler will return new handler
 func NewNormalAcessHandler(name string, dialer RawDialer) (handler *NormalAcessHandler) {
 	handler = &NormalAcessHandler{
 		Name:        name,
@@ -82,7 +83,7 @@ func NewNormalAcessHandler(name string, dialer RawDialer) (handler *NormalAcessH
 	return
 }
 
-//DialRaw is proxy handler to dial remove
+// DialRaw is proxy handler to dial remove
 func (n *NormalAcessHandler) DialRaw(channel Conn, sid uint64, uri string) (raw Conn, err error) {
 	if n.Dialer == nil {
 		err = fmt.Errorf("not supported")
@@ -92,7 +93,7 @@ func (n *NormalAcessHandler) DialRaw(channel Conn, sid uint64, uri string) (raw 
 	return
 }
 
-//OnConnLogin is proxy handler to handle login
+// OnConnLogin is proxy handler to handle login
 func (n *NormalAcessHandler) OnConnLogin(channel Conn, args string) (name string, index int, result xmap.M, err error) {
 	var option = xmap.M{}
 	err = json.Unmarshal([]byte(args), &option)
@@ -140,7 +141,7 @@ func (n *NormalAcessHandler) OnConnLogin(channel Conn, args string) (name string
 	return
 }
 
-//OnConnDialURI is proxy handler to handle dial uri
+// OnConnDialURI is proxy handler to handle dial uri
 func (n *NormalAcessHandler) OnConnDialURI(channel Conn, conn string, parts []string) (err error) {
 	_, isLogin := channel.Context()["option"]
 	if !isLogin {
@@ -174,55 +175,55 @@ func (n *NormalAcessHandler) OnConnDialURI(channel Conn, conn string, parts []st
 	return
 }
 
-//OnConnClose is proxy handler when connection is closed
+// OnConnClose is proxy handler when connection is closed
 func (n *NormalAcessHandler) OnConnClose(conn Conn) (err error) {
 	return nil
 }
 
-//OnConnJoin is proxy handler when channel join
+// OnConnJoin is proxy handler when channel join
 func (n *NormalAcessHandler) OnConnJoin(channel *Channel, option, result xmap.M) (err error) {
 	return
 }
 
-//NoneHandler is proxy handler
+// NoneHandler is proxy handler
 type NoneHandler struct {
 }
 
-//NewNoneHandler will return new NoneHandler
+// NewNoneHandler will return new NoneHandler
 func NewNoneHandler() (handler *NoneHandler) {
 	handler = &NoneHandler{}
 	return
 }
 
-//DialRaw will dial raw connection by uri
+// DialRaw will dial raw connection by uri
 func (n *NoneHandler) DialRaw(channel Conn, sid uint64, uri string) (raw Conn, err error) {
 	err = fmt.Errorf("not supported")
 	return
 }
 
-//OnConnLogin is event on connection login
+// OnConnLogin is event on connection login
 func (n *NoneHandler) OnConnLogin(channel Conn, args string) (name string, index int, result xmap.M, err error) {
 	err = fmt.Errorf("not supported")
 	return
 }
 
-//OnConnDialURI is event on connection dial to remote
+// OnConnDialURI is event on connection dial to remote
 func (n *NoneHandler) OnConnDialURI(channel Conn, conn string, parts []string) (err error) {
 	err = fmt.Errorf("not supported")
 	return
 }
 
-//OnConnClose is event on connection close
+// OnConnClose is event on connection close
 func (n *NoneHandler) OnConnClose(conn Conn) (err error) {
 	return
 }
 
-//OnConnJoin is event on channel join
+// OnConnJoin is event on channel join
 func (n *NoneHandler) OnConnJoin(channel *Channel, option, result xmap.M) (err error) {
 	return
 }
 
-//ProxyHandler is proxy handler
+// ProxyHandler is proxy handler
 type ProxyHandler interface {
 	//DialRaw will dial raw connection by uri
 	DialRaw(channel Conn, sid uint64, uri string) (raw Conn, err error)
@@ -236,10 +237,10 @@ type ProxyHandler interface {
 	OnConnJoin(channel *Channel, option, result xmap.M) (err error)
 }
 
-//ForwardEntry is the forward entry
+// ForwardEntry is the forward entry
 type ForwardEntry []interface{}
 
-//Proxy is an implementation of proxy router
+// Proxy is an implementation of proxy router
 type Proxy struct {
 	*Router                      //the router
 	Running        bool          //proxy is running.
@@ -253,7 +254,7 @@ type Proxy struct {
 	Handler        ProxyHandler
 }
 
-//NewProxy will return new Proxy by name
+// NewProxy will return new Proxy by name
 func NewProxy(name string, handler ProxyHandler) (proxy *Proxy) {
 	proxy = &Proxy{
 		Router:         NewRouter(name),
@@ -267,7 +268,7 @@ func NewProxy(name string, handler ProxyHandler) (proxy *Proxy) {
 	return
 }
 
-//ListenMaster will listen master router on address
+// ListenMaster will listen master router on address
 func (p *Proxy) ListenMaster(addr string) (err error) {
 	var tlsConfig *tls.Config
 	if len(p.Cert) > 0 {
@@ -317,7 +318,7 @@ func (p *Proxy) ListenMaster(addr string) (err error) {
 	return
 }
 
-//StartForward will forward address to uri
+// StartForward will forward address to uri
 func (p *Proxy) StartForward(name string, listen *url.URL, router string) (listener net.Listener, err error) {
 	// target, err := url.Parse(listen)
 	// if err != nil {
@@ -342,6 +343,17 @@ func (p *Proxy) StartForward(name string, listen *url.URL, router string) (liste
 			p.forwards[name] = []interface{}{listener, listen, router}
 			InfoLog("Proxy(%v) start socket forward on %v success by %v->%v", p.Name, listener.Addr(), listen, router)
 		}
+	case "proxy":
+		dialer := xio.PiperDialerF(func(uri string, bufferSize int) (raw xio.Piper, err error) {
+			raw, err = p.DialPiper(strings.Replace(router, "${HOST}", uri, -1), bufferSize)
+			return
+		})
+		sp := proxy.NewServer(dialer)
+		listener, err = sp.Start(listen.Host)
+		if err == nil {
+			p.forwards[name] = []interface{}{listener, listen, router}
+			InfoLog("Proxy(%v) start proxy forward on %v success by %v->%v", p.Name, listener.Addr(), listen, router)
+		}
 	default:
 		listener, err = net.Listen(listen.Scheme, listen.Host)
 		if err == nil {
@@ -353,7 +365,7 @@ func (p *Proxy) StartForward(name string, listen *url.URL, router string) (liste
 	return
 }
 
-//StopForward will forward address to uri
+// StopForward will forward address to uri
 func (p *Proxy) StopForward(name string) (err error) {
 	InfoLog("Proxy(%v) stop forward by name:%v", p.Name, name)
 	p.forwardsLck.Lock()
@@ -412,7 +424,7 @@ func (p *Proxy) loopForward(l net.Listener, name string, listen *url.URL, uri st
 	p.forwardsLck.Unlock()
 }
 
-//Close will close the tcp listen
+// Close will close the tcp listen
 func (p *Proxy) Close() (err error) {
 	InfoLog("Proxy(%v) is closing", p.Name)
 	p.Running = false
@@ -441,7 +453,7 @@ func (p *Proxy) runReconnect(args xmap.M) {
 	}
 }
 
-//DialRaw will dial raw connection
+// DialRaw will dial raw connection
 func (p *Proxy) DialRaw(channel Conn, sid uint64, uri string) (raw Conn, err error) {
 	if p.Handler == nil {
 		err = fmt.Errorf("not supported")
@@ -451,7 +463,7 @@ func (p *Proxy) DialRaw(channel Conn, sid uint64, uri string) (raw Conn, err err
 	return
 }
 
-//OnConnDialURI is on connection dial uri
+// OnConnDialURI is on connection dial uri
 func (p *Proxy) OnConnDialURI(channel Conn, conn string, parts []string) (err error) {
 	if p.Handler == nil {
 		err = fmt.Errorf("not supported")
@@ -461,7 +473,7 @@ func (p *Proxy) OnConnDialURI(channel Conn, conn string, parts []string) (err er
 	return
 }
 
-//OnConnLogin is on connection login
+// OnConnLogin is on connection login
 func (p *Proxy) OnConnLogin(channel Conn, args string) (name string, index int, result xmap.M, err error) {
 	if p.Handler == nil {
 		err = fmt.Errorf("not supported")
@@ -471,7 +483,7 @@ func (p *Proxy) OnConnLogin(channel Conn, args string) (name string, index int, 
 	return
 }
 
-//OnConnClose will be called when connection is closed
+// OnConnClose will be called when connection is closed
 func (p *Proxy) OnConnClose(conn Conn) (err error) {
 	if !p.Running {
 		return
@@ -493,7 +505,7 @@ func (p *Proxy) OnConnClose(conn Conn) (err error) {
 	return nil
 }
 
-//LoginChannel will login all channel by options.
+// LoginChannel will login all channel by options.
 func (p *Proxy) LoginChannel(reconnect bool, channels ...xmap.M) (err error) {
 	for _, channel := range channels {
 		if channel.Int("enable") < 1 {
@@ -513,7 +525,7 @@ func (p *Proxy) LoginChannel(reconnect bool, channels ...xmap.M) (err error) {
 	return
 }
 
-//Login will add channel by local address, master address, auth token, channel index.
+// Login will add channel by local address, master address, auth token, channel index.
 func (p *Proxy) Login(option xmap.M) (channel *Channel, result xmap.M, err error) {
 	var index int
 	var local, remote, tlsCert, tlsKey string
@@ -584,14 +596,14 @@ func (p *Proxy) Login(option xmap.M) (channel *Channel, result xmap.M, err error
 	return
 }
 
-//InfoRWC is external ReadWriteCloser to get info to String
+// InfoRWC is external ReadWriteCloser to get info to String
 type InfoRWC struct {
 	frame.ReadWriteCloser
 	Raw  interface{}
 	Info string
 }
 
-//NewInfoRWC will return new nfoRWC
+// NewInfoRWC will return new nfoRWC
 func NewInfoRWC(raw interface{}, rwc frame.ReadWriteCloser, info string) *InfoRWC {
 	return &InfoRWC{Raw: raw, ReadWriteCloser: rwc, Info: info}
 }
@@ -604,7 +616,7 @@ func (i *InfoRWC) String() string {
 	return i.Info
 }
 
-//EncodeWebURI will replace string in () as base64 encoding
+// EncodeWebURI will replace string in () as base64 encoding
 func EncodeWebURI(format string, args ...interface{}) string {
 	return regexp.MustCompile(`\([^\\)]*\)`).ReplaceAllStringFunc(fmt.Sprintf(format, args...), func(having string) string {
 		having = strings.Trim(having, "()")

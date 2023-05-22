@@ -11,14 +11,14 @@ import (
 	"github.com/codingeasygo/util/xmap"
 )
 
-//SchemaDialer is an implementation of the Dialer interface for dial tcp connections.
+// SchemaDialer is an implementation of the Dialer interface for dial tcp connections.
 type SchemaDialer struct {
 	portMatcher *regexp.Regexp
 	conf        xmap.M
 	supported   map[string]string
 }
 
-//NewSchemaDialer will return new SchemaDialer
+// NewSchemaDialer will return new SchemaDialer
 func NewSchemaDialer() *SchemaDialer {
 	return &SchemaDialer{
 		portMatcher: regexp.MustCompile("^.*:[0-9]+$"),
@@ -27,12 +27,12 @@ func NewSchemaDialer() *SchemaDialer {
 	}
 }
 
-//Name will return dialer name
+// Name will return dialer name
 func (t *SchemaDialer) Name() string {
 	return "schema"
 }
 
-//Bootstrap the dialer.
+// Bootstrap the dialer.
 func (t *SchemaDialer) Bootstrap(options xmap.M) error {
 	t.conf = options
 	for key, val := range options.MapDef(nil, "mapping") {
@@ -44,12 +44,12 @@ func (t *SchemaDialer) Bootstrap(options xmap.M) error {
 	return nil
 }
 
-//Options is options getter
+// Options is options getter
 func (t *SchemaDialer) Options() xmap.M {
 	return t.conf
 }
 
-//Matched will return whether the uri is invalid tcp uri.
+// Matched will return whether the uri is invalid tcp uri.
 func (t *SchemaDialer) Matched(uri string) bool {
 	checkURI, err := url.Parse(uri)
 	if err != nil {
@@ -62,7 +62,7 @@ func (t *SchemaDialer) Matched(uri string) bool {
 	return len(remoteAddr) > 0
 }
 
-//Dial one connection by uri
+// Dial one connection by uri
 func (t *SchemaDialer) Dial(channel Channel, sid uint64, uri string, pipe io.ReadWriteCloser) (raw Conn, err error) {
 	targetURI, err := url.Parse(uri)
 	if err != nil {
@@ -108,7 +108,7 @@ func (t *SchemaDialer) String() string {
 	return "SchemaDialer"
 }
 
-//Shutdown will shutdown dial
+// Shutdown will shutdown dial
 func (t *SchemaDialer) Shutdown() (err error) {
 	return
 }

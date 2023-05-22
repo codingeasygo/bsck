@@ -129,7 +129,7 @@ func (b *BalancedDialer) Name() string {
 	return b.ID
 }
 
-//initial dialer
+// initial dialer
 func (b *BalancedDialer) Bootstrap(options xmap.M) (err error) {
 	b.Conf = options
 	b.ID = options.Str("id")
@@ -181,12 +181,12 @@ func (b *BalancedDialer) Bootstrap(options xmap.M) (err error) {
 	return nil
 }
 
-//Options
+// Options
 func (b *BalancedDialer) Options() xmap.M {
 	return b.Conf
 }
 
-//Matched uri
+// Matched uri
 func (b *BalancedDialer) Matched(uri string) bool {
 	return b.matcher.MatchString(uri)
 }
@@ -320,7 +320,7 @@ func (b *BalancedDialer) Dial(channel Channel, sid uint64, uri string, pipe io.R
 	return
 }
 
-//Shutdown will shutdown dial
+// Shutdown will shutdown dial
 func (b *BalancedDialer) Shutdown() (err error) {
 	return
 }

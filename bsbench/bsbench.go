@@ -112,7 +112,7 @@ func main() {
 	service.Stop()
 }
 
-//BandwidthConn is io.ReadWriteCloser to test bandwidth
+// BandwidthConn is io.ReadWriteCloser to test bandwidth
 type BandwidthConn struct {
 	Error      error
 	Data       []byte
@@ -121,7 +121,7 @@ type BandwidthConn struct {
 	Waiter     sync.WaitGroup
 }
 
-//NewBandwidthConn will return new connection
+// NewBandwidthConn will return new connection
 func NewBandwidthConn(bufferSize int) (conn *BandwidthConn) {
 	conn = &BandwidthConn{
 		Waiter: sync.WaitGroup{},
@@ -147,7 +147,7 @@ func (b *BandwidthConn) Write(p []byte) (n int, err error) {
 	return
 }
 
-//Close will set closed error
+// Close will set closed error
 func (b *BandwidthConn) Close() (err error) {
 	b.Error = fmt.Errorf("closed")
 	b.Waiter.Done()
@@ -168,7 +168,7 @@ func bandwithInfo(speed int64) string {
 	}
 }
 
-//Bandwidth will test bandwidth
+// Bandwidth will test bandwidth
 func Bandwidth(service *bsck.Service, uri string) (err error) {
 	uri = uri + "->tcp://echo"
 	conn := NewBandwidthConn(service.BufferSize)
@@ -195,7 +195,7 @@ func Bandwidth(service *bsck.Service, uri string) (err error) {
 	return
 }
 
-//BenchmarkConn is connection to benchmark test
+// BenchmarkConn is connection to benchmark test
 type BenchmarkConn struct {
 	Waiter  sync.WaitGroup
 	Send    []byte
@@ -203,7 +203,7 @@ type BenchmarkConn struct {
 	sending []byte
 }
 
-//NewBenchmarkConn will return new BenchmarkConn
+// NewBenchmarkConn will return new BenchmarkConn
 func NewBenchmarkConn(data []byte) (conn *BenchmarkConn) {
 	conn = &BenchmarkConn{
 		Waiter:  sync.WaitGroup{},
@@ -233,7 +233,7 @@ func (b *BenchmarkConn) Write(p []byte) (n int, err error) {
 	return
 }
 
-//Close will set closed error
+// Close will set closed error
 func (b *BenchmarkConn) Close() (err error) {
 	return
 }
@@ -242,7 +242,7 @@ func (b *BenchmarkConn) String() string {
 	return "BandwidthConn"
 }
 
-//Benchmark will do benchmark test to uri
+// Benchmark will do benchmark test to uri
 func Benchmark(service *bsck.Service, uri string, concurrent, total int64) (err error) {
 	uri = uri + "->tcp://echo"
 	waitConn0, waitConn1, _ := xio.Pipe()

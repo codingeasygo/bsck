@@ -1,8 +1,8 @@
-//Package bsck provider tcp socket proxy router
+// Package bsck provider tcp socket proxy router
 //
-//the supported router is client->(slaver->master->slaver)*-server,
+// the supported router is client->(slaver->master->slaver)*-server,
 //
-//the channel of slaver to master can be multi physical tcp connect by different router
+// the channel of slaver to master can be multi physical tcp connect by different router
 package bsck
 
 import (
@@ -32,10 +32,10 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-//ShowLog will show more log.
+// ShowLog will show more log.
 var ShowLog = 0
 
-//RDPTemplate is the template string for rdp file
+// RDPTemplate is the template string for rdp file
 const RDPTemplate = `
 screen mode id:i:2
 use multimon:i:1
@@ -61,7 +61,7 @@ bookmarktype:i:3
 use redirection server name:i:0
 `
 
-//VNCTemplate is the template string for vnc file
+// VNCTemplate is the template string for vnc file
 const VNCTemplate = `
 FriendlyName=%v
 FullScreen=1
@@ -71,14 +71,14 @@ RelativePtr=0
 Scaling=100%%
 `
 
-//Web is struct for web configure
+// Web is struct for web configure
 type Web struct {
 	Suffix string `json:"suffix"`
 	Listen string `json:"listen"`
 	Auth   string `json:"auth"`
 }
 
-//Config is struct for all configure
+// Config is struct for all configure
 type Config struct {
 	Name    string            `json:"name"`
 	Dir     string            `json:"dir"`
@@ -101,7 +101,7 @@ type Config struct {
 	VNCDir    string            `json:"vnc_dir"`
 }
 
-//ReadConfig will read configure from file
+// ReadConfig will read configure from file
 func ReadConfig(filename string) (config *Config, last int64, err error) {
 	configData, err := ioutil.ReadFile(filename)
 	if err != nil {
@@ -128,24 +128,24 @@ func ReadConfig(filename string) (config *Config, last int64, err error) {
 	return
 }
 
-//ErrForwardNotExist is forward is not exist error
+// ErrForwardNotExist is forward is not exist error
 var ErrForwardNotExist = fmt.Errorf("%v", "forward not exist")
 
-//ForwardFinder is forward finder
+// ForwardFinder is forward finder
 type ForwardFinder interface {
 	FindForward(uri string) (target string, err error)
 }
 
-//ForwardFinderF is func implement ForwardFinder
+// ForwardFinderF is func implement ForwardFinder
 type ForwardFinderF func(uri string) (target string, err error)
 
-//FindForward is implement ForwardFinder
+// FindForward is implement ForwardFinder
 func (f ForwardFinderF) FindForward(uri string) (target string, err error) {
 	target, err = f(uri)
 	return
 }
 
-//Service is bound socket service
+// Service is bound socket service
 type Service struct {
 	Name    string
 	Node    *Proxy
@@ -170,7 +170,7 @@ type Service struct {
 	aliasLock  sync.RWMutex
 }
 
-//NewService will return new Service
+// NewService will return new Service
 func NewService() (s *Service) {
 	s = &Service{
 		BufferSize: 32 * 1024,
@@ -188,7 +188,7 @@ func NewService() (s *Service) {
 	return
 }
 
-//ReloadConfig will check configure modify time and reload
+// ReloadConfig will check configure modify time and reload
 func (s *Service) ReloadConfig() (err error) {
 	fileInfo, err := os.Stat(s.ConfigPath)
 	if err != nil {
@@ -230,7 +230,7 @@ func (s *Service) ReloadConfig() (err error) {
 	return
 }
 
-//AddForward will add forward by local and remote
+// AddForward will add forward by local and remote
 func (s *Service) AddForward(loc, uri string) (err error) {
 	locParts := strings.SplitN(loc, "~", 2)
 	if len(locParts) < 2 {
@@ -259,6 +259,9 @@ func (s *Service) AddForward(loc, uri string) (err error) {
 	switch target.Scheme {
 	case "socks":
 		target.Scheme = "socks"
+		listener, err = s.Node.StartForward(locParts[0], target, uri)
+	case "proxy":
+		target.Scheme = "proxy"
 		listener, err = s.Node.StartForward(locParts[0], target, uri)
 	case "tcp":
 		target.Scheme = "tcp"
@@ -311,7 +314,7 @@ func (s *Service) AddForward(loc, uri string) (err error) {
 	return
 }
 
-//RemoveForward will remove forward
+// RemoveForward will remove forward
 func (s *Service) RemoveForward(loc string) (err error) {
 	locParts := strings.SplitN(loc, "~", 2)
 	if len(locParts) < 2 {
@@ -371,13 +374,13 @@ func (s *Service) RemoveForward(loc string) (err error) {
 	return
 }
 
-//SyncDialAll will sync dial uri by raw
+// SyncDialAll will sync dial uri by raw
 func (s *Service) SyncDialAll(uris string, raw io.ReadWriteCloser) (sid uint64, err error) {
 	sid, err = s.DialAll(uris, raw, true)
 	return
 }
 
-//DialAll will dial uri by raw
+// DialAll will dial uri by raw
 func (s *Service) DialAll(uris string, raw io.ReadWriteCloser, sync bool) (sid uint64, err error) {
 	sid, err = s.dialAll(uris, raw, sync)
 	if err == nil || err != ErrForwardNotExist || s.Finder == nil {
@@ -434,7 +437,7 @@ func (s *Service) dialOne(uri string, raw io.ReadWriteCloser, sync bool) (sid ui
 	return
 }
 
-//DialRaw is router dial implemnet
+// DialRaw is router dial implemnet
 func (s *Service) DialRaw(channel Conn, sid uint64, uri string) (conn Conn, err error) {
 	raw, err := s.Dialer.Dial(channel, sid, uri, nil)
 	if err == nil {
@@ -443,7 +446,7 @@ func (s *Service) DialRaw(channel Conn, sid uint64, uri string) (conn Conn, err 
 	return
 }
 
-//DialNet is net dialer to router
+// DialNet is net dialer to router
 func (s *Service) DialNet(network, addr string) (conn net.Conn, err error) {
 	addr = strings.TrimSuffix(addr, ":80")
 	addr = strings.TrimSuffix(addr, ":443")
@@ -466,7 +469,7 @@ func (s *Service) DialNet(network, addr string) (conn net.Conn, err error) {
 	return
 }
 
-//DialSSH is ssh dialer to ssh server
+// DialSSH is ssh dialer to ssh server
 func (s *Service) DialSSH(uri string, config *ssh.ClientConfig) (client *ssh.Client, err error) {
 	conn, raw := dialer.CreatePipedConn()
 	if err == nil {
@@ -487,7 +490,7 @@ func (s *Service) DialSSH(uri string, config *ssh.ClientConfig) (client *ssh.Cli
 	return
 }
 
-//DialPiper will dial uri on router and return piper
+// DialPiper will dial uri on router and return piper
 func (s *Service) DialPiper(uri string, bufferSize int) (raw xio.Piper, err error) {
 	piper := NewWaitedPiper()
 	_, err = s.DialAll(uri, piper, true)
@@ -495,7 +498,7 @@ func (s *Service) DialPiper(uri string, bufferSize int) (raw xio.Piper, err erro
 	return
 }
 
-//Start will start service
+// Start will start service
 func (s *Service) Start() (err error) {
 	if len(s.ConfigPath) > 0 {
 		s.Config, s.configLast, err = ReadConfig(s.ConfigPath)
@@ -611,7 +614,7 @@ func (s *Service) Start() (err error) {
 	return
 }
 
-//Stop will stop service
+// Stop will stop service
 func (s *Service) Stop() (err error) {
 	InfoLog("Server(%v) is stopping", s.Name)
 	if s.Node != nil {

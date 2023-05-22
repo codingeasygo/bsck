@@ -10,7 +10,7 @@ import (
 	"github.com/codingeasygo/bsck"
 )
 
-//Version is bsrouter version
+// Version is bsrouter version
 const Version = "2.0.0"
 
 var exitf = func(code int) {

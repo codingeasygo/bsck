@@ -79,7 +79,7 @@ type Dialer interface {
 	Dial(channel Channel, sid uint64, uri string, raw io.ReadWriteCloser) (r Conn, err error)
 }
 
-//Pool is the set of Dialer
+// Pool is the set of Dialer
 type Pool struct {
 	Name        string
 	Dialers     []Dialer
@@ -88,7 +88,7 @@ type Pool struct {
 	connsLocker sync.RWMutex
 }
 
-//NewPool will return new Pool
+// NewPool will return new Pool
 func NewPool(name string) (pool *Pool) {
 	pool = &Pool{
 		Name:        name,
@@ -98,13 +98,13 @@ func NewPool(name string) (pool *Pool) {
 	return
 }
 
-//AddDialer will append dialer which is bootstraped to pool
+// AddDialer will append dialer which is bootstraped to pool
 func (p *Pool) AddDialer(dialers ...Dialer) (err error) {
 	p.Dialers = append(p.Dialers, dialers...)
 	return
 }
 
-//Bootstrap will bootstrap all supported dialer
+// Bootstrap will bootstrap all supported dialer
 func (p *Pool) Bootstrap(options xmap.M) error {
 	dialerOptions := options.ArrayMapDef(nil, "dialers")
 	for _, option := range dialerOptions {
@@ -149,7 +149,7 @@ func (p *Pool) Bootstrap(options xmap.M) error {
 	return nil
 }
 
-//Dial the uri by dialer poo
+// Dial the uri by dialer poo
 func (p *Pool) Dial(channel Channel, sid uint64, uri string, pipe io.ReadWriteCloser) (r Conn, err error) {
 	DebugLog("Pool(%v) try dial to %v", p.Name, uri)
 	for _, dialer := range p.Dialers {
@@ -162,12 +162,12 @@ func (p *Pool) Dial(channel Channel, sid uint64, uri string, pipe io.ReadWriteCl
 	return
 }
 
-//Shutdown will shutdown all dialer
+// Shutdown will shutdown all dialer
 func (p *Pool) Shutdown() (err error) {
 	return
 }
 
-//DefaultDialerCreator is default all dialer creator
+// DefaultDialerCreator is default all dialer creator
 func DefaultDialerCreator(t string) (dialer Dialer) {
 	switch t {
 	case "balance":
@@ -180,5 +180,5 @@ func DefaultDialerCreator(t string) (dialer Dialer) {
 	return
 }
 
-//NewDialer is default all dialer creator
+// NewDialer is default all dialer creator
 var NewDialer = DefaultDialerCreator

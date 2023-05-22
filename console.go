@@ -84,7 +84,7 @@ func (h *Hosts) Rewrite(host string) (rewrited string, ok bool) {
 	return
 }
 
-//Console is node console to dial connection
+// Console is node console to dial connection
 type Console struct {
 	Client     *xhttp.Client
 	SlaverURI  string
@@ -96,7 +96,7 @@ type Console struct {
 	locker     sync.RWMutex
 }
 
-//NewConsole will return new Console
+// NewConsole will return new Console
 func NewConsole(slaverURI string) (console *Console) {
 	console = &Console{
 		SlaverURI:  slaverURI,
@@ -135,7 +135,7 @@ func NewConsoleByConfig(config *Config) (console *Console, err error) {
 	return
 }
 
-//Close will close all connection
+// Close will close all connection
 func (c *Console) Close() (err error) {
 	all := []io.Closer{}
 	c.locker.Lock()
@@ -194,7 +194,7 @@ func (c *Console) dialAll(uri string, raw io.ReadWriteCloser) (sid uint64, err e
 	return
 }
 
-//dialNet is net dialer to router
+// dialNet is net dialer to router
 func (c *Console) dialNet(network, addr string) (conn net.Conn, err error) {
 	addr = strings.TrimSuffix(addr, ":80")
 	addr = strings.TrimSuffix(addr, ":443")
@@ -217,14 +217,14 @@ func (c *Console) dialNet(network, addr string) (conn net.Conn, err error) {
 	return
 }
 
-//Redirect will redirect connection to reader/writer/closer
+// Redirect will redirect connection to reader/writer/closer
 func (c *Console) Redirect(uri string, reader io.Reader, writer io.Writer, closer io.Closer) (err error) {
 	raw := xio.NewCombinedReadWriteCloser(reader, writer, closer)
 	_, err = c.dialAll(uri, raw)
 	return
 }
 
-//Dial will dial connection by uri
+// Dial will dial connection by uri
 func (c *Console) Dial(uri string) (conn io.ReadWriteCloser, err error) {
 	conn, raw := dialer.CreatePipedConn()
 	if err == nil {
@@ -237,7 +237,7 @@ func (c *Console) Dial(uri string) (conn io.ReadWriteCloser, err error) {
 	return
 }
 
-//Ping will start ping to uri
+// Ping will start ping to uri
 func (c *Console) Ping(uri string, delay time.Duration, max uint64) (err error) {
 	if !strings.Contains(uri, "tcp://echo") {
 		if len(uri) > 0 {
@@ -295,7 +295,7 @@ func (c *Console) Ping(uri string, delay time.Duration, max uint64) (err error) 
 	return
 }
 
-//PrintState will print state from uri
+// PrintState will print state from uri
 func (c *Console) PrintState(uri, query string) (err error) {
 	if !strings.Contains(uri, "http://state") {
 		if len(uri) > 0 {
@@ -332,7 +332,7 @@ func (c *Console) PrintState(uri, query string) (err error) {
 	return
 }
 
-//DialPiper will dial uri on router and return piper
+// DialPiper will dial uri on router and return piper
 func (c *Console) DialPiper(uri string, bufferSize int) (raw xio.Piper, err error) {
 	piper := NewWaitedPiper()
 	_, err = c.dialAll(uri, piper)
@@ -401,7 +401,7 @@ func (c *Console) StartForward(loc string, uri string) (listener net.Listener, e
 	return
 }
 
-//StartProxy will start proxy local to uri
+// StartProxy will start proxy local to uri
 func (c *Console) StartProxy(loc, uri string) (server *proxy.Server, listener net.Listener, err error) {
 	server = proxy.NewServer(xio.PiperDialerF(func(target string, bufferSize int) (raw xio.Piper, err error) {
 		targetURI, err := c.parseProxyURI(uri, target)
@@ -414,7 +414,7 @@ func (c *Console) StartProxy(loc, uri string) (server *proxy.Server, listener ne
 	return
 }
 
-//Proxy will start shell by runner and rewrite all tcp connection by console
+// Proxy will start shell by runner and rewrite all tcp connection by console
 func (c *Console) Proxy(uri string, process func(listener net.Listener) (err error)) (err error) {
 	server, listener, err := c.StartProxy("127.0.0.1:0", uri)
 	if err == nil {
@@ -433,7 +433,7 @@ func (c *Console) Proxy(uri string, process func(listener net.Listener) (err err
 	return
 }
 
-//ProxyExec will exec command by runner and rewrite all tcp connection by console
+// ProxyExec will exec command by runner and rewrite all tcp connection by console
 func (c *Console) ProxyExec(uri string, stdin io.Reader, stdout, stderr io.Writer, prepare func(listener net.Listener) (env []string, runner string, args []string, err error)) (err error) {
 	err = c.Proxy(uri, func(listener net.Listener) (err error) {
 		env, runner, args, err := prepare(listener)
@@ -457,7 +457,7 @@ func (c *Console) ProxyExec(uri string, stdin io.Reader, stdout, stderr io.Write
 	return
 }
 
-//ProxyProcess will start process by runner and rewrite all tcp connection by console
+// ProxyProcess will start process by runner and rewrite all tcp connection by console
 func (c *Console) ProxyProcess(uri string, stdin, stdout, stderr *os.File, prepare func(listener net.Listener) (env []string, runner string, args []string, err error)) (err error) {
 	err = c.Proxy(uri, func(listener net.Listener) (err error) {
 		env, runner, args, err := prepare(listener)
@@ -483,10 +483,9 @@ func (c *Console) ProxyProcess(uri string, stdin, stdout, stderr *os.File, prepa
 	return
 }
 
-//ProxySSH will start ssh client command and connect to uri by proxy command.
+// ProxySSH will start ssh client command and connect to uri by proxy command.
 //
-//it will try load the ssh key from slaver forwarding by bs-ssh-key, bs-ssh-key is forwarding to http server and return ssh key in body by uri argument.
-//
+// it will try load the ssh key from slaver forwarding by bs-ssh-key, bs-ssh-key is forwarding to http server and return ssh key in body by uri argument.
 func (c *Console) ProxySSH(uri string, stdin io.Reader, stdout, stderr io.Writer, proxyCommand, command string, args ...string) (err error) {
 	replaceURI := uri
 	if len(replaceURI) < 1 {

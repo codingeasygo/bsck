@@ -67,15 +67,15 @@ type RawValuable interface {
 	RawValue() interface{}
 }
 
-//Conn is the interface that wraps the connection will be running on Router.
+// Conn is the interface that wraps the connection will be running on Router.
 //
-//ID is the unique of connection
+// # ID is the unique of connection
 //
-//Name is the channel name, it will be used when join current connection to channel
+// # Name is the channel name, it will be used when join current connection to channel
 //
-//Index is the channel index, it will be used when join current connection to channel.
+// Index is the channel index, it will be used when join current connection to channel.
 //
-//Type is the connection type by ConnTypeRaw/ConnTypeChannel
+// Type is the connection type by ConnTypeRaw/ConnTypeChannel
 type Conn interface {
 	//the basic ReadWriteCloser
 	frame.ReadWriteCloser
@@ -91,7 +91,7 @@ type Conn interface {
 	Context() xmap.M
 }
 
-//ReadyWaiter interface for ready waiter
+// ReadyWaiter interface for ready waiter
 type ReadyWaiter interface {
 	Wait() error
 	Ready(failed error, next func(err error))
@@ -105,7 +105,7 @@ type writeDeadlinable interface {
 	SetWriteDeadline(t time.Time) error
 }
 
-//RawConn is an implementation of the Conn interface for raw network connections.
+// RawConn is an implementation of the Conn interface for raw network connections.
 type RawConn struct {
 	//the raw connection
 	*frame.BaseReadWriteCloser
@@ -163,7 +163,7 @@ func (r *RawConn) WriteTo(w io.Writer) (n int64, err error) {
 	return
 }
 
-//ReadFrame will read frame from raw
+// ReadFrame will read frame from raw
 func (r *RawConn) ReadFrame() (frame []byte, err error) {
 	if timeout, ok := r.Raw.(readDeadlinable); r.readTimeout > 0 && ok {
 		timeout.SetReadDeadline(time.Now().Add(r.readTimeout))
@@ -179,7 +179,7 @@ func (r *RawConn) ReadFrame() (frame []byte, err error) {
 	return
 }
 
-//WriteFrame will write frame to raw
+// WriteFrame will write frame to raw
 func (r *RawConn) WriteFrame(buffer []byte) (n int, err error) {
 	if len(buffer) < 14 {
 		err = fmt.Errorf("error frame")
@@ -193,23 +193,23 @@ func (r *RawConn) WriteFrame(buffer []byte) (n int, err error) {
 	return
 }
 
-//SetReadTimeout is read timeout setter
+// SetReadTimeout is read timeout setter
 func (r *RawConn) SetReadTimeout(timeout time.Duration) {
 	r.readTimeout = timeout
 }
 
-//SetWriteTimeout is write timeout setter
+// SetWriteTimeout is write timeout setter
 func (r *RawConn) SetWriteTimeout(timeout time.Duration) {
 	r.writeTimeout = timeout
 }
 
-//SetTimeout is read/write timeout setter
+// SetTimeout is read/write timeout setter
 func (r *RawConn) SetTimeout(timeout time.Duration) {
 	r.readTimeout = timeout
 	r.writeTimeout = timeout
 }
 
-//Close will close the raw connection
+// Close will close the raw connection
 func (r *RawConn) Close() (err error) {
 	if _, ok := r.Raw.(ReadyWaiter); ok {
 		return r.Raw.Close()
@@ -230,7 +230,7 @@ func (r *RawConn) Close() (err error) {
 	return
 }
 
-//Wait is ConnectedWaiter impl
+// Wait is ConnectedWaiter impl
 func (r *RawConn) Wait() error {
 	if waiter, ok := r.Raw.(ReadyWaiter); ok {
 		return waiter.Wait()
@@ -241,7 +241,7 @@ func (r *RawConn) Wait() error {
 	return r.failed
 }
 
-//Ready is ConnectedWaiter impl
+// Ready is ConnectedWaiter impl
 func (r *RawConn) Ready(failed error, next func(err error)) {
 	if waiter, ok := r.Raw.(ReadyWaiter); ok {
 		waiter.Ready(failed, next)
@@ -262,27 +262,27 @@ func (r *RawConn) Ready(failed error, next func(err error)) {
 	}
 }
 
-//ID is an implementation of Conn
+// ID is an implementation of Conn
 func (r *RawConn) ID() uint64 {
 	return r.sid
 }
 
-//Name is an implementation of Conn
+// Name is an implementation of Conn
 func (r *RawConn) Name() string {
 	return r.name
 }
 
-//Index is an implementation of Conn
+// Index is an implementation of Conn
 func (r *RawConn) Index() int {
 	return 0
 }
 
-//Type is an implementation of Conn
+// Type is an implementation of Conn
 func (r *RawConn) Type() int {
 	return ConnTypeRaw
 }
 
-//Context is conn context getter
+// Context is conn context getter
 func (r *RawConn) Context() xmap.M {
 	return r.context
 }
@@ -303,7 +303,7 @@ func (r *RawConn) String() string {
 	return fmt.Sprintf("raw{sid:%v,uri:%v,router:%v,info:%v}", r.sid, uri, router, r.Raw)
 }
 
-//Channel is an implementation of the Conn interface for channel network connections.
+// Channel is an implementation of the Conn interface for channel network connections.
 type Channel struct {
 	frame.ReadWriteCloser //the raw connection
 	cid                   uint64
@@ -313,27 +313,27 @@ type Channel struct {
 	Heartbeat             time.Time
 }
 
-//ID is an implementation of Conn
+// ID is an implementation of Conn
 func (c *Channel) ID() uint64 {
 	return c.cid
 }
 
-//Name is an implementation of Conn
+// Name is an implementation of Conn
 func (c *Channel) Name() string {
 	return c.name
 }
 
-//Index is an implementation of Conn
+// Index is an implementation of Conn
 func (c *Channel) Index() int {
 	return c.index
 }
 
-//Type is an implementation of Conn
+// Type is an implementation of Conn
 func (c *Channel) Type() int {
 	return ConnTypeChannel
 }
 
-//Context is conn context getter
+// Context is conn context getter
 func (c *Channel) Context() xmap.M {
 	return c.context
 }
@@ -370,10 +370,10 @@ func newBondChannel() *bondChannel {
 	}
 }
 
-//TableRouter is the router table item
+// TableRouter is the router table item
 type TableRouter []interface{}
 
-//Next will return next connection and session id
+// Next will return next connection and session id
 func (t TableRouter) Next(conn Conn) (target Conn, sid uint64) {
 	if t[0] == conn {
 		target = t[2].(Conn)
@@ -389,7 +389,7 @@ func (t TableRouter) String() string {
 	return fmt.Sprintf("%v %v <-> %v %v", t[0], t[1], t[2], t[3])
 }
 
-//Handler is the interface that wraps the handler of Router.
+// Handler is the interface that wraps the handler of Router.
 type Handler interface {
 	//dial raw connection
 	DialRaw(channel Conn, sid uint64, uri string) (raw Conn, err error)
@@ -401,7 +401,7 @@ type Handler interface {
 	OnConnClose(raw Conn) error
 }
 
-//Router is an implementation of the router control
+// Router is an implementation of the router control
 type Router struct {
 	Name            string        //current router name
 	BufferSize      int           //buffer size of connection runner
@@ -416,7 +416,7 @@ type Router struct {
 	rawLck          sync.RWMutex
 }
 
-//NewRouter will return new Router by name
+// NewRouter will return new Router by name
 func NewRouter(name string) (router *Router) {
 	router = &Router{
 		Name:       name,
@@ -433,7 +433,7 @@ func NewRouter(name string) (router *Router) {
 	return
 }
 
-//StartHeartbeat will start the hearbeat on slaver/master
+// StartHeartbeat will start the hearbeat on slaver/master
 func (r *Router) StartHeartbeat() {
 	if r.Heartbeat > 0 {
 		InfoLog("Router(%v) start heartbeat by %v delay", r.Name, r.Heartbeat)
@@ -441,8 +441,8 @@ func (r *Router) StartHeartbeat() {
 	}
 }
 
-//Accept one raw connection as channel,
-//it will auth the raw connection by ACL.
+// Accept one raw connection as channel,
+// it will auth the raw connection by ACL.
 func (r *Router) Accept(raw frame.ReadWriteCloser) {
 	channel := &Channel{
 		ReadWriteCloser: raw,
@@ -453,8 +453,8 @@ func (r *Router) Accept(raw frame.ReadWriteCloser) {
 	go r.loopReadRaw(channel)
 }
 
-//Accept one raw connection as channel, and loop read it
-//it will auth the raw connection by ACL.
+// Accept one raw connection as channel, and loop read it
+// it will auth the raw connection by ACL.
 func (r *Router) AcceptSync(raw frame.ReadWriteCloser) {
 	channel := &Channel{
 		ReadWriteCloser: raw,
@@ -465,7 +465,7 @@ func (r *Router) AcceptSync(raw frame.ReadWriteCloser) {
 	r.loopReadRaw(channel)
 }
 
-//Register one login raw connection to channel,
+// Register one login raw connection to channel,
 func (r *Router) Register(channel Conn) {
 	r.addChannel(channel)
 	go r.loopReadRaw(channel)
@@ -496,13 +496,13 @@ func (r *Router) addChannel(channel Conn) {
 	InfoLog("Router(%v) add channel(%v) success", r.Name, channel)
 }
 
-//UniqueSid will return new session id
+// UniqueSid will return new session id
 func (r *Router) UniqueSid() (sid uint64) {
 	sid = atomic.AddUint64(&r.connectSequence, 1)
 	return
 }
 
-//SelectChannel will pick one channel by name.
+// SelectChannel will pick one channel by name.
 func (r *Router) SelectChannel(name string) (dst Conn, err error) {
 	r.channelLck.RLock()
 	bond := r.channel[name]
@@ -529,7 +529,7 @@ func (r *Router) SelectChannel(name string) (dst Conn, err error) {
 	return
 }
 
-//CloseChannel will call close on all bond channle by name.
+// CloseChannel will call close on all bond channle by name.
 func (r *Router) CloseChannel(name string) (err error) {
 	r.channelLck.RLock()
 	bond := r.channel[name]
@@ -897,15 +897,15 @@ func (r *Router) procHeartbeat(conn Conn, buf []byte) (err error) {
 	return
 }
 
-//Dial to remote by uri and bind channel to raw connection.
+// Dial to remote by uri and bind channel to raw connection.
 //
-//return the session id
+// return the session id
 func (r *Router) Dial(uri string, raw io.ReadWriteCloser) (sid uint64, err error) {
 	sid, _, err = r.DialConn(uri, raw)
 	return
 }
 
-//SyncDial will dial to remote by uri and wait dial successes
+// SyncDial will dial to remote by uri and wait dial successes
 func (r *Router) SyncDial(uri string, raw io.ReadWriteCloser) (sid uint64, err error) {
 	sid, conn, err := r.DialConn(uri, raw)
 	if err == nil {
@@ -916,7 +916,7 @@ func (r *Router) SyncDial(uri string, raw io.ReadWriteCloser) (sid uint64, err e
 	return
 }
 
-//DialConn will dial to remote by uri and bind channel to raw connection and return raw connection
+// DialConn will dial to remote by uri and bind channel to raw connection and return raw connection
 func (r *Router) DialConn(uri string, raw io.ReadWriteCloser) (sid uint64, conn Conn, err error) {
 	parts := strings.SplitN(uri, "->", 2)
 	if len(parts) < 2 {
@@ -978,7 +978,7 @@ func (r *Router) DialConn(uri string, raw io.ReadWriteCloser) (sid uint64, conn 
 	return
 }
 
-//JoinConn will add channel by the connected connection
+// JoinConn will add channel by the connected connection
 func (r *Router) JoinConn(conn frame.ReadWriteCloser, index int, args interface{}) (channel *Channel, result xmap.M, err error) {
 	data, _ := json.Marshal(args)
 	DebugLog("Router(%v) login join connection %v by options %v", r.Name, conn, string(data))
@@ -1013,7 +1013,7 @@ func (r *Router) JoinConn(conn frame.ReadWriteCloser, index int, args interface{
 	return
 }
 
-//Close all channel
+// Close all channel
 func (r *Router) Close() (err error) {
 	all := []io.Closer{}
 	r.channelLck.Lock()
@@ -1050,7 +1050,7 @@ func (r *Router) Close() (err error) {
 	return
 }
 
-//State return the current state of router
+// State return the current state of router
 func (r *Router) State(args ...interface{}) (state xmap.M) {
 	state = xmap.M{}
 	//
@@ -1113,7 +1113,7 @@ func (r *Router) State(args ...interface{}) (state xmap.M) {
 	return
 }
 
-//StateH return the current state of router
+// StateH return the current state of router
 func (r *Router) StateH(w http.ResponseWriter, req *http.Request) {
 	var query = xmap.M{}
 	for key := range req.URL.Query() {
@@ -1135,7 +1135,7 @@ func writeCmd(w frame.Writer, buffer []byte, cmd byte, sid uint64, msg []byte) (
 	return
 }
 
-//DialPiper will dial uri on router and return piper
+// DialPiper will dial uri on router and return piper
 func (r *Router) DialPiper(uri string, bufferSize int) (raw xio.Piper, err error) {
 	piper := NewWaitedPiper()
 	_, err = r.SyncDial(uri, piper)
@@ -1143,7 +1143,7 @@ func (r *Router) DialPiper(uri string, bufferSize int) (raw xio.Piper, err error
 	return
 }
 
-//WaitedPiper is Waiter/Piper implement
+// WaitedPiper is Waiter/Piper implement
 type WaitedPiper struct {
 	Base        io.ReadWriteCloser
 	next        func(err error)
@@ -1155,7 +1155,7 @@ type WaitedPiper struct {
 	closeLocker sync.RWMutex
 }
 
-//NewWaitedPiper will return new WaitedPiper
+// NewWaitedPiper will return new WaitedPiper
 func NewWaitedPiper() (piper *WaitedPiper) {
 	piper = &WaitedPiper{
 		readyLocker: sync.RWMutex{},
@@ -1167,7 +1167,7 @@ func NewWaitedPiper() (piper *WaitedPiper) {
 	return
 }
 
-//Wait will wait piper is ready
+// Wait will wait piper is ready
 func (r *WaitedPiper) Wait() error {
 	r.readyLocker.Lock()
 	_ = r //do nothing for warning
@@ -1175,7 +1175,7 @@ func (r *WaitedPiper) Wait() error {
 	return r.failed
 }
 
-//Ready will set piper is ready, failed/next at lasted is not nil
+// Ready will set piper is ready, failed/next at lasted is not nil
 func (r *WaitedPiper) Ready(failed error, next func(err error)) {
 	if failed == nil && next == nil {
 		panic("failed/next is nil")
@@ -1192,7 +1192,7 @@ func (r *WaitedPiper) Ready(failed error, next func(err error)) {
 	r.readyLocker.Unlock()
 }
 
-//PipeConn will pipe connection, it must be called after Wait success, or panic
+// PipeConn will pipe connection, it must be called after Wait success, or panic
 func (r *WaitedPiper) PipeConn(conn io.ReadWriteCloser, target string) (err error) {
 	if r.next == nil || r.failed != nil {
 		panic("not ready")
@@ -1237,7 +1237,7 @@ func (r *WaitedPiper) Write(p []byte) (n int, err error) {
 	return
 }
 
-//Close will close ready piper, it will lock when it is not ready
+// Close will close ready piper, it will lock when it is not ready
 func (r *WaitedPiper) Close() (err error) {
 	r.closeLocker.Lock()
 	if r.closed > 0 {

@@ -25,7 +25,7 @@ func (c *CodeError) Error() string {
 	return c.Inner.Error()
 }
 
-//SocksProxyAddressPooler is an interface to handler proxy server address get/set
+// SocksProxyAddressPooler is an interface to handler proxy server address get/set
 type SocksProxyAddressPooler interface {
 	//Get will return the proxy server address
 	Get(uri string) (address string, err error)
@@ -33,20 +33,20 @@ type SocksProxyAddressPooler interface {
 	Done(address, uri string, err error)
 }
 
-//StringAddressPooler is an implementation of the SocksProxyAddressPooler interface for one string address.
+// StringAddressPooler is an implementation of the SocksProxyAddressPooler interface for one string address.
 type StringAddressPooler string
 
-//Get will return the proxy server address
+// Get will return the proxy server address
 func (s StringAddressPooler) Get(uri string) (address string, err error) {
 	address = string(s)
 	return
 }
 
-//Done will mark one address is fress
+// Done will mark one address is fress
 func (s StringAddressPooler) Done(address, uri string, err error) {
 }
 
-//SocksProxyDialer is an implementation of the Dialer interface for dial by socks proxy.
+// SocksProxyDialer is an implementation of the Dialer interface for dial by socks proxy.
 type SocksProxyDialer struct {
 	ID      string
 	Pooler  SocksProxyAddressPooler
@@ -54,7 +54,7 @@ type SocksProxyDialer struct {
 	conf    xmap.M
 }
 
-//NewSocksProxyDialer will return new SocksProxyDialer
+// NewSocksProxyDialer will return new SocksProxyDialer
 func NewSocksProxyDialer() *SocksProxyDialer {
 	return &SocksProxyDialer{
 		matcher: regexp.MustCompile("^.*:[0-9]+$"),
@@ -62,12 +62,12 @@ func NewSocksProxyDialer() *SocksProxyDialer {
 	}
 }
 
-//Name will return dialer name
+// Name will return dialer name
 func (s *SocksProxyDialer) Name() string {
 	return s.ID
 }
 
-//Bootstrap the dialer.
+// Bootstrap the dialer.
 func (s *SocksProxyDialer) Bootstrap(options xmap.M) (err error) {
 	s.ID = options.Str("id")
 	if len(s.ID) < 1 {
@@ -84,18 +84,18 @@ func (s *SocksProxyDialer) Bootstrap(options xmap.M) (err error) {
 	return
 }
 
-//Options is options getter
+// Options is options getter
 func (s *SocksProxyDialer) Options() xmap.M {
 	return s.conf
 }
 
-//Matched will return whether the uri is invalid tcp uri.
+// Matched will return whether the uri is invalid tcp uri.
 func (s *SocksProxyDialer) Matched(uri string) bool {
 	remote, err := url.Parse(uri)
 	return err == nil && s.matcher.MatchString(remote.Host)
 }
 
-//Dial one connection by uri
+// Dial one connection by uri
 func (s *SocksProxyDialer) Dial(channel Channel, sid uint64, uri string, pipe io.ReadWriteCloser) (raw Conn, err error) {
 	remote, err := url.Parse(uri)
 	if err != nil {
@@ -186,7 +186,7 @@ func (s *SocksProxyDialer) Dial(channel Channel, sid uint64, uri string, pipe io
 	return
 }
 
-//Shutdown will shutdown dial
+// Shutdown will shutdown dial
 func (s *SocksProxyDialer) Shutdown() (err error) {
 	return
 }

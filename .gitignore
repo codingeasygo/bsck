@@ -25,3 +25,4 @@ bsconsole/bsconsole
 *.exe
 bsconsole/bs-*
 temp.json
+.DS_Store
