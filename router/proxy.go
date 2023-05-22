@@ -104,12 +104,12 @@ func (n *NormalAcessHandler) OnConnLogin(channel Conn, args string) (name string
 	}
 	var having string
 	err = option.ValidFormat(`
-		index,R|I,R:-1;
+		index,O|I,R:-1;
 		name,R|S,L:0;
 		token,R|S,L:0;
 	`, &index, &name, &having)
 	if err != nil {
-		ErrorLog("NormalAcessHandler(%v) login option fail with name/token is required", n.Name)
+		ErrorLog("NormalAcessHandler(%v) login option fail with %v", n.Name, err)
 		return
 	}
 	n.loginLocker.RLock()
