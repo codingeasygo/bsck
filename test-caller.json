@@ -2,7 +2,9 @@
     "name": "caller",
     "listen": "",
     "web": {},
-    "console": ":1701",
+    "console": {
+        "socks": ":1701"
+    },
     "forwards": {
         "dav": "http://dav?dir=."
     },

@@ -2,14 +2,13 @@
     "name": "slaver",
     "listen": "",
     "web": {},
-    "console": "",
+    "console": {},
     "forwards": {},
     "channels": [
         {
             "enable": 1,
             "remote": "localhost:15023",
-            "token": "abc",
-            "index": 0
+            "token": "abc"
         }
     ],
     "dialer": {

@@ -2,7 +2,7 @@
     "name": "master",
     "listen": ":15023",
     "web": {},
-    "console": "",
+    "console": {},
     "forwards": {},
     "channels": [],
     "dialer": {

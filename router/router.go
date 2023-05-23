@@ -726,7 +726,7 @@ func (r *Router) procPingLoop() {
 		r.waiter.Done()
 		InfoLog("Router(%v) the ping runner is stopped")
 	}()
-	InfoLog("Router(%v) the ping runner is starting by %v", r.Heartbeat)
+	InfoLog("Router(%v) the ping runner is starting by %v", r.Name, r.Heartbeat)
 	timer := time.NewTicker(r.Heartbeat)
 	running := true
 	for running {
@@ -744,7 +744,7 @@ func (r *Router) procTimeoutLoop() {
 		r.waiter.Done()
 		InfoLog("Router(%v) the timeout runner is stopped")
 	}()
-	InfoLog("Router(%v) the timeout runner is starting by %v", r.Timeout)
+	InfoLog("Router(%v) the timeout runner is starting by %v", r.Name, r.Timeout)
 	timer := time.NewTicker(r.Timeout)
 	running := true
 	for running {
