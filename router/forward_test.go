@@ -43,26 +43,28 @@ func TestForward(t *testing.T) {
 		"standard": 1,
 	})
 	//
-	var sidSequence uint64
+	var sidSequence uint32
 	forward := NewForward()
 	forward.WebSuffix = ".loc"
-	forward.Dialer = func(uri string, raw io.ReadWriteCloser) (sid uint64, err error) {
+	forward.Dialer = func(uri string, raw io.ReadWriteCloser) (sid uint16, err error) {
 		if strings.Contains(uri, "error") {
 			err = fmt.Errorf("test error")
 		} else {
-			sid = atomic.AddUint64(&sidSequence, 1)
+			sid = uint16(atomic.AddUint32(&sidSequence, 1) / 1024)
 			_, err = dialerPool.Dial(nil, sid, uri, raw)
 		}
 		fmt.Println("dial to ", uri, err)
 		return
 	}
-	if false { //test web forward
-		err := forward.AddForward("web://loctest0", "http://127.0.0.1:80")
+	httpSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	}))
+	{ //test web forward
+		err := forward.AddForward("web://loctest0", httpSrv.URL)
 		if err != nil {
 			t.Error(err)
 			return
 		}
-		err = forward.AddForward("web://loctest1?auth=1", "http://127.0.0.1:80")
+		err = forward.AddForward("web://loctest1?auth=1", httpSrv.URL)
 		if err != nil {
 			t.Error(err)
 			return
@@ -72,7 +74,7 @@ func TestForward(t *testing.T) {
 			t.Error(err)
 			return
 		}
-		err = forward.AddForward("web://loctest3", "https://127.0.0.1:80")
+		err = forward.AddForward("web://loctest3", strings.ReplaceAll(httpSrv.URL, "http://", "https://"))
 		if err != nil {
 			t.Error(err)
 			return
@@ -154,7 +156,7 @@ func TestForward(t *testing.T) {
 		forward.RemoveForward("loctest3")
 		//
 	}
-	if false { //test sub forward
+	{ //test sub forward
 		err := forward.AddForward("ws://t0", "tcp://echo")
 		if err != nil {
 			t.Error(err)
@@ -204,7 +206,7 @@ func TestForward(t *testing.T) {
 		fmt.Println("->", readed, string(buf[:readed]), err)
 		wsconn2.Close()
 		//
-		data, err := hget("%v/dav/t2/build.sh", ts.URL)
+		data, err := hget("%v/dav/t2/log.go", ts.URL)
 		if err != nil {
 			t.Errorf("%v-%v", err, data)
 			return
@@ -264,7 +266,7 @@ func TestForward(t *testing.T) {
 			t.Error(err)
 			return
 		}
-		data, err := hget("%v/web/t2/build.sh?where=.", ts.URL)
+		data, err := hget("%v/web/t2/log.go?where=.", ts.URL)
 		if err != nil || len(data) < 1 {
 			t.Errorf("%v-%v", err, data)
 			return

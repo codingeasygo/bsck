@@ -6,6 +6,8 @@ import (
 	"os"
 )
 
+var ShowLog int
+
 const (
 	//LogLevelDebug is debug log level
 	LogLevelDebug = 40

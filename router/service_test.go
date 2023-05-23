@@ -131,6 +131,7 @@ func TestService(t *testing.T) {
 			return
 		}
 	}
+	service.Stop()
 	{ //socks test
 		echoa, echob, _ := xio.Pipe()
 		dialer := dialer.NewSocksProxyDialer()
@@ -478,7 +479,7 @@ func (t *TestReverseDialer) Matched(uri string) bool {
 }
 
 // dial raw connection
-func (t *TestReverseDialer) Dial(channel dialer.Channel, sid uint64, uri string, raw io.ReadWriteCloser) (conn dialer.Conn, err error) {
+func (t *TestReverseDialer) Dial(channel dialer.Channel, sid uint16, uri string, raw io.ReadWriteCloser) (conn dialer.Conn, err error) {
 	targetURL, err := url.Parse(uri)
 	if err != nil {
 		return

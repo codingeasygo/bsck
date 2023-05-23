@@ -38,7 +38,7 @@ type Forward struct {
 	lck        sync.RWMutex
 	WebSuffix  string
 	WebAuth    string
-	Dialer     func(uri string, raw io.ReadWriteCloser) (sid uint64, err error)
+	Dialer     func(uri string, raw io.ReadWriteCloser) (sid uint16, err error)
 }
 
 func NewForward() *Forward {

@@ -26,3 +26,11 @@ bsconsole/bsconsole
 bsconsole/bs-*
 temp.json
 .DS_Store
+certs/server.key
+certs/server.csr
+certs/server.crt
+certs/rootCA.srl
+certs/rootCA.key
+certs/rootCA.crt
+certs/csr.conf
+certs/cert.conf

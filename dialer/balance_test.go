@@ -21,7 +21,7 @@ func (o *OnceDialer) Name() string {
 	return o.ID
 }
 
-//initial dialer
+// initial dialer
 func (o *OnceDialer) Bootstrap(options xmap.M) error {
 	o.ID = options.Str("id")
 	if len(o.ID) < 1 {
@@ -31,18 +31,17 @@ func (o *OnceDialer) Bootstrap(options xmap.M) error {
 	return nil
 }
 
-//
 func (o *OnceDialer) Options() xmap.M {
 	return o.conf
 }
 
-//match uri
+// match uri
 func (o *OnceDialer) Matched(uri string) bool {
 	return uri == "once"
 }
 
-//dial raw connection
-func (o *OnceDialer) Dial(channel Channel, sid uint64, uri string, pipe io.ReadWriteCloser) (r Conn, err error) {
+// dial raw connection
+func (o *OnceDialer) Dial(channel Channel, sid uint16, uri string, pipe io.ReadWriteCloser) (r Conn, err error) {
 	r = o
 	o.dialed++
 	if o.dialed > 1 {
@@ -107,19 +106,19 @@ func TestBalancedDialerDefaul(t *testing.T) {
 		t.Error(err)
 		return
 	}
-	_, err = dialer.Dial(nil, uint64(4), "not", nil)
+	_, err = dialer.Dial(nil, uint16(4), "not", nil)
 	if err == nil {
 		t.Error(err)
 		return
 	}
 	for i := 0; i < 3; i++ {
-		_, err = dialer.Dial(nil, uint64(i), "once", nil)
+		_, err = dialer.Dial(nil, uint16(i), "once", nil)
 		if err != nil {
 			t.Error(err)
 			return
 		}
 	}
-	_, err = dialer.Dial(nil, uint64(4), "once", nil)
+	_, err = dialer.Dial(nil, uint16(4), "once", nil)
 	if err == nil {
 		t.Error(err)
 		return
@@ -211,7 +210,7 @@ func (t *TimeDialer) Name() string {
 	return t.ID
 }
 
-//initial dialer
+// initial dialer
 func (t *TimeDialer) Bootstrap(options xmap.M) error {
 	t.ID = options.Str("id")
 	if len(t.ID) < 1 {
@@ -221,18 +220,17 @@ func (t *TimeDialer) Bootstrap(options xmap.M) error {
 	return nil
 }
 
-//
 func (t *TimeDialer) Options() xmap.M {
 	return t.conf
 }
 
-//match uri
+// match uri
 func (t *TimeDialer) Matched(uri string) bool {
 	return true
 }
 
-//dial raw connection
-func (t *TimeDialer) Dial(channel Channel, sid uint64, uri string, pipe io.ReadWriteCloser) (r Conn, err error) {
+// dial raw connection
+func (t *TimeDialer) Dial(channel Channel, sid uint16, uri string, pipe io.ReadWriteCloser) (r Conn, err error) {
 	if xtime.Now()-t.last < 100 {
 		panic("too fast")
 	}
@@ -310,7 +308,7 @@ func TestBalancedDialerPolicy(t *testing.T) {
 	//
 	//test loop muti dial
 	for i := 0; i < 10; i++ {
-		_, err = dialer.Dial(nil, uint64(i), "time", nil)
+		_, err = dialer.Dial(nil, uint16(i), "time", nil)
 		if err != nil {
 			t.Errorf("%v->%v", i, err)
 			return
@@ -324,7 +322,7 @@ func TestBalancedDialerPolicy(t *testing.T) {
 	for i := 0; i < total; i++ {
 		go func(v int) {
 			defer wg.Done()
-			_, err = dialer.Dial(nil, uint64(v), fmt.Sprintf("time-%v", v/10), nil)
+			_, err = dialer.Dial(nil, uint16(v), fmt.Sprintf("time-%v", v/10), nil)
 			if err != nil {
 				t.Errorf("%v->%v", v, err)
 				return
@@ -375,7 +373,7 @@ func TestBalancedDialerLimit(t *testing.T) {
 	//
 	//test loop muti dial
 	for i := 0; i < 10; i++ {
-		_, err = dialer.Dial(nil, uint64(i), "time", nil)
+		_, err = dialer.Dial(nil, uint16(i), "time", nil)
 		if err != nil {
 			t.Errorf("%v->%v", i, err)
 			return
@@ -389,7 +387,7 @@ func TestBalancedDialerLimit(t *testing.T) {
 	for i := 0; i < total; i++ {
 		go func(v int) {
 			defer wg.Done()
-			_, err = dialer.Dial(nil, uint64(v), fmt.Sprintf("time-%v", v/10), nil)
+			_, err = dialer.Dial(nil, uint16(v), fmt.Sprintf("time-%v", v/10), nil)
 			if err != nil {
 				t.Errorf("%v->%v", v, err)
 				return
@@ -435,7 +433,7 @@ func TestBalancedDialerFilter(t *testing.T) {
 		return
 	}
 	for i := 0; i < 5; i++ {
-		_, err = dialer.Dial(nil, uint64(i), fmt.Sprintf("time-%v", i), nil)
+		_, err = dialer.Dial(nil, uint16(i), fmt.Sprintf("time-%v", i), nil)
 		if i < 3 && err == nil {
 			t.Errorf("%v->%v", i, err)
 			return

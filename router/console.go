@@ -152,7 +152,7 @@ func (c *Console) Close() (err error) {
 	return
 }
 
-func (c *Console) dialAll(uri string, raw io.ReadWriteCloser) (sid uint64, err error) {
+func (c *Console) dialAll(uri string, raw io.ReadWriteCloser) (sid uint16, err error) {
 	DebugLog("Console start dial to %v on slaver %v", uri, c.SlaverURI)
 	var conn net.Conn
 	if strings.HasPrefix(c.SlaverURI, "socks5://") {
@@ -334,7 +334,7 @@ func (c *Console) PrintState(uri, query string) (err error) {
 
 // DialPiper will dial uri on router and return piper
 func (c *Console) DialPiper(uri string, bufferSize int) (raw xio.Piper, err error) {
-	piper := NewWaitedPiper()
+	piper := NewRouterPiper()
 	_, err = c.dialAll(uri, piper)
 	raw = piper
 	return

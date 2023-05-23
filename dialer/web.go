@@ -71,7 +71,7 @@ func (web *WebDialer) Matched(uri string) bool {
 }
 
 // Dial to web server
-func (web *WebDialer) Dial(channel Channel, sid uint64, uri string, pipe io.ReadWriteCloser) (raw Conn, err error) {
+func (web *WebDialer) Dial(channel Channel, sid uint16, uri string, pipe io.ReadWriteCloser) (raw Conn, err error) {
 	web.consLck.Lock()
 	defer web.consLck.Unlock()
 	if web.stopped {
@@ -163,12 +163,12 @@ func (web *WebDialer) String() string {
 type WebDialerConn struct {
 	*PipedConn //the piped connection
 	Channel    Channel
-	SID        uint64 //session id
+	SID        uint16 //session id
 	URI        string //target uri
 }
 
 // PipeWebDialerConn will return new WebDialerConn and piped raw connection.
-func PipeWebDialerConn(channel Channel, sid uint64, uri string) (conn *WebDialerConn, raw io.ReadWriteCloser, err error) {
+func PipeWebDialerConn(channel Channel, sid uint16, uri string) (conn *WebDialerConn, raw io.ReadWriteCloser, err error) {
 	conn = &WebDialerConn{
 		Channel: channel,
 		SID:     sid,

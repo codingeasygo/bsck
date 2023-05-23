@@ -33,7 +33,7 @@ func TestWebDialer(t *testing.T) {
 	}
 	//
 	go func() {
-		var cid uint64
+		var cid uint16
 		for {
 			con, err := l.Accept()
 			if err != nil {

@@ -8,3 +8,5 @@ require (
 	golang.org/x/crypto v0.0.0-20200622213623-75b288015ac9
 	golang.org/x/net v0.0.0-20210503060351-7fd8e65b6420
 )
+
+replace github.com/codingeasygo/util => /Users/cny/go/src/github.com/codingeasygo/util

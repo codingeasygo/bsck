@@ -40,7 +40,7 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
-		sid := uint64(0)
+		sid := uint16(0)
 		for {
 			conn, err := listener.Accept()
 			if err != nil {
@@ -55,7 +55,7 @@ func main() {
 		}
 	}()
 	{
-		sid := uint64(0)
+		sid := uint16(0)
 		client := &http.Client{
 			Transport: &http.Transport{
 				Dial: func(network, addr string) (conn net.Conn, err error) {

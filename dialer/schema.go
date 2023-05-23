@@ -63,7 +63,7 @@ func (t *SchemaDialer) Matched(uri string) bool {
 }
 
 // Dial one connection by uri
-func (t *SchemaDialer) Dial(channel Channel, sid uint64, uri string, pipe io.ReadWriteCloser) (raw Conn, err error) {
+func (t *SchemaDialer) Dial(channel Channel, sid uint16, uri string, pipe io.ReadWriteCloser) (raw Conn, err error) {
 	targetURI, err := url.Parse(uri)
 	if err != nil {
 		return

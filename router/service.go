@@ -32,9 +32,6 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-// ShowLog will show more log.
-var ShowLog = 0
-
 // RDPTemplate is the template string for rdp file
 const RDPTemplate = `
 screen mode id:i:2
@@ -156,7 +153,7 @@ type Service struct {
 	Web        net.Listener
 	Forward    *Forward
 	Dialer     *dialer.Pool
-	Handler    ProxyHandler
+	Handler    Handler
 	Finder     ForwardFinder
 	Config     *Config
 	ConfigPath string
@@ -375,13 +372,13 @@ func (s *Service) RemoveForward(loc string) (err error) {
 }
 
 // SyncDialAll will sync dial uri by raw
-func (s *Service) SyncDialAll(uris string, raw io.ReadWriteCloser) (sid uint64, err error) {
+func (s *Service) SyncDialAll(uris string, raw io.ReadWriteCloser) (sid uint16, err error) {
 	sid, err = s.DialAll(uris, raw, true)
 	return
 }
 
 // DialAll will dial uri by raw
-func (s *Service) DialAll(uris string, raw io.ReadWriteCloser, sync bool) (sid uint64, err error) {
+func (s *Service) DialAll(uris string, raw io.ReadWriteCloser, sync bool) (sid uint16, err error) {
 	sid, err = s.dialAll(uris, raw, sync)
 	if err == nil || err != ErrForwardNotExist || s.Finder == nil {
 		return
@@ -393,7 +390,7 @@ func (s *Service) DialAll(uris string, raw io.ReadWriteCloser, sync bool) (sid u
 	return
 }
 
-func (s *Service) dialAll(uris string, raw io.ReadWriteCloser, sync bool) (sid uint64, err error) {
+func (s *Service) dialAll(uris string, raw io.ReadWriteCloser, sync bool) (sid uint16, err error) {
 	DebugLog("Server(%v) try dial all to %v", s.Name, uris)
 	for _, uri := range strings.Split(uris, ",") {
 		sid, err = s.dialOne(uri, raw, sync)
@@ -404,7 +401,7 @@ func (s *Service) dialAll(uris string, raw io.ReadWriteCloser, sync bool) (sid u
 	return
 }
 
-func (s *Service) dialOne(uri string, raw io.ReadWriteCloser, sync bool) (sid uint64, err error) {
+func (s *Service) dialOne(uri string, raw io.ReadWriteCloser, sync bool) (sid uint16, err error) {
 	DebugLog("Server(%v) try dial to %v", s.Name, uri)
 	dialURI := uri
 	if !strings.Contains(uri, "->") && !regexp.MustCompile("^[A-Za-z0-9]*://.*$").MatchString(uri) {
@@ -430,18 +427,18 @@ func (s *Service) dialOne(uri string, raw io.ReadWriteCloser, sync bool) (sid ui
 		}
 	}
 	if sync {
-		sid, err = s.Node.SyncDial(dialURI, raw)
+		sid, err = s.Node.SyncDial(raw, dialURI)
 	} else {
-		sid, err = s.Node.Dial(dialURI, raw)
+		sid, err = s.Node.Dial(raw, dialURI)
 	}
 	return
 }
 
 // DialRaw is router dial implemnet
-func (s *Service) DialRaw(channel Conn, sid uint64, uri string) (conn Conn, err error) {
+func (s *Service) DialRaw(channel Conn, sid uint16, uri string) (conn Conn, err error) {
 	raw, err := s.Dialer.Dial(channel, sid, uri, nil)
 	if err == nil {
-		conn = NewRawConn(fmt.Sprintf("%v", sid), raw, s.Node.BufferSize, sid, uri)
+		conn = s.Node.NewConn(raw)
 	}
 	return
 }
@@ -492,7 +489,7 @@ func (s *Service) DialSSH(uri string, config *ssh.ClientConfig) (client *ssh.Cli
 
 // DialPiper will dial uri on router and return piper
 func (s *Service) DialPiper(uri string, bufferSize int) (raw xio.Piper, err error) {
-	piper := NewWaitedPiper()
+	piper := NewRouterPiper()
 	_, err = s.DialAll(uri, piper, true)
 	raw = piper
 	return
@@ -522,7 +519,7 @@ func (s *Service) Start() (err error) {
 	s.Console.WS.BufferSize = s.BufferSize
 	s.Forward = NewForward()
 	if s.Handler == nil {
-		handler := NewNormalAcessHandler(s.Config.Name, nil)
+		handler := NewNormalAcessHandler(s.Config.Name)
 		if len(s.Config.ACL) > 0 {
 			handler.LoginAccess = s.Config.ACL
 		}
@@ -534,7 +531,8 @@ func (s *Service) Start() (err error) {
 	}
 	s.Node = NewProxy(s.Config.Name, s.Handler)
 	s.Node.Dir = s.Config.Dir
-	s.Node.BufferSize = s.BufferSize
+	s.Node.Router.BufferSize = s.BufferSize
+	s.Node.Forward.BufferSize = s.BufferSize
 	if len(s.Config.Cert) > 0 && !filepath.IsAbs(s.Config.Cert) {
 		s.Config.Cert = filepath.Join(filepath.Dir(s.ConfigPath), s.Config.Cert)
 	}
@@ -555,7 +553,7 @@ func (s *Service) Start() (err error) {
 	// s.Socks.Dialer = s.SocksDialer
 	s.Forward.Dialer = s.SyncDialAll
 	if len(s.Config.Listen) > 0 {
-		err = s.Node.ListenMaster(s.Config.Listen)
+		err = s.Node.Listen(s.Config.Listen)
 		if err != nil {
 			ErrorLog("Server(%v) node listen on %v fail with %v", s.Name, s.Config.Listen, err)
 			return
@@ -572,7 +570,7 @@ func (s *Service) Start() (err error) {
 		_, err = s.Console.SOCKS.Start(s.Config.Console.SOCKS)
 		if err != nil {
 			ErrorLog("Server(%v) start socks console on %v fail with %v\n", s.Name, s.Config.Console.SOCKS, err)
-			s.Node.Close()
+			s.Node.Stop()
 			return
 		}
 		InfoLog("Server(%v) socks console listen on %v success", s.Name, s.Config.Console.SOCKS)
@@ -581,12 +579,12 @@ func (s *Service) Start() (err error) {
 		_, err = s.Console.WS.Start(s.Config.Console.WS)
 		if err != nil {
 			ErrorLog("Server(%v) start ws console on %v fail with %v\n", s.Name, s.Config.Console.WS, err)
-			s.Node.Close()
+			s.Node.Stop()
 			return
 		}
 		InfoLog("Server(%v) ws console listen on %v success", s.Name, s.Config.Console.WS)
 	}
-	s.Node.StartHeartbeat()
+	s.Node.Start()
 	mux := http.NewServeMux()
 	mux.HandleFunc("/dav/", s.Forward.ProcWebSubsH)
 	mux.HandleFunc("/web/", s.Forward.ProcWebSubsH)
@@ -618,7 +616,7 @@ func (s *Service) Start() (err error) {
 func (s *Service) Stop() (err error) {
 	InfoLog("Server(%v) is stopping", s.Name)
 	if s.Node != nil {
-		s.Node.Close()
+		s.Node.Stop()
 		s.Node = nil
 	}
 	if s.Console.SOCKS != nil {
