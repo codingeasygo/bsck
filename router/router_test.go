@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	_ "net/http/pprof"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -36,7 +37,7 @@ func runEchoServer(addr string) {
 
 func init() {
 	ShowLog = 2
-	// SetLogLevel(LogLevelDebug)
+	SetLogLevel(LogLevelDebug)
 	go runEchoServer("127.0.0.1:13200")
 	go http.ListenAndServe(":6063", nil)
 }
@@ -63,10 +64,22 @@ func TestCmd(t *testing.T) {
 	fmt.Printf("%v\n", Cmd(0))
 }
 
+func TestRouterFrame(t *testing.T) {
+	ParseLocalRouterFrame(frame.NewDefaultHeader(), make([]byte, 1024))
+}
+
 func TestConnType(t *testing.T) {
 	fmt.Printf("%v\n", ConnTypeRaw)
 	fmt.Printf("%v\n", ConnTypeChannel)
 	fmt.Printf("%v\n", ConnType(0))
+}
+
+func TestConnID(t *testing.T) {
+	connID := ZeroConnID
+	fmt.Printf("%v\n", connID.LocalID())
+	fmt.Printf("%v\n", connID.RemoteID())
+	fmt.Printf("%v\n", connID)
+	connID.Split()
 }
 
 func TestBondConn(t *testing.T) {
@@ -230,8 +243,8 @@ func newMultiNode() (nodeList []*Router, nameList []string, err error) {
 
 func TestRouter(t *testing.T) {
 	tester := xdebug.CaseTester{
-		0: 1,
-		5: 1,
+		0:  1,
+		10: 1,
 	}
 	if tester.Run() { //base dial
 		node0, node1, err := newBaseNode()
@@ -274,6 +287,123 @@ func TestRouter(t *testing.T) {
 			if i%2 == 0 { //for some conn is not closed
 				connA.Close()
 			}
+		}
+		node1.Stop()
+		node0.Stop()
+	}
+	if tester.Run() { //parallel dial
+		node0, node1, err := newBaseNode()
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		waiter := sync.WaitGroup{}
+		for i := 0; i < 5; i++ { //node1->node0
+			waiter.Add(1)
+			go func(x int) {
+				defer waiter.Done()
+				connA, connB, _ := xio.CreatePipedConn()
+				_, _, err := node1.DialConn(connB, "N0->tcp://127.0.0.1:13200")
+				if err != nil {
+					t.Error(err)
+					return
+				}
+				fmt.Fprintf(connA, "abc")
+				buf := make([]byte, 1024)
+				n, err := connA.Read(buf)
+				if err != nil || string(buf[0:n]) != "abc" {
+					t.Errorf("%v,%v,%v", err, n, buf[0:n])
+					return
+				}
+				if x%2 == 0 { //for some conn is not closed
+					connA.Close()
+				}
+			}(i)
+		}
+		for i := 0; i < 5; i++ { //node0->node1
+			waiter.Add(1)
+			go func(x int) {
+				defer waiter.Done()
+				connA, connB, _ := xio.CreatePipedConn()
+				_, _, err := node0.DialConn(connB, "N1->tcp://127.0.0.1:13200")
+				if err != nil {
+					t.Error(err)
+					return
+				}
+				fmt.Fprintf(connA, "abc")
+				buf := make([]byte, 1024)
+				n, err := connA.Read(buf)
+				if err != nil || string(buf[0:n]) != "abc" {
+					t.Errorf("%v,%v,%v", err, n, buf[0:n])
+					return
+				}
+				if x%2 == 0 { //for some conn is not closed
+					connA.Close()
+				}
+			}(i)
+		}
+		waiter.Wait()
+		node1.Stop()
+		node0.Stop()
+	}
+	if tester.Run() { //parallel dial closed
+		node0, node1, err := newBaseNode()
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		waiter := sync.WaitGroup{}
+		for i := 0; i < 5; i++ { //node1->node0
+			waiter.Add(1)
+			go func(x int) {
+				defer waiter.Done()
+				connA, connB, _ := xio.CreatePipedConn()
+				_, _, err := node1.DialConn(connB, "N0->tcp://127.0.0.1:13200")
+				if err != nil {
+					t.Error(err)
+					return
+				}
+				fmt.Fprintf(connA, "abc")
+				buf := make([]byte, 1024)
+				n, err := connA.Read(buf)
+				if err != nil || string(buf[0:n]) != "abc" {
+					t.Errorf("%v,%v,%v", err, n, buf[0:n])
+					return
+				}
+				connA.Close()
+			}(i)
+		}
+		for i := 0; i < 5; i++ { //node0->node1
+			waiter.Add(1)
+			go func(x int) {
+				defer waiter.Done()
+				connA, connB, _ := xio.CreatePipedConn()
+				_, _, err := node0.DialConn(connB, "N1->tcp://127.0.0.1:13200")
+				if err != nil {
+					t.Error(err)
+					return
+				}
+				fmt.Fprintf(connA, "abc")
+				buf := make([]byte, 1024)
+				n, err := connA.Read(buf)
+				if err != nil || string(buf[0:n]) != "abc" {
+					t.Errorf("%v,%v,%v", err, n, buf[0:n])
+					return
+				}
+				connA.Close()
+			}(i)
+		}
+		waiter.Wait()
+		time.Sleep(50 * time.Millisecond)
+		channel0, err := node1.SelectChannel("N0")
+		if err != nil || channel0.UsedConnID() > 0 {
+			t.Errorf("%v,%v", err, channel0.UsedConnID())
+			return
+		}
+		channel1, err := node0.SelectChannel("N1")
+		if err != nil || channel1.UsedConnID() > 0 {
+			t.Errorf("%v,%v", err, channel1.UsedConnID())
+			return
 		}
 		node1.Stop()
 		node0.Stop()
@@ -331,7 +461,7 @@ func TestRouter(t *testing.T) {
 		}
 
 		node0.Handler.(*NormalAcessHandler).DialAccess = [][]string{}
-		_, err = node1.SyncDial(xio.NewDiscardReadWriteCloser(), "N0->tcp://127.0.0.1:13200")
+		_, _, err = node1.SyncDial(xio.NewDiscardReadWriteCloser(), "N0->tcp://127.0.0.1:13200")
 		if err == nil {
 			t.Error(err)
 			return
@@ -348,7 +478,7 @@ func TestRouter(t *testing.T) {
 		}
 
 		connA, connB, _ := xio.CreatePipedConn()
-		_, err = node1.Dial(connB, "N0->tcp://127.0.0.1:10")
+		_, _, err = node1.Dial(connB, "N0->tcp://127.0.0.1:10")
 		if err != nil {
 			t.Error(err)
 			return
@@ -360,32 +490,32 @@ func TestRouter(t *testing.T) {
 			return
 		}
 
-		_, err = node1.SyncDial(xio.NewDiscardReadWriteCloser(), "N0->tcp://127.0.0.1:10")
+		_, _, err = node1.SyncDial(xio.NewDiscardReadWriteCloser(), "N0->tcp://127.0.0.1:10")
 		if err == nil {
 			t.Error(err)
 			return
 		}
-		_, err = node1.SyncDial(xio.NewDiscardReadWriteCloser(), "N0->N1->tcp://127.0.0.1:10")
+		_, _, err = node1.SyncDial(xio.NewDiscardReadWriteCloser(), "N0->N1->tcp://127.0.0.1:10")
 		if err == nil {
 			t.Error(err)
 			return
 		}
-		_, err = node1.SyncDial(xio.NewDiscardReadWriteCloser(), "N0->X0->tcp://127.0.0.1:10")
+		_, _, err = node1.SyncDial(xio.NewDiscardReadWriteCloser(), "N0->X0->tcp://127.0.0.1:10")
 		if err == nil {
 			t.Error(err)
 			return
 		}
-		_, err = node1.SyncDial(xio.NewDiscardReadWriteCloser(), "NX->tcp://127.0.0.1:10")
+		_, _, err = node1.SyncDial(xio.NewDiscardReadWriteCloser(), "NX->tcp://127.0.0.1:10")
 		if err == nil {
 			t.Error(err)
 			return
 		}
-		_, err = node1.SyncDial(xio.NewDiscardReadWriteCloser(), "N0")
+		_, _, err = node1.SyncDial(xio.NewDiscardReadWriteCloser(), "N0")
 		if err == nil {
 			t.Error(err)
 			return
 		}
-		_, err = node1.SyncDial(NewErrReadWriteCloser([]byte("123"), 40), "N0->tcp://127.0.0.1:13200")
+		_, _, err = node1.SyncDial(NewErrReadWriteCloser([]byte("123"), 40), "N0->tcp://127.0.0.1:13200")
 		if err != nil {
 			t.Error(err)
 			return
@@ -611,9 +741,9 @@ func TestRouter(t *testing.T) {
 			t.Error(err)
 			return
 		}
-		node0.NewConn(xio.NewDiscardReadWriteCloser())
-		node0.NewConn(frame.NewReadWriteCloser(nil, nil, 1024))
-		node0.NewConn(NewRouterConn(nil, 1, ConnTypeChannel))
+		node0.NewConn(xio.NewDiscardReadWriteCloser(), 0, ConnTypeChannel)
+		node0.NewConn(frame.NewReadWriteCloser(nil, nil, 1024), 0, ConnTypeChannel)
+		node0.NewConn(NewRouterConn(nil, 1, ConnTypeChannel), 0, ConnTypeChannel)
 		node0.NewFrameConn(xio.NewDiscardReadWriteCloser())
 		node0.NewFrameConn(frame.NewReadWriteCloser(nil, nil, 1024))
 		func() {
@@ -622,7 +752,7 @@ func TestRouter(t *testing.T) {
 					t.Error("error")
 				}
 			}()
-			node0.NewConn("123")
+			node0.NewConn("123", 0, ConnTypeChannel)
 		}()
 		func() {
 			defer func() {
@@ -653,6 +783,14 @@ func TestRouter(t *testing.T) {
 				}
 			}()
 			node0.procConnRead(nil)
+		}()
+		func() {
+			defer func() {
+				if perr := recover(); perr == nil {
+					t.Error("error")
+				}
+			}()
+			node0.addChannel(NewRouterConn(nil, 0, ConnTypeRaw))
 		}()
 		func() {
 			defer func() {
@@ -693,32 +831,35 @@ func TestRouter(t *testing.T) {
 			node0.Accept(frame.NewRawReadWriter(node0.Header, bytes.NewBufferString("abc"), node0.BufferSize), true)
 		}
 		{ //dial conn error
-			node0.procDialConn(discard, nil, 0, []byte("")) //uri error
+			node0.procDialConn(discard, &RouterFrame{Data: []byte("")}) //uri error
 
 			conn := NewRouterConn(frame.NewRawReadWriteCloser(node0.Header, NewErrReadWriteCloser([]byte("abc"), 10), node0.BufferSize), 1, ConnTypeRaw)
 			conn.SetName("ERR")
 			node0.addChannel(conn)
-			err := node0.procDialConn(discard, nil, 0, []byte("XX|ERR->tcp://127.0.0.1:80")) //net writer error
+			err := node0.procDialConn(discard, &RouterFrame{Data: []byte("XX|ERR->tcp://127.0.0.1:80")}) //net writer error
 			if err != nil {
 				t.Error(err)
 				return
 			}
 		}
+		{ //dial raw error
+			node0.procDialRaw(discard, ZeroConnID, "", "") //id error
+		}
 		{ //dial back error
-			node0.procDialBack(discard, nil, 0, []byte("")) //router error
+			node0.procDialBack(discard, &RouterFrame{Data: []byte("")}) //router error
 
 			conn := NewRouterConn(frame.NewRawReadWriteCloser(node0.Header, NewErrReadWriteCloser([]byte("abc"), 10), node0.BufferSize), 1, ConnTypeChannel)
 			conn.SetName("ERR")
-			node0.addTable(discard, 1, conn, 1, "test")
-			node0.procDialBack(discard, make([]byte, 1024), 1, make([]byte, 1024)) //router error //forward error
+			node0.addTable(discard, ConnID{1, 1}, conn, ConnID{1, 1}, "test")
+			node0.procDialBack(discard, NewRouterFrameByMessage(node0.Header, nil, ConnID{1, 1}, CmdDialBack, []byte("abc"))) //router error //forward error
 		}
 		{ //conn data error
-			node0.procConnData(discard, nil, 1000, []byte("")) //router error
+			node0.procConnData(discard, &RouterFrame{SID: ConnID{100, 100}, Data: []byte("")}) //router error
 
 			conn := NewRouterConn(frame.NewRawReadWriteCloser(node0.Header, NewErrReadWriteCloser([]byte("abc"), 10), node0.BufferSize), 1, ConnTypeChannel)
 			conn.SetName("ERR")
-			node0.addTable(discard, 1, conn, 1, "test")
-			node0.procConnData(discard, make([]byte, 1024), 1, make([]byte, 1024)) //router error //forward error
+			node0.addTable(discard, ConnID{1, 1}, conn, ConnID{1, 1}, "test")
+			node0.procConnData(discard, NewRouterFrameByMessage(node0.Header, nil, ConnID{1, 1}, CmdDialBack, []byte("abc"))) //router error //forward error
 		}
 		{ //join conn error
 			writeErr := NewRouterConn(frame.NewRawReadWriteCloser(node0.Header, NewErrReadWriteCloser([]byte("abc"), 10), node0.BufferSize), 1, ConnTypeChannel)
@@ -739,7 +880,7 @@ func TestRouter(t *testing.T) {
 			conn.SetName("ERR")
 			node0.addChannel(conn)
 
-			_, err := node0.Dial(discard, "ERR->tcp://127.0.0.1:10")
+			_, _, err := node0.Dial(discard, "ERR->tcp://127.0.0.1:10")
 			if err == nil {
 				t.Error(err)
 				return

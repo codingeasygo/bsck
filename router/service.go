@@ -427,9 +427,9 @@ func (s *Service) dialOne(uri string, raw io.ReadWriteCloser, sync bool) (sid ui
 		}
 	}
 	if sync {
-		sid, err = s.Node.SyncDial(raw, dialURI)
+		_, sid, err = s.Node.SyncDial(raw, dialURI)
 	} else {
-		sid, err = s.Node.Dial(raw, dialURI)
+		_, sid, err = s.Node.Dial(raw, dialURI)
 	}
 	return
 }
@@ -438,7 +438,7 @@ func (s *Service) dialOne(uri string, raw io.ReadWriteCloser, sync bool) (sid ui
 func (s *Service) DialRaw(channel Conn, sid uint16, uri string) (conn Conn, err error) {
 	raw, err := s.Dialer.Dial(channel, sid, uri, nil)
 	if err == nil {
-		conn = s.Node.NewConn(raw)
+		conn = s.Node.NewConn(raw, sid, ConnTypeRaw)
 	}
 	return
 }

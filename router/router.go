@@ -1,6 +1,7 @@
 package router
 
 import (
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -95,16 +96,72 @@ func (c Cmd) String() string {
 	}
 }
 
-func writeCmd(w frame.Writer, buffer []byte, cmd Cmd, sid uint16, msg []byte) (err error) {
-	offset := w.GetDataOffset()
-	n := offset + 3 + len(msg)
-	if buffer == nil {
-		buffer = make([]byte, n)
+type RouterFrame struct {
+	Buffer []byte
+	SID    ConnID
+	Cmd    Cmd
+	Data   []byte
+}
+
+func ParseLocalRouterFrame(header frame.Header, buffer []byte) (frame *RouterFrame) {
+	offset := header.GetDataOffset()
+	frame = &RouterFrame{
+		Buffer: buffer,
+		SID:    [2]byte{buffer[offset], buffer[offset+1]},
+		Cmd:    Cmd(buffer[offset+2]),
+		Data:   buffer[offset+3:],
 	}
-	w.GetByteOrder().PutUint16(buffer[offset:offset+2], sid)
-	buffer[offset+2] = byte(cmd)
-	copy(buffer[offset+3:], msg)
-	_, err = w.WriteFrame(buffer[:n])
+	return
+}
+
+func ParseRemoteRouterFrame(header frame.Header, buffer []byte) (frame *RouterFrame) {
+	offset := header.GetDataOffset()
+	frame = &RouterFrame{
+		Buffer: buffer,
+		SID:    [2]byte{buffer[offset+1], buffer[offset]},
+		Cmd:    Cmd(buffer[offset+2]),
+		Data:   buffer[offset+3:],
+	}
+	return
+}
+
+func NewRouterFrame(header frame.Header, buffer []byte, sid ConnID, cmd Cmd) (frame *RouterFrame) {
+	header.WriteHead(buffer)
+	offset := header.GetDataOffset()
+	localID, remoteID := sid.Split()
+	buffer[offset], buffer[offset+1], buffer[offset+2] = localID, remoteID, byte(cmd)
+	frame = &RouterFrame{
+		Buffer: buffer,
+		SID:    sid,
+		Cmd:    Cmd(buffer[offset+2]),
+		Data:   buffer[offset+3:],
+	}
+	return
+}
+
+func NewRouterFrameByMessage(header frame.Header, buffer []byte, sid ConnID, cmd Cmd, message []byte) (frame *RouterFrame) {
+	offset := header.GetDataOffset() + 3
+	if len(buffer) < 1 {
+		buffer = make([]byte, offset+len(message))
+	}
+	copy(buffer[offset:], message)
+	frame = NewRouterFrame(header, buffer, sid, cmd)
+	return
+}
+
+func (f *RouterFrame) String() string {
+	var show string
+	if len(f.Buffer) > 32 {
+		show = fmt.Sprintf("%v...]", strings.TrimSuffix(fmt.Sprintf("%v", f.Buffer[:32]), "]"))
+	} else {
+		show = fmt.Sprintf("%v", f.Buffer)
+	}
+	return fmt.Sprintf("Frame(%v,%v,%v)", len(f.Buffer), f.SID, show)
+}
+
+func writeMessage(w Conn, buffer []byte, sid ConnID, cmd Cmd, message []byte) (err error) {
+	frame := NewRouterFrameByMessage(w, buffer, sid, cmd, message)
+	err = w.WriteRouterFrame(frame)
 	return
 }
 
@@ -126,6 +183,34 @@ func (c ConnType) String() string {
 	default:
 		return fmt.Sprintf("unknown cmd(%v)", byte(c))
 	}
+}
+
+type ConnID [2]byte
+
+var ZeroConnID = ConnID{}
+
+func (c ConnID) Split() (localID, remoteID byte) {
+	localID, remoteID = c[0], c[1]
+	return
+}
+
+func (c ConnID) LocalID() (localID byte) {
+	localID = c[0]
+	return
+}
+
+func (c ConnID) RemoteID() (remoteID byte) {
+	remoteID = c[1]
+	return
+}
+
+func (c ConnID) String() string {
+	return "0x" + hex.EncodeToString([]byte{c[0], c[1]})
+}
+
+func MakeRawConnPrefix(sid ConnID, cmd Cmd) (prefix []byte) {
+	prefix = []byte{sid[1], sid[0], byte(cmd)}
+	return
 }
 
 type RawValuable interface {
@@ -164,6 +249,16 @@ type Conn interface {
 	Type() ConnType
 	//conn context getter
 	Context() xmap.M
+	//alloc conn id, if can't alloc more id returing zero
+	AllocConnID() byte
+	//free conn id
+	FreeConnID(connID byte)
+	//used conn id
+	UsedConnID() (used int)
+	//read router frame
+	ReadRouterFrame() (frame *RouterFrame, err error)
+	//write router frame
+	WriteRouterFrame(frame *RouterFrame) (err error)
 }
 
 // ReadyWaiter interface for ready waiter
@@ -294,6 +389,9 @@ type RouterConn struct {
 	pingSpeed             time.Duration
 	pingLast              time.Time
 	recvLast              time.Time
+	connSeq               uint8
+	connAll               map[byte]bool
+	connLck               sync.RWMutex
 	failed                error
 	waiter                *sync.Cond
 }
@@ -304,13 +402,9 @@ func NewRouterConn(base frame.ReadWriteCloser, id uint16, connType ConnType) (co
 		id:              id,
 		connType:        connType,
 		context:         xmap.M{},
+		connAll:         map[uint8]bool{},
+		connLck:         sync.RWMutex{},
 		waiter:          sync.NewCond(&sync.Mutex{}),
-	}
-	if connType == ConnTypeRaw {
-		prefix := make([]byte, 3)
-		base.GetByteOrder().PutUint16(prefix, id)
-		prefix[2] = byte(CmdConnData)
-		base.SetDataPrefix(prefix)
 	}
 	return
 }
@@ -352,6 +446,51 @@ func (r *RouterConn) Type() ConnType {
 // Context is conn context getter
 func (r *RouterConn) Context() xmap.M {
 	return r.context
+}
+
+// alloc conn id, if can't alloc more id returing zero
+func (r *RouterConn) AllocConnID() (connID byte) {
+	r.connLck.Lock()
+	defer r.connLck.Unlock()
+	for i := 0; i < 257; i++ {
+		r.connSeq++
+		nextID := r.connSeq
+		if nextID > 0 && !r.connAll[nextID] {
+			r.connAll[nextID] = true
+			connID = nextID
+			break
+		}
+	}
+	return
+}
+
+// free conn id
+func (r *RouterConn) FreeConnID(connID byte) {
+	r.connLck.Lock()
+	defer r.connLck.Unlock()
+	delete(r.connAll, connID)
+}
+
+func (r *RouterConn) UsedConnID() (used int) {
+	r.connLck.RLock()
+	defer r.connLck.RUnlock()
+	used = len(r.connAll)
+	return
+}
+
+// read router frame
+func (r *RouterConn) ReadRouterFrame() (frame *RouterFrame, err error) {
+	buffer, err := r.ReadWriteCloser.ReadFrame()
+	if err == nil {
+		frame = ParseRemoteRouterFrame(r.ReadWriteCloser, buffer)
+	}
+	return
+}
+
+// write router frame
+func (r *RouterConn) WriteRouterFrame(frame *RouterFrame) (err error) {
+	_, err = r.ReadWriteCloser.WriteFrame(frame.Buffer)
+	return
 }
 
 func (r *RouterConn) RawValue() (raw interface{}) {
@@ -410,14 +549,22 @@ func (r *RouterConn) String() string {
 // RouterItem is the router table item
 type RouterItem struct {
 	FromConn Conn
-	FromSID  uint16
+	FromSID  ConnID
 	NextConn Conn
-	NexSID   uint16
+	NexSID   ConnID
 	URI      string
 }
 
+func (r *RouterItem) Update(conn Conn, sid ConnID) {
+	if r.FromConn == conn {
+		r.FromSID = sid
+	} else if r.NextConn == conn {
+		r.NexSID = sid
+	}
+}
+
 // Next will return next connection and session id
-func (r *RouterItem) Next(conn Conn) (next Conn, sid uint16) {
+func (r *RouterItem) Next(conn Conn) (next Conn, sid ConnID) {
 	if r.FromConn == conn {
 		next = r.NextConn
 		sid = r.NexSID
@@ -428,30 +575,54 @@ func (r *RouterItem) Next(conn Conn) (next Conn, sid uint16) {
 	return
 }
 
+func (r *RouterItem) AllKey() (keyList []string) {
+	{
+		local, remote := routerKey(r.FromConn, r.FromSID)
+		if len(local) > 0 {
+			keyList = append(keyList, local)
+		}
+		if len(remote) > 0 {
+			keyList = append(keyList, remote)
+		}
+	}
+	{
+		local, remote := routerKey(r.NextConn, r.NexSID)
+		if len(local) > 0 {
+			keyList = append(keyList, local)
+		}
+		if len(remote) > 0 {
+			keyList = append(keyList, remote)
+		}
+	}
+	return
+}
+
 func (r RouterItem) String() string {
 	return fmt.Sprintf("%v %v<->%v %v", r.FromConn, r.FromSID, r.NexSID, r.NextConn)
 }
 
-func (r *RouterItem) Key() (from, next string) {
-	from = routerKey(r.FromConn, r.FromSID)
-	next = routerKey(r.NextConn, r.NexSID)
+func routerKey(conn Conn, sid ConnID) (local, remote string) {
+	if sid[0] > 0 {
+		local = fmt.Sprintf("l-%d-%v", conn.ID(), sid[0])
+	}
+	if sid[1] > 0 {
+		remote = fmt.Sprintf("r-%d-%v", conn.ID(), sid[1])
+	}
 	return
 }
 
-func routerKey(conn Conn, sid uint16) string { return fmt.Sprintf("%d-%v", conn.ID(), sid) }
-
 // DialRawF is a function type to dial raw connection.
-type DialRawF func(channel Conn, sid uint16, uri string) (raw Conn, err error)
+type DialRawF func(channel Conn, id uint16, uri string) (raw Conn, err error)
 
 // DialRaw will dial raw connection
-func (d DialRawF) DialRaw(channel Conn, sid uint16, uri string) (raw Conn, err error) {
-	raw, err = d(channel, sid, uri)
+func (d DialRawF) DialRaw(channel Conn, id uint16, uri string) (raw Conn, err error) {
+	raw, err = d(channel, id, uri)
 	return
 }
 
 // RawDialer is dialer to dial raw by uri
 type RawDialer interface {
-	DialRaw(channel Conn, sid uint16, uri string) (raw Conn, err error)
+	DialRaw(channel Conn, id uint16, uri string) (raw Conn, err error)
 }
 
 // Handler is the interface that wraps the handler of Router.
@@ -509,14 +680,20 @@ func NewRouter(name string, handler Handler) (router *Router) {
 	return
 }
 
-func (r *Router) NewConn(v interface{}) (conn Conn) {
+func (r *Router) NewConn(v interface{}, connID uint16, connType ConnType) (conn Conn) {
 	if c, ok := v.(Conn); ok {
 		conn = c
 	} else if f, ok := v.(frame.ReadWriteCloser); ok {
-		conn = NewRouterConn(f, r.NewSid(), ConnTypeChannel)
+		if connID < 1 {
+			connID = r.NewConnID()
+		}
+		conn = NewRouterConn(f, connID, connType)
 	} else if raw, ok := v.(io.ReadWriteCloser); ok {
 		f := frame.NewRawReadWriteCloser(r.Header, raw, r.BufferSize)
-		conn = NewRouterConn(f, r.NewSid(), ConnTypeChannel)
+		if connID < 1 {
+			connID = r.NewConnID()
+		}
+		conn = NewRouterConn(f, connID, connType)
 	} else {
 		panic(fmt.Sprintf("channel type is not supported by %v=>router.Conn", reflect.TypeOf(v)))
 	}
@@ -537,8 +714,7 @@ func (r *Router) NewFrameConn(v interface{}) (conn frame.ReadWriteCloser) {
 // Accept one raw connection as channel,
 // it will auth the raw connection by ACL.
 func (r *Router) Accept(channel interface{}, sync bool) {
-	conn := r.NewConn(channel)
-	r.addChannel(conn)
+	conn := r.NewConn(channel, 0, ConnTypeChannel)
 	r.waiter.Add(1)
 	if sync {
 		r.procConnRead(conn)
@@ -550,7 +726,7 @@ func (r *Router) Accept(channel interface{}, sync bool) {
 // Register one login raw connection to channel,
 // it will auth the raw connection by ACL.
 func (r *Router) Register(channel interface{}) {
-	conn := r.NewConn(channel)
+	conn := r.NewConn(channel, 0, ConnTypeChannel)
 	r.addChannel(conn)
 	r.waiter.Add(1)
 	go r.procConnRead(conn)
@@ -569,6 +745,9 @@ func (r *Router) findChannel(name string, new bool) (channel *BondConn) {
 
 func (r *Router) addChannel(channel Conn) {
 	name := channel.Name()
+	if len(name) < 1 {
+		panic(fmt.Sprintf("channel %v name is empty", channel))
+	}
 	bound := r.findChannel(name, true)
 	connected := bound.AddConn(channel)
 	InfoLog("Router(%v) add channel(%v) success with %v connected", r.Name, channel, connected)
@@ -610,8 +789,8 @@ func (r *Router) DisplayChannel(query xmap.M) (channels xmap.M) {
 }
 
 // NewSid will return new session id
-func (r *Router) NewSid() (sid uint16) {
-	sid = uint16(atomic.AddUint32(&r.sidSequence, 1) % uint32(r.MaxConnection))
+func (r *Router) NewConnID() (connID uint16) {
+	connID = uint16(atomic.AddUint32(&r.sidSequence, 1) % uint32(r.MaxConnection))
 	return
 }
 
@@ -636,36 +815,51 @@ func (r *Router) CloseChannel(name string) (err error) {
 	return
 }
 
-func (r *Router) addTable(fromConn Conn, fromSID uint16, nextConn Conn, nextSID uint16, conn string) *RouterItem {
+func (r *Router) addTable(fromConn Conn, fromSID ConnID, nextConn Conn, nextSID ConnID, conn string) *RouterItem {
 	r.tableLck.Lock()
 	defer r.tableLck.Unlock()
 	router := &RouterItem{FromConn: fromConn, FromSID: fromSID, NextConn: nextConn, NexSID: nextSID, URI: conn}
-	fromKey, nextKey := router.Key()
-	r.tableAll[fromKey] = router
-	r.tableAll[nextKey] = router
+	for _, key := range router.AllKey() {
+		r.tableAll[key] = router
+	}
 	return router
 }
 
-func (r *Router) findTable(conn Conn, sid uint16) *RouterItem {
+func (r *Router) updateTable(router *RouterItem) {
 	r.tableLck.Lock()
 	defer r.tableLck.Unlock()
-	router := r.tableAll[routerKey(conn, sid)]
+	for _, key := range router.AllKey() {
+		r.tableAll[key] = router
+	}
+}
+
+func (r *Router) findTable(conn Conn, sid ConnID) *RouterItem {
+	r.tableLck.Lock()
+	defer r.tableLck.Unlock()
+	return r.findTableNoLock(conn, sid)
+}
+
+func (r *Router) findTableNoLock(conn Conn, sid ConnID) *RouterItem {
+	local, remote := routerKey(conn, sid)
+	router := r.tableAll[local]
+	if router == nil {
+		router = r.tableAll[remote]
+	}
 	return router
 }
 
-func (r *Router) removeTable(conn Conn, sid uint16) *RouterItem {
+func (r *Router) removeTable(conn Conn, sid ConnID) *RouterItem {
 	r.tableLck.Lock()
 	defer r.tableLck.Unlock()
 	return r.removeTableNoLock(conn, sid)
 }
 
-func (r *Router) removeTableNoLock(conn Conn, sid uint16) *RouterItem {
-	key := routerKey(conn, sid)
-	router := r.tableAll[key]
+func (r *Router) removeTableNoLock(conn Conn, sid ConnID) *RouterItem {
+	router := r.findTableNoLock(conn, sid)
 	if router != nil {
-		fromKey, nextKey := router.Key()
-		delete(r.tableAll, fromKey)
-		delete(r.tableAll, nextKey)
+		for _, key := range router.AllKey() {
+			delete(r.tableAll, key)
+		}
 	}
 	return router
 }
@@ -679,13 +873,6 @@ func (r *Router) removeCloseTable(channel Conn) (notify []*RouterItem, close []i
 		added := addedAll[key]
 		addedAll[key] = true
 		return !added
-	}
-	if channel.Type() == ConnTypeRaw {
-		router := r.removeTableNoLock(channel, channel.ID())
-		if router != nil && checkAdded(router) {
-			notify = append(notify, router)
-		}
-		return
 	}
 	for _, router := range r.tableAll {
 		target, sid := router.Next(channel)
@@ -766,41 +953,37 @@ func (r *Router) procConnRead(conn Conn) {
 		r.waiter.Done()
 	}()
 	InfoLog("Router(%v) the reader(%v) is starting", r.Name, conn)
-	var buf []byte
+	var frame *RouterFrame
 	var err error
-	offset := conn.GetDataOffset()
-	order := conn.GetByteOrder()
+	// offset := conn.GetDataOffset()
 	conn.SetRecvLast(time.Now())
 	for {
-		buf, err = conn.ReadFrame()
+		frame, err = conn.ReadRouterFrame()
 		if err != nil {
 			break
 		}
 		conn.SetRecvLast(time.Now())
-		frame := buf[offset:]
-		sid := order.Uint16(frame[:2])
-		cmd := Cmd(frame[2])
 		if ShowLog > 1 {
-			DebugLog("Router(%v) read one command(%v,%v) from %v", r.Name, cmd, len(buf), conn)
+			DebugLog("Router(%v) read one command(%v) from %v", r.Name, frame, conn)
 		}
-		// fmt.Printf("Router(%v) read--->%v,%v\n", r.Name, buf[:offset+3], string(frame[3:]))
-		switch cmd {
+		// fmt.Printf("Router(%v) read--->%v,%v\n", r.Name, frame.Buffer[:offset+3], string(frame.Data))
+		switch frame.Cmd {
 		case CmdLoginChannel:
-			err = r.procLoginChannel(conn, buf, sid, frame[3:])
+			err = r.procLoginChannel(conn, frame)
 		case CmdPingConn:
-			err = r.procPingConn(conn, buf, sid, frame[3:])
+			err = r.procPingConn(conn, frame)
 		case CmdPingBack:
-			err = r.procPingBack(conn, buf, sid, frame[3:])
+			err = r.procPingBack(conn, frame)
 		case CmdDialConn:
-			err = r.procDialConn(conn, buf, sid, frame[3:])
+			err = r.procDialConn(conn, frame)
 		case CmdDialBack:
-			err = r.procDialBack(conn, buf, sid, frame[3:])
+			err = r.procDialBack(conn, frame)
 		case CmdConnData:
-			err = r.procConnData(conn, buf, sid, frame[3:])
+			err = r.procConnData(conn, frame)
 		case CmdConnClosed:
-			err = r.procConnClosed(conn, buf, sid, frame[3:])
+			err = r.procConnClosed(conn, frame)
 		default:
-			err = fmt.Errorf("not supported cmd(%v)", cmd)
+			err = fmt.Errorf("not supported cmd(%v)", frame.Cmd)
 		}
 		if err != nil {
 			break
@@ -819,7 +1002,8 @@ func (r *Router) closeConn(conn Conn, reason error) (notified, closed int) {
 	for _, router := range toNotify {
 		target, sid := router.Next(conn)
 		if target != nil {
-			writeCmd(target, nil, CmdConnClosed, sid, []byte("channel closed"))
+			writeMessage(target, nil, sid, CmdConnClosed, []byte("channel closed"))
+			target.FreeConnID(sid.LocalID())
 		}
 	}
 	if conn.Type() == ConnTypeChannel {
@@ -829,12 +1013,12 @@ func (r *Router) closeConn(conn Conn, reason error) (notified, closed int) {
 	return
 }
 
-func (r *Router) procLoginChannel(channel Conn, buf []byte, sid uint16, data []byte) (err error) {
-	name, result, err := r.Handler.OnConnLogin(channel, string(data))
+func (r *Router) procLoginChannel(channel Conn, frame *RouterFrame) (err error) {
+	name, result, err := r.Handler.OnConnLogin(channel, string(frame.Data))
 	if err != nil {
 		ErrorLog("Router(%v) proc login fail with %v", r.Name, err)
 		message := converter.JSON(xmap.M{"code": 10, "message": err.Error()})
-		writeCmd(channel, nil, CmdLoginBack, 0, []byte(message))
+		writeMessage(channel, nil, frame.SID, CmdLoginBack, []byte(message))
 		return
 	}
 	if result == nil {
@@ -845,7 +1029,7 @@ func (r *Router) procLoginChannel(channel Conn, buf []byte, sid uint16, data []b
 	result["code"] = 0
 	r.addChannel(channel)
 	message := converter.JSON(result)
-	writeCmd(channel, nil, CmdLoginBack, 0, []byte(message))
+	writeMessage(channel, nil, frame.SID, CmdLoginBack, []byte(message))
 	InfoLog("Router(%v) the channel(%v) is login success on %v", r.Name, name, channel)
 	return
 }
@@ -864,21 +1048,21 @@ func (r *Router) procPingAll() {
 		for _, conn := range channel.ListConn() {
 			startTime := xtime.TimeNow()
 			order.PutUint64(buffer[offset+3:], uint64(startTime))
-			writeCmd(conn, buffer, CmdPingConn, 0, buffer[offset+3:])
+			writeMessage(conn, buffer, ConnID{}, CmdPingConn, buffer[offset+3:])
 		}
 	}
 }
 
-func (r *Router) procPingConn(channel Conn, buf []byte, sid uint16, data []byte) (err error) {
+func (r *Router) procPingConn(channel Conn, frame *RouterFrame) (err error) {
 	offset := channel.GetDataOffset()
-	buf[offset+2] = byte(CmdPingBack)
-	_, err = channel.WriteFrame(buf)
+	frame.Buffer[offset+2] = byte(CmdPingBack)
+	err = channel.WriteRouterFrame(frame)
 	return
 }
 
-func (r *Router) procPingBack(channel Conn, buf []byte, sid uint16, data []byte) (err error) {
+func (r *Router) procPingBack(channel Conn, frame *RouterFrame) (err error) {
 	order := channel.GetByteOrder()
-	startTime := xtime.TimeUnix(int64(order.Uint64(data)))
+	startTime := xtime.TimeUnix(int64(order.Uint64(frame.Data)))
 	channel.SetPing(time.Since(startTime), time.Now())
 	return
 }
@@ -899,21 +1083,31 @@ func (r *Router) procTimeoutAll() {
 	}
 }
 
-func (r *Router) procDialRaw(channel Conn, sid uint16, conn, uri string) (err error) {
-	nextSid := r.NewSid()
-	next, nextError := r.Handler.DialRaw(channel, nextSid, uri)
+func (r *Router) procDialRaw(channel Conn, sid ConnID, conn, uri string) (err error) {
+	if sid[1] < 1 {
+		xerr := fmt.Errorf("remote id is zero")
+		WarnLog("Router(%v) dial %v to %v fail on channel(%v) by %v", r.Name, sid, conn, channel, xerr)
+		err = writeMessage(channel, nil, sid, CmdDialBack, []byte(xerr.Error()))
+		return
+	}
+	connID := r.NewConnID()
+	next, nextError := r.Handler.DialRaw(channel, connID, uri)
 	if nextError != nil {
 		InfoLog("Router(%v) dial %v to %v fail on channel(%v) by %v", r.Name, sid, conn, channel, nextError)
 		message := []byte(fmt.Sprintf("dial to uri(%v) fail with %v", uri, nextError))
-		err = writeCmd(channel, nil, CmdDialBack, sid, message)
+		err = writeMessage(channel, nil, sid, CmdDialBack, message)
 		return
 	}
-	DebugLog("Router(%v) dial(%v-%v->%v-%v) to %v success on channel(%v)", r.Name, channel.ID(), sid, next.ID(), nextSid, conn, channel)
-	r.addTable(channel, sid, next, nextSid, conn)
-	err = writeCmd(channel, nil, CmdDialBack, sid, []byte("OK"))
+	localID := channel.AllocConnID()
+	sid[0] = localID
+	nextSID := ConnID{localID, localID}
+	DebugLog("Router(%v) dial(%v-%v->%v-%v) to %v success on channel(%v)", r.Name, channel.ID(), sid, next.ID(), nextSID, conn, channel)
+	r.addTable(channel, sid, next, nextSID, conn)
+	err = writeMessage(channel, nil, sid, CmdDialBack, []byte(ConnOK))
 	if err != nil {
 		next.Close()
 		r.removeTable(channel, sid)
+		channel.FreeConnID(localID)
 	} else {
 		r.waiter.Add(1)
 		go r.procConnRead(next)
@@ -921,24 +1115,24 @@ func (r *Router) procDialRaw(channel Conn, sid uint16, conn, uri string) (err er
 	return
 }
 
-func (r *Router) procDialConn(channel Conn, buf []byte, sid uint16, data []byte) (err error) {
-	conn := string(data)
-	DebugLog("Router(%v) proc dial(%v) to %v on channel(%v)", r.Name, sid, conn, channel)
+func (r *Router) procDialConn(channel Conn, frame *RouterFrame) (err error) {
+	conn := string(frame.Data)
+	DebugLog("Router(%v) proc dial(%v) to %v on channel(%v)", r.Name, frame.SID, conn, channel)
 	path := strings.SplitN(conn, "|", 2)
 	if len(path) < 2 {
 		WarnLog("Router(%v) proc dial to %v on channel(%v) fail with invalid uri", r.Name, conn, channel)
-		err = writeCmd(channel, nil, CmdDialBack, sid, []byte(fmt.Sprintf("invalid uri(%v)", conn)))
+		err = writeMessage(channel, nil, frame.SID, CmdDialBack, []byte(fmt.Sprintf("invalid uri(%v)", conn)))
 		return
 	}
 	parts := strings.SplitN(path[1], "->", 2)
 	err = r.Handler.OnConnDialURI(channel, conn, parts)
 	if err != nil {
 		WarnLog("Router(%v) process dial uri event to %v on channel(%v) fail with %v", r.Name, conn, channel, err)
-		err = writeCmd(channel, nil, CmdDialBack, sid, []byte(fmt.Sprintf("%v", err)))
+		err = writeMessage(channel, nil, frame.SID, CmdDialBack, []byte(fmt.Sprintf("%v", err)))
 		return
 	}
 	if len(parts) < 2 {
-		go r.procDialRaw(channel, sid, conn, parts[0])
+		go r.procDialRaw(channel, frame.SID, conn, parts[0])
 		return
 	}
 	nextName := parts[0]
@@ -946,62 +1140,67 @@ func (r *Router) procDialConn(channel Conn, buf []byte, sid uint16, data []byte)
 		err = fmt.Errorf("self dial error")
 		DebugLog("Router(%v) proc dial to %v on channel(%v) fail with select channel error %v", r.Name, conn, channel, err)
 		message := err.Error()
-		err = writeCmd(channel, nil, CmdDialBack, sid, []byte(message))
+		err = writeMessage(channel, nil, frame.SID, CmdDialBack, []byte(message))
 		return
 	}
 	next, err := r.SelectChannel(nextName)
 	if err != nil {
 		DebugLog("Router(%v) proc dial to %v on channel(%v) fail with select channel error %v", r.Name, conn, channel, err)
 		message := err.Error()
-		err = writeCmd(channel, nil, CmdDialBack, sid, []byte(message))
+		err = writeMessage(channel, nil, frame.SID, CmdDialBack, []byte(message))
 		return
 	}
-	nextSid := r.NewSid()
+	localID := next.AllocConnID()
+	nextSID := ConnID{localID, 0}
 	if ShowLog > 1 {
-		DebugLog("Router(%v) forwarding dial(%v-%v->%v-%v) %v to channel(%v)", r.Name, channel.ID(), sid, next.ID(), nextSid, conn, next)
+		DebugLog("Router(%v) forwarding dial(%v-%v->%v-%v) %v to channel(%v)", r.Name, channel.ID(), frame.SID, next.ID(), nextSID, conn, next)
 	}
-	r.addTable(channel, sid, next, nextSid, conn)
-	writeError := writeCmd(next, nil, CmdDialConn, nextSid, []byte(path[0]+"->"+nextName+"|"+parts[1]))
+	r.addTable(channel, frame.SID, next, nextSID, conn)
+	writeError := writeMessage(next, nil, nextSID, CmdDialConn, []byte(path[0]+"->"+nextName+"|"+parts[1]))
 	if writeError != nil {
 		WarnLog("Router(%v) send dial to channel(%v) fail with %v", r.Name, next, writeError)
 		message := writeError.Error()
-		err = writeCmd(channel, nil, CmdDialBack, sid, []byte(message))
-		r.removeTable(channel, sid)
+		err = writeMessage(channel, nil, frame.SID, CmdDialBack, []byte(message))
+		r.removeTable(channel, frame.SID)
+		next.FreeConnID(localID)
 	}
 	return
 }
 
-func (r *Router) procDialBack(channel Conn, buf []byte, sid uint16, data []byte) (err error) {
-	DebugLog("Router(%v) proc dial back by %v on channel(%v)", r.Name, sid, channel)
-	router := r.findTable(channel, sid)
+func (r *Router) procDialBack(channel Conn, frame *RouterFrame) (err error) {
+	DebugLog("Router(%v) proc dial back by %v on channel(%v)", r.Name, frame.SID, channel)
+	router := r.findTable(channel, frame.SID)
 	if router == nil {
-		err = writeCmd(channel, nil, CmdConnClosed, sid, []byte("closed"))
+		err = writeMessage(channel, nil, frame.SID, CmdConnClosed, []byte("closed"))
 		return
 	}
+	router.Update(channel, frame.SID)
 	next, nextSID := router.Next(channel)
 	if next.Type() == ConnTypeRaw {
-		msg := string(data)
+		msg := string(frame.Data)
 		if msg == ConnOK {
-			InfoLog("Router(%v) dial to %v success", r.Name, next)
+			InfoLog("Router(%v) dial %v->%v success on %v", r.Name, next, router.URI, channel)
+			r.updateTable(router)
 			r.startConnRead(next, nextSID)
 		} else {
-			InfoLog("Router(%v) dial to %v fail with %v", r.Name, next, msg)
-			r.removeTable(channel, sid)
+			InfoLog("Router(%v) dial %v->%v fail with %v", r.Name, next, router.URI, msg)
+			channel.FreeConnID(frame.SID.LocalID())
+			r.removeTable(channel, frame.SID)
 			if waiter, ok := next.(ReadyWaiter); ok {
 				waiter.Ready(fmt.Errorf("%v", msg), nil)
 			}
 			next.Close()
 		}
 	} else {
-		writeError := r.procNextForward(channel, sid, next, nextSID, buf)
+		writeError := r.procNextForward(channel, frame.SID, next, nextSID, frame)
 		if writeError != nil {
-			err = writeCmd(channel, nil, CmdConnClosed, sid, []byte("closed"))
+			err = writeMessage(channel, nil, frame.SID, CmdConnClosed, []byte("closed"))
 		}
 	}
 	return
 }
 
-func (r *Router) startConnRead(conn Conn, sid uint16) {
+func (r *Router) startConnRead(conn Conn, sid ConnID) {
 	conn.Ready(nil, func(err error) {
 		if err == nil {
 			r.waiter.Add(1)
@@ -1012,8 +1211,8 @@ func (r *Router) startConnRead(conn Conn, sid uint16) {
 	})
 }
 
-func (r *Router) procConnData(conn Conn, buf []byte, sid uint16, data []byte) (err error) {
-	router := r.findTable(conn, sid)
+func (r *Router) procConnData(conn Conn, frame *RouterFrame) (err error) {
+	router := r.findTable(conn, frame.SID)
 	if router == nil {
 		if conn.Type() == ConnTypeRaw { //if raw should close the raw, else ignore
 			err = fmt.Errorf("not router")
@@ -1022,80 +1221,83 @@ func (r *Router) procConnData(conn Conn, buf []byte, sid uint16, data []byte) (e
 	}
 	next, nextSID := router.Next(conn)
 	if ShowLog > 1 {
-		DebugLog("Router(%v) forwaring %v bytes by %v-%v->%v-%v, source:%v, next:%v, uri:%v", r.Name, len(data), conn.ID(), sid, next.ID(), nextSID, conn, next, router.URI)
+		DebugLog("Router(%v) forwaring %v bytes by %v-%v->%v-%v, source:%v, next:%v, uri:%v", r.Name, len(frame.Data), conn.ID(), frame.SID, next.ID(), nextSID, conn, next, router.URI)
 	}
-	writeError := r.procNextForward(conn, sid, next, nextSID, buf)
+	writeError := r.procNextForward(conn, frame.SID, next, nextSID, frame)
 	if writeError != nil && conn.Type() == ConnTypeRaw {
 		err = writeError
 	}
 	return
 }
 
-func (r *Router) procConnClosed(channel Conn, buf []byte, sid uint16, data []byte) (err error) {
-	message := string(data)
-	DebugLog("Router(%v) the session(%v) is closed by %v", r.Name, sid, message)
-	router := r.removeTable(channel, sid)
+func (r *Router) procConnClosed(channel Conn, frame *RouterFrame) (err error) {
+	message := string(frame.Data)
+	DebugLog("Router(%v) the session(%v) is closed by %v", r.Name, frame.SID, message)
+	router := r.removeTable(channel, frame.SID)
 	if router != nil {
 		next, nextID := router.Next(channel)
 		if next.Type() == ConnTypeRaw {
 			next.Close()
 		} else {
-			r.procNextForward(channel, sid, next, nextID, buf)
+			r.procNextForward(channel, frame.SID, next, nextID, frame)
+			next.FreeConnID(nextID.LocalID())
 		}
+		channel.FreeConnID(frame.SID.LocalID())
 	}
 	return
 }
 
-func (r *Router) procNextForward(fromConn Conn, fromSid uint16, next Conn, nextSID uint16, buf []byte) (err error) {
-	order := next.GetByteOrder()
+func (r *Router) procNextForward(fromConn Conn, fromSid ConnID, next Conn, nextSID ConnID, frame *RouterFrame) (err error) {
 	offset := next.GetDataOffset()
-	order.PutUint16(buf[offset:offset+2], nextSID) //chane to next sid
-	_, err = next.WriteFrame(buf)
+	copy(frame.Buffer[offset:offset+2], nextSID[:])
+	err = next.WriteRouterFrame(frame)
 	return
 }
 
 // JoinConn will add channel by the connected connection
 func (r *Router) JoinConn(conn, args interface{}) (channel Conn, result xmap.M, err error) {
-	frameConn := r.NewFrameConn(conn)
+	channel = r.NewConn(conn, 0, ConnTypeChannel)
 	data, _ := json.Marshal(args)
-	DebugLog("Router(%v) login join connection %v by options %v", r.Name, frameConn, string(data))
-	err = writeCmd(frameConn, nil, CmdLoginChannel, 0, data)
+	DebugLog("Router(%v) login join connection %v by options %v", r.Name, channel, string(data))
+	err = writeMessage(channel, nil, ZeroConnID, CmdLoginChannel, data)
 	if err != nil {
-		WarnLog("Router(%v) send login to %v fail with %v", r.Name, frameConn, err)
+		WarnLog("Router(%v) send login to %v fail with %v", r.Name, channel, err)
 		return
 	}
-	buf, err := frameConn.ReadFrame()
+	frame, err := channel.ReadRouterFrame()
 	if err != nil {
-		WarnLog("Router(%v) read login back from %v fail with %v", r.Name, frameConn, err)
+		WarnLog("Router(%v) read login back from %v fail with %v", r.Name, channel, err)
 		return
 	}
-	offset := frameConn.GetDataOffset() + 3
 	result = xmap.M{}
-	err = json.Unmarshal(buf[offset:], &result)
+	err = json.Unmarshal(frame.Data, &result)
 	if err != nil || result.Int("code") != 0 || len(result.Str("name")) < 1 {
-		err = fmt.Errorf("%v", string(buf[offset:]))
-		WarnLog("Router(%v) login to %v fail with %v", r.Name, frameConn, err)
+		err = fmt.Errorf("%v", string(frame.Data))
+		WarnLog("Router(%v) login to %v fail with %v", r.Name, channel, err)
 		return
 	}
 	remoteName := result.Str("name")
-	channel = NewRouterConn(frameConn, r.NewSid(), ConnTypeChannel)
 	channel.SetName(remoteName)
 	r.Register(channel)
-	InfoLog("Router(%v) login to %v success, bind to %v", r.Name, frameConn, remoteName)
+	InfoLog("Router(%v) login to %v success, bind to %v", r.Name, channel, remoteName)
 	r.Handler.OnConnJoin(channel, args, result)
 	return
 }
 
 // Dial to remote by uri and bind channel to raw connection. return the session id
-func (r *Router) Dial(raw io.ReadWriteCloser, uri string) (sid uint16, err error) {
-	sid, _, err = r.DialConn(raw, uri)
+func (r *Router) Dial(raw io.ReadWriteCloser, uri string) (sid ConnID, connID uint16, err error) {
+	sid, conn, err := r.DialConn(raw, uri)
+	if err == nil {
+		connID = conn.ID()
+	}
 	return
 }
 
 // SyncDial will dial to remote by uri and wait dial successes
-func (r *Router) SyncDial(raw io.ReadWriteCloser, uri string) (sid uint16, err error) {
+func (r *Router) SyncDial(raw io.ReadWriteCloser, uri string) (sid ConnID, connID uint16, err error) {
 	sid, conn, err := r.DialConn(raw, uri)
 	if err == nil {
+		connID = conn.ID()
 		if waiter, ok := conn.(ReadyWaiter); ok {
 			err = waiter.Wait()
 		}
@@ -1103,22 +1305,30 @@ func (r *Router) SyncDial(raw io.ReadWriteCloser, uri string) (sid uint16, err e
 	return
 }
 
-func (r *Router) dialConnLoc(raw io.ReadWriteCloser, uri string) (sid uint16, conn Conn, err error) {
+func (r *Router) dialConnLoc(raw io.ReadWriteCloser, uri string) (sid ConnID, conn Conn, err error) {
 	DebugLog("Router(%v) start raw dial to %v", r.Name, uri)
-	sid = r.NewSid()
-	next := NewRouterConn(frame.NewRawReadWriteCloser(r.Header, raw, r.BufferSize), sid, ConnTypeRaw)
-	conn, err = r.Handler.DialRaw(next, sid, uri)
-	if err != nil {
+	fromID := r.NewConnID()
+	from := r.NewConn(raw, fromID, ConnTypeRaw)
+	nextID := r.NewConnID()
+	next, nextErr := r.Handler.DialRaw(from, nextID, uri)
+	if nextErr != nil {
+		err = nextErr
 		return
 	}
-	r.addTable(conn, sid, next, sid, uri)
-	r.startConnRead(conn, sid)
+	fromSID := ConnID{1, 1}
+	nextSID := ConnID{1, 1}
+	from.SetDataPrefix(MakeRawConnPrefix(fromSID, CmdConnData))
+	next.SetDataPrefix(MakeRawConnPrefix(nextSID, CmdConnData))
+	r.addTable(from, fromSID, next, nextSID, uri)
+	r.startConnRead(from, sid)
 	r.startConnRead(next, sid)
+	sid = fromSID
+	conn = from
 	return
 }
 
 // DialConn will dial to remote by uri and bind channel to raw connection and return raw connection
-func (r *Router) DialConn(raw io.ReadWriteCloser, uri string) (sid uint16, conn Conn, err error) {
+func (r *Router) DialConn(raw io.ReadWriteCloser, uri string) (sid ConnID, conn Conn, err error) {
 	defer func() {
 		if err != nil {
 			raw.Close()
@@ -1133,7 +1343,6 @@ func (r *Router) DialConn(raw io.ReadWriteCloser, uri string) (sid uint16, conn 
 	if err != nil {
 		return
 	}
-	sid = r.NewSid()
 	rwc := frame.NewRawReadWriteCloser(r.Header, raw, r.BufferSize)
 	var base frame.ReadWriteCloser = rwc
 	if waiter, ok := raw.(ReadyWaiter); ok {
@@ -1142,14 +1351,20 @@ func (r *Router) DialConn(raw io.ReadWriteCloser, uri string) (sid uint16, conn 
 			ReadWriteCloser: rwc,
 		}
 	}
-	conn = NewRouterConn(base, sid, ConnTypeRaw)
+	localID := channel.AllocConnID()
+	channelSID := ConnID{localID, 0}
+	conn = r.NewConn(base, 0, ConnTypeRaw)
+	connSID := ConnID{localID, localID}
 	conn.Context()["URI"] = uri
+	conn.SetDataPrefix(MakeRawConnPrefix(connSID, CmdConnData))
 	DebugLog("Router(%v) start dial(%v-%v->%v-%v) to %v on channel(%v)", r.Name, conn.ID(), sid, channel.ID(), sid, uri, channel)
-	r.addTable(channel, sid, conn, sid, uri)
-	err = writeCmd(channel, nil, CmdDialConn, sid, []byte(fmt.Sprintf("%v|%v", parts[0], parts[1])))
+	r.addTable(channel, channelSID, conn, connSID, uri)
+	err = writeMessage(channel, nil, channelSID, CmdDialConn, []byte(fmt.Sprintf("%v|%v", parts[0], parts[1])))
 	if err != nil {
 		r.removeTable(channel, sid)
+		channel.FreeConnID(localID)
 	}
+	sid = connSID
 	return
 }
 
@@ -1211,7 +1426,7 @@ func (r *Router) StateH(res http.ResponseWriter, req *http.Request) {
 // DialPiper will dial uri on router and return piper
 func (r *Router) DialPiper(uri string, bufferSize int) (raw xio.Piper, err error) {
 	piper := NewRouterPiper()
-	_, err = r.SyncDial(piper, uri)
+	_, _, err = r.SyncDial(piper, uri)
 	raw = piper
 	return
 }
@@ -1328,14 +1543,14 @@ func NewNormalAcessHandler(name string) (handler *NormalAcessHandler) {
 }
 
 // DialRaw is proxy handler to dial remove
-func (n *NormalAcessHandler) DialRaw(channel Conn, sid uint16, uri string) (raw Conn, err error) {
+func (n *NormalAcessHandler) DialRaw(channel Conn, id uint16, uri string) (raw Conn, err error) {
 	var conn io.ReadWriteCloser
 	if n.Dialer != nil {
-		raw, err = n.Dialer.DialRaw(channel, sid, uri)
+		raw, err = n.Dialer.DialRaw(channel, id, uri)
 	} else if n.NetDialer != nil {
 		conn, err = n.NetDialer.Dial(uri)
 		if err == nil {
-			raw = NewRouterConn(frame.NewRawReadWriteCloser(channel, conn, channel.BufferSize()), sid, ConnTypeRaw)
+			raw = NewRouterConn(frame.NewRawReadWriteCloser(channel, conn, channel.BufferSize()), id, ConnTypeRaw)
 		}
 	} else {
 		err = fmt.Errorf("not supported")
