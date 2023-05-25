@@ -61,7 +61,7 @@ func TestCmd(t *testing.T) {
 	fmt.Printf("%v\n", CmdDialBack)
 	fmt.Printf("%v\n", CmdConnData)
 	fmt.Printf("%v\n", CmdConnClosed)
-	fmt.Printf("%v\n", Cmd(0))
+	fmt.Printf("%v\n", RouterCmd(0))
 }
 
 func TestRouterFrame(t *testing.T) {
@@ -744,8 +744,6 @@ func TestRouter(t *testing.T) {
 		node0.NewConn(xio.NewDiscardReadWriteCloser(), 0, ConnTypeChannel)
 		node0.NewConn(frame.NewReadWriteCloser(nil, nil, 1024), 0, ConnTypeChannel)
 		node0.NewConn(NewRouterConn(nil, 1, ConnTypeChannel), 0, ConnTypeChannel)
-		node0.NewFrameConn(xio.NewDiscardReadWriteCloser())
-		node0.NewFrameConn(frame.NewReadWriteCloser(nil, nil, 1024))
 		func() {
 			defer func() {
 				if rerr := recover(); rerr == nil {
@@ -753,14 +751,6 @@ func TestRouter(t *testing.T) {
 				}
 			}()
 			node0.NewConn("123", 0, ConnTypeChannel)
-		}()
-		func() {
-			defer func() {
-				if rerr := recover(); rerr == nil {
-					t.Error("error")
-				}
-			}()
-			node0.NewFrameConn("123")
 		}()
 		node0.Stop()
 		node1.Stop()

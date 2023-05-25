@@ -54,26 +54,26 @@ func (r *RouterError) String() string { return r.message }
 
 const (
 	//CmdLoginChannel is the command of login to master
-	CmdLoginChannel Cmd = 10
+	CmdLoginChannel RouterCmd = 10
 	//CmdLoginBack is the command of login return from master
-	CmdLoginBack Cmd = 11
+	CmdLoginBack RouterCmd = 11
 	//CmdPingConn is the command of ping to node
-	CmdPingConn Cmd = 20
+	CmdPingConn RouterCmd = 20
 	//CmdPingBack is the command of ping return from node
-	CmdPingBack Cmd = 21
+	CmdPingBack RouterCmd = 21
 	//CmdDial is the command of tcp dial by router
-	CmdDialConn Cmd = 100
+	CmdDialConn RouterCmd = 100
 	//CmdDialBack is the command of tcp dial back from master/slaver
-	CmdDialBack Cmd = 101
+	CmdDialBack RouterCmd = 101
 	//CmdConnData is the command of transfter tcp data
-	CmdConnData Cmd = 110
+	CmdConnData RouterCmd = 110
 	//CmdClosed is the command of tcp closed.
-	CmdConnClosed Cmd = 120
+	CmdConnClosed RouterCmd = 120
 )
 
-type Cmd byte
+type RouterCmd byte
 
-func (c Cmd) String() string {
+func (c RouterCmd) String() string {
 	switch c {
 	case CmdLoginChannel:
 		return "LoginChannel"
@@ -99,7 +99,7 @@ func (c Cmd) String() string {
 type RouterFrame struct {
 	Buffer []byte
 	SID    ConnID
-	Cmd    Cmd
+	Cmd    RouterCmd
 	Data   []byte
 }
 
@@ -108,7 +108,7 @@ func ParseLocalRouterFrame(header frame.Header, buffer []byte) (frame *RouterFra
 	frame = &RouterFrame{
 		Buffer: buffer,
 		SID:    [2]byte{buffer[offset], buffer[offset+1]},
-		Cmd:    Cmd(buffer[offset+2]),
+		Cmd:    RouterCmd(buffer[offset+2]),
 		Data:   buffer[offset+3:],
 	}
 	return
@@ -119,13 +119,13 @@ func ParseRemoteRouterFrame(header frame.Header, buffer []byte) (frame *RouterFr
 	frame = &RouterFrame{
 		Buffer: buffer,
 		SID:    [2]byte{buffer[offset+1], buffer[offset]},
-		Cmd:    Cmd(buffer[offset+2]),
+		Cmd:    RouterCmd(buffer[offset+2]),
 		Data:   buffer[offset+3:],
 	}
 	return
 }
 
-func NewRouterFrame(header frame.Header, buffer []byte, sid ConnID, cmd Cmd) (frame *RouterFrame) {
+func NewRouterFrame(header frame.Header, buffer []byte, sid ConnID, cmd RouterCmd) (frame *RouterFrame) {
 	header.WriteHead(buffer)
 	offset := header.GetDataOffset()
 	localID, remoteID := sid.Split()
@@ -133,13 +133,13 @@ func NewRouterFrame(header frame.Header, buffer []byte, sid ConnID, cmd Cmd) (fr
 	frame = &RouterFrame{
 		Buffer: buffer,
 		SID:    sid,
-		Cmd:    Cmd(buffer[offset+2]),
+		Cmd:    RouterCmd(buffer[offset+2]),
 		Data:   buffer[offset+3:],
 	}
 	return
 }
 
-func NewRouterFrameByMessage(header frame.Header, buffer []byte, sid ConnID, cmd Cmd, message []byte) (frame *RouterFrame) {
+func NewRouterFrameByMessage(header frame.Header, buffer []byte, sid ConnID, cmd RouterCmd, message []byte) (frame *RouterFrame) {
 	offset := header.GetDataOffset() + 3
 	if len(buffer) < 1 {
 		buffer = make([]byte, offset+len(message))
@@ -159,7 +159,7 @@ func (f *RouterFrame) String() string {
 	return fmt.Sprintf("Frame(%v,%v,%v)", len(f.Buffer), f.SID, show)
 }
 
-func writeMessage(w Conn, buffer []byte, sid ConnID, cmd Cmd, message []byte) (err error) {
+func writeMessage(w Conn, buffer []byte, sid ConnID, cmd RouterCmd, message []byte) (err error) {
 	frame := NewRouterFrameByMessage(w, buffer, sid, cmd, message)
 	err = w.WriteRouterFrame(frame)
 	return
@@ -208,7 +208,7 @@ func (c ConnID) String() string {
 	return "0x" + hex.EncodeToString([]byte{c[0], c[1]})
 }
 
-func MakeRawConnPrefix(sid ConnID, cmd Cmd) (prefix []byte) {
+func MakeRawConnPrefix(sid ConnID, cmd RouterCmd) (prefix []byte) {
 	prefix = []byte{sid[1], sid[0], byte(cmd)}
 	return
 }
@@ -689,24 +689,13 @@ func (r *Router) NewConn(v interface{}, connID uint16, connType ConnType) (conn 
 		}
 		conn = NewRouterConn(f, connID, connType)
 	} else if raw, ok := v.(io.ReadWriteCloser); ok {
-		f := frame.NewRawReadWriteCloser(r.Header, raw, r.BufferSize)
+		f := frame.NewReadWriteCloser(r.Header, raw, r.BufferSize)
 		if connID < 1 {
 			connID = r.NewConnID()
 		}
 		conn = NewRouterConn(f, connID, connType)
 	} else {
 		panic(fmt.Sprintf("channel type is not supported by %v=>router.Conn", reflect.TypeOf(v)))
-	}
-	return
-}
-
-func (r *Router) NewFrameConn(v interface{}) (conn frame.ReadWriteCloser) {
-	if f, ok := v.(frame.ReadWriteCloser); ok {
-		conn = f
-	} else if raw, ok := v.(io.ReadWriteCloser); ok {
-		conn = frame.NewRawReadWriteCloser(r.Header, raw, r.BufferSize)
-	} else {
-		panic(fmt.Sprintf("channel type is not supported by %v=>frame.ReadWriteCloser", reflect.TypeOf(v)))
 	}
 	return
 }
@@ -966,7 +955,7 @@ func (r *Router) procConnRead(conn Conn) {
 		if ShowLog > 1 {
 			DebugLog("Router(%v) read one command(%v) from %v", r.Name, frame, conn)
 		}
-		// fmt.Printf("Router(%v) read--->%v,%v\n", r.Name, frame.Buffer[:offset+3], string(frame.Data))
+		// fmt.Printf("Router(%v) read--->%x,%v\n", r.Name, frame.Buffer[:offset+3], string(frame.Data))
 		switch frame.Cmd {
 		case CmdLoginChannel:
 			err = r.procLoginChannel(conn, frame)
@@ -1308,7 +1297,7 @@ func (r *Router) SyncDial(raw io.ReadWriteCloser, uri string) (sid ConnID, connI
 func (r *Router) dialConnLoc(raw io.ReadWriteCloser, uri string) (sid ConnID, conn Conn, err error) {
 	DebugLog("Router(%v) start raw dial to %v", r.Name, uri)
 	fromID := r.NewConnID()
-	from := r.NewConn(raw, fromID, ConnTypeRaw)
+	from := r.NewConn(frame.NewRawReadWriteCloser(r.Header, raw, r.BufferSize), fromID, ConnTypeRaw)
 	nextID := r.NewConnID()
 	next, nextErr := r.Handler.DialRaw(from, nextID, uri)
 	if nextErr != nil {
@@ -1357,7 +1346,7 @@ func (r *Router) DialConn(raw io.ReadWriteCloser, uri string) (sid ConnID, conn 
 	connSID := ConnID{localID, localID}
 	conn.Context()["URI"] = uri
 	conn.SetDataPrefix(MakeRawConnPrefix(connSID, CmdConnData))
-	DebugLog("Router(%v) start dial(%v-%v->%v-%v) to %v on channel(%v)", r.Name, conn.ID(), sid, channel.ID(), sid, uri, channel)
+	DebugLog("Router(%v) start dial(%v-%v->%v-%v) to %v on channel(%v)", r.Name, conn.ID(), connSID, channel.ID(), channelSID, uri, channel)
 	r.addTable(channel, channelSID, conn, connSID, uri)
 	err = writeMessage(channel, nil, channelSID, CmdDialConn, []byte(fmt.Sprintf("%v|%v", parts[0], parts[1])))
 	if err != nil {
