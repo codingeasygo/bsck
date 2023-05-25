@@ -83,7 +83,7 @@ mod tests {
             }
             txa.shutdown().await;
         }
-        router.shutdown().await;
-        tokio::time::sleep(tokio::time::Duration::from_millis(1000000)).await;
+        router.shutdown().await.wait().await;
+        // tokio::time::sleep(tokio::time::Duration::from_millis(1000000)).await;
     }
 }

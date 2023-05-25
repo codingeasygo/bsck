@@ -182,7 +182,7 @@ impl Ping {
     }
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Debug)]
 pub enum ConnType {
     Channel,
     Raw,
@@ -497,7 +497,7 @@ impl RouterConn {
 
     async fn loop_read(conn: Arc<RouterConn>) -> tokio::io::Result<()> {
         let mut reader = conn.reader.lock().await;
-        info!("Router({}) forward read loop is starting on {}", conn.name, conn.to_string());
+        info!("Router({}) forward {:?} read loop is starting on {}", conn.name, conn.conn_type, conn.to_string());
         loop {
             let err = match reader.read().await {
                 Ok(mut frame) => {
@@ -513,10 +513,11 @@ impl RouterConn {
                 conn.forward.lock().await.close_channel(&conn).await;
                 let mut writer = conn.writer.lock().await;
                 writer.shutdown().await;
-                info!("Router({}) forward loop read is done by {:?} on {}", conn.name, err, conn.to_string());
+                info!("Router({}) forward {:?} loop read is done by {:?} on {}", conn.name, conn.conn_type, err, conn.to_string());
                 break;
             }
         }
+        info!("Router({}) forward {:?} read loop is stopped on {}", conn.name, conn.conn_type, conn.to_string());
         conn.done_job().await;
         Ok(())
     }
@@ -930,13 +931,16 @@ impl RouterForward {
         }
     }
 
-    pub async fn shutdown(&mut self) {
+    pub async fn shutdown(&mut self) -> wg::AsyncWaitGroup {
+        info!("Router({}) all forward channel is stopping", self.name);
         for channel in self.channels.values_mut() {
             channel.shutdown().await;
         }
+        info!("Router({}) all forward raw conn is stopping", self.name);
         for conn in self.table.list_all_raw().await.values() {
             conn.shutdown().await;
         }
+        self.waiter.clone()
     }
 }
 
@@ -1064,8 +1068,9 @@ impl Router {
         }
     }
 
-    pub async fn shutdown(&mut self) {
-        self.forward.lock().await.shutdown().await;
+    pub async fn shutdown(&mut self) -> wg::AsyncWaitGroup {
+        info!("Router({}) is stopping", self.name);
+        self.forward.lock().await.shutdown().await
     }
 }
 
