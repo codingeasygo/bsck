@@ -35,3 +35,4 @@ certs/rootCA.crt
 certs/csr.conf
 certs/cert.conf
 target
+router/tests/tests
