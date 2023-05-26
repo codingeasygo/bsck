@@ -1,5 +1,6 @@
 pub mod frame;
 pub mod log;
+pub mod proxy;
 pub mod router;
 pub mod wrapper;
 // use quinn::Endpoint;

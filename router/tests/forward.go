@@ -1,12 +1,42 @@
 package main
 
 import (
+	"fmt"
 	"io"
 	"net"
+	"net/http"
+	_ "net/http/pprof"
+	"net/url"
+	"os"
+	"sync"
 	"time"
 
 	"github.com/codingeasygo/bsck/router"
+	"github.com/codingeasygo/util/proxy/socks"
+	"github.com/codingeasygo/util/xhttp"
+	"github.com/codingeasygo/util/xio"
 )
+
+func init() {
+	go http.ListenAndServe(":6063", nil)
+}
+
+func main() {
+	switch os.Args[1] {
+	case "server":
+		runServer()
+	case "echo":
+		runEcho()
+	case "get":
+		runGet(os.Args[2])
+	case "bench":
+		switch os.Args[2] {
+		case "get":
+			benchGet(os.Args[3])
+		}
+
+	}
+}
 
 func runEchoServer(addr string) {
 	ln, err := net.Listen("tcp", addr)
@@ -45,31 +75,34 @@ func runEchoServer(addr string) {
 // 	}
 // }
 
-// func runProxyServer(addr string) {
-// 	ln, err := net.Listen("tcp", addr)
-// 	if err != nil {
-// 		panic(err)
-// 	}
-// 	for {
-// 		conn, err := ln.Accept()
-// 		if err != nil {
-// 			panic(err)
-// 		}
-// 		remote, err := net.Dial("tcp", "127.0.0.1:13101")
-// 		if err != nil {
-// 			panic(err)
-// 		}
-// 		target := xio.NewPrintConn("X", remote)
-// 		go io.Copy(conn, target)
-// 		go io.Copy(target, conn)
-// 	}
-// }
+func runProxyServer(addr, target string) {
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		panic(err)
+	}
+	for {
+		conn, err := ln.Accept()
+		if err != nil {
+			panic(err)
+		}
+		remote, err := net.Dial("tcp", target)
+		if err != nil {
+			panic(err)
+		}
+		target := xio.NewPrintConn("X", remote)
+		// target.Mode = 0x10
+		go io.Copy(conn, target)
+		go io.Copy(target, conn)
+	}
+}
 
-func main() {
+func runServer() {
 	// runDumServer(":13100")
+	go runProxyServer(":1108", "127.0.0.1:1107")
+	go runProxyServer(":13103", "127.0.0.1:13100")
 	go runEchoServer(":13200")
-	router.ShowLog = 3
-	router.SetLogLevel(router.LogLevelDebug)
+	// router.ShowLog = 3
+	// router.SetLogLevel(router.LogLevelDebug)
 
 	access0 := router.NewNormalAcessHandler("N0")
 	access0.LoginAccess["N1"] = "123"
@@ -87,6 +120,8 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+	u, _ := url.Parse("socks://127.0.0.1:1106")
+	proxy0.StartForward("xx", u, "${HOST}")
 	// err = proxy1.Listen(":13101")
 	// if err != nil {
 	// 	panic(err)
@@ -103,4 +138,53 @@ func main() {
 	// runProxyServer(":13100")
 	waiter := make(chan int, 1)
 	<-waiter
+}
+
+func runEcho() {
+	conn, err := socks.Dial("127.0.0.1:1107", "127.0.0.1:13200")
+	if err != nil {
+		panic(err)
+	}
+	go io.Copy(os.Stdout, conn)
+	io.Copy(conn, os.Stdin)
+}
+
+func runGet(uri string) {
+	client := xhttp.NewClient(&http.Client{
+		Transport: &http.Transport{
+			Dial: func(network, addr string) (net.Conn, error) {
+				return socks.Dial("127.0.0.1:1107", addr)
+			},
+		},
+	})
+	for i := 0; i < 100; i++ {
+		data, err := client.GetText(uri)
+		if err != nil {
+			panic(err)
+		}
+		fmt.Println(data)
+	}
+}
+
+func benchGet(uri string) {
+	client := xhttp.NewClient(&http.Client{
+		Transport: &http.Transport{
+			Dial: func(network, addr string) (net.Conn, error) {
+				return socks.Dial("127.0.0.1:1107", addr)
+			},
+		},
+	})
+	for x := 0; x < 100; x++ {
+		waiter := sync.WaitGroup{}
+		for i := 0; i < 2048; i++ {
+			waiter.Add(1)
+			go func(v int) {
+				data, err := client.GetText(uri)
+				fmt.Printf("%03d get data with data:%v,err:%v\n", v, len(data), err)
+				waiter.Done()
+			}(i)
+		}
+		waiter.Wait()
+		time.Sleep(time.Second)
+	}
 }

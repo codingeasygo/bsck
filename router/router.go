@@ -272,6 +272,17 @@ type ReadyReadWriteCloser struct {
 	frame.ReadWriteCloser
 }
 
+func WrapReadyReadWriteCloser(base frame.ReadWriteCloser) (wrapped frame.ReadWriteCloser) {
+	wrapped = base
+	if waiter, ok := base.(ReadyWaiter); ok {
+		wrapped = ReadyReadWriteCloser{
+			ReadyWaiter:     waiter,
+			ReadWriteCloser: base,
+		}
+	}
+	return
+}
+
 type BondConn struct {
 	connName string
 	connType ConnType
@@ -605,9 +616,9 @@ func routerKey(conn Conn, sid ConnID) (local, remote string) {
 	if sid[0] > 0 {
 		local = fmt.Sprintf("l-%d-%v", conn.ID(), sid[0])
 	}
-	if sid[1] > 0 {
-		remote = fmt.Sprintf("r-%d-%v", conn.ID(), sid[1])
-	}
+	// if sid[1] > 0 {
+	// 	remote = fmt.Sprintf("r-%d-%v", conn.ID(), sid[1])
+	// }
 	return
 }
 
@@ -667,7 +678,7 @@ func NewRouter(name string, handler Handler) (router *Router) {
 		channelLck:    sync.RWMutex{},
 		tableAll:      map[string]*RouterItem{},
 		tableLck:      sync.RWMutex{},
-		BufferSize:    1024,
+		BufferSize:    4 * 1024,
 		MaxConnection: 4096,
 		Heartbeat:     5 * time.Second,
 		Timeout:       15 * time.Second,
@@ -955,7 +966,6 @@ func (r *Router) procConnRead(conn Conn) {
 		if ShowLog > 1 {
 			DebugLog("Router(%v) read one command(%v) from %v", r.Name, frame, conn)
 		}
-		// fmt.Printf("Router(%v) read--->%x,%v\n", r.Name, frame.Buffer[:offset+3], string(frame.Data))
 		switch frame.Cmd {
 		case CmdLoginChannel:
 			err = r.procLoginChannel(conn, frame)
@@ -972,7 +982,7 @@ func (r *Router) procConnRead(conn Conn) {
 		case CmdConnClosed:
 			err = r.procConnClosed(conn, frame)
 		default:
-			err = fmt.Errorf("not supported cmd(%v)", frame.Cmd)
+			err = fmt.Errorf("not supported cmd(%x)", byte(frame.Cmd))
 		}
 		if err != nil {
 			break
@@ -1090,6 +1100,7 @@ func (r *Router) procDialRaw(channel Conn, sid ConnID, conn, uri string) (err er
 	localID := channel.AllocConnID()
 	sid[0] = localID
 	nextSID := ConnID{localID, localID}
+	next.SetDataPrefix(MakeRawConnPrefix(nextSID, CmdConnData))
 	DebugLog("Router(%v) dial(%v-%v->%v-%v) to %v success on channel(%v)", r.Name, channel.ID(), sid, next.ID(), nextSID, conn, channel)
 	r.addTable(channel, sid, next, nextSID, conn)
 	err = writeMessage(channel, nil, sid, CmdDialBack, []byte(ConnOK))
@@ -1297,7 +1308,8 @@ func (r *Router) SyncDial(raw io.ReadWriteCloser, uri string) (sid ConnID, connI
 func (r *Router) dialConnLoc(raw io.ReadWriteCloser, uri string) (sid ConnID, conn Conn, err error) {
 	DebugLog("Router(%v) start raw dial to %v", r.Name, uri)
 	fromID := r.NewConnID()
-	from := r.NewConn(frame.NewRawReadWriteCloser(r.Header, raw, r.BufferSize), fromID, ConnTypeRaw)
+	base := WrapReadyReadWriteCloser(frame.NewRawReadWriteCloser(r.Header, raw, r.BufferSize))
+	from := r.NewConn(base, fromID, ConnTypeRaw)
 	nextID := r.NewConnID()
 	next, nextErr := r.Handler.DialRaw(from, nextID, uri)
 	if nextErr != nil {
@@ -1332,14 +1344,7 @@ func (r *Router) DialConn(raw io.ReadWriteCloser, uri string) (sid ConnID, conn 
 	if err != nil {
 		return
 	}
-	rwc := frame.NewRawReadWriteCloser(r.Header, raw, r.BufferSize)
-	var base frame.ReadWriteCloser = rwc
-	if waiter, ok := raw.(ReadyWaiter); ok {
-		base = ReadyReadWriteCloser{
-			ReadyWaiter:     waiter,
-			ReadWriteCloser: rwc,
-		}
-	}
+	base := WrapReadyReadWriteCloser(frame.NewRawReadWriteCloser(r.Header, raw, r.BufferSize))
 	localID := channel.AllocConnID()
 	channelSID := ConnID{localID, 0}
 	conn = r.NewConn(base, 0, ConnTypeRaw)
@@ -1537,7 +1542,9 @@ func (n *NormalAcessHandler) DialRaw(channel Conn, id uint16, uri string) (raw C
 	if n.Dialer != nil {
 		raw, err = n.Dialer.DialRaw(channel, id, uri)
 	} else if n.NetDialer != nil {
+		begin := time.Now()
 		conn, err = n.NetDialer.Dial(uri)
+		ErrorLog("NormalAcessHandler(%v) dail %v used %v", n.Name, uri, time.Since(begin))
 		if err == nil {
 			raw = NewRouterConn(frame.NewRawReadWriteCloser(channel, conn, channel.BufferSize()), id, ConnTypeRaw)
 		}

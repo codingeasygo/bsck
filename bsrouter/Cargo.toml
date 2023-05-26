@@ -1,0 +1,11 @@
+[package]
+name = "bsrouter"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+json = "0.12.4"
+router = { version = "0.1.0", path = "../router" }
+tokio = "1.28.1"

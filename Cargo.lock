@@ -47,6 +47,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bef38d45163c2f1dde094a7dfd33ccf595c92905c8f8f4fdc18d06fb1037718a"
 
 [[package]]
+name = "bsrouter"
+version = "0.1.0"
+dependencies = [
+ "json",
+ "router",
+ "tokio",
+]
+
+[[package]]
 name = "bumpalo"
 version = "3.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -524,6 +533,7 @@ dependencies = [
  "futures",
  "hex",
  "json",
+ "libc",
  "log",
  "pem",
  "quinn",
@@ -532,6 +542,7 @@ dependencies = [
  "socks5-server",
  "tokio",
  "tokio-pipe",
+ "tokio-rustls",
  "tokio-util",
  "walkdir",
  "wg",
@@ -822,6 +833,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f213a84bffbd61b8fa0ba8a044b4bbe35d471d0b518867181e82bd5c15542784"
 dependencies = [
  "libc",
+ "tokio",
+]
+
+[[package]]
+name = "tokio-rustls"
+version = "0.24.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e0d409377ff5b1e3ca6437aa86c1eb7d40c134bfec254e44c830defa92669db5"
+dependencies = [
+ "rustls",
  "tokio",
 ]
 

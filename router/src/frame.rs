@@ -2,6 +2,8 @@ use std::{io::ErrorKind, sync::Arc};
 
 use async_trait::async_trait;
 
+use crate::router::new_message_err;
+
 #[derive(Clone)]
 pub enum ByteOrder {
     BE,
@@ -109,6 +111,14 @@ impl FrameReader {
             sbuf.copy_within(s.readed..s.filled, 0);
         }
         s.filled -= s.readed;
+        s.readed = 0;
+        if s.filled > 0 {
+            let h = header.read_head(sbuf);
+            if s.filled >= h {
+                s.readed = h;
+                return Ok(&mut sbuf[0..h]);
+            }
+        }
         loop {
             let n = match s.inner.read(&mut sbuf[s.filled..]).await {
                 Ok(n) => {
@@ -149,5 +159,27 @@ impl FrameWriter {
 
     pub async fn shutdown(&mut self) {
         self.inner.shutdown().await;
+    }
+}
+
+pub async fn read_full(reader: &mut Box<dyn Reader + Send + Sync>, buf: &mut [u8], readed: usize, need: usize) -> tokio::io::Result<usize> {
+    let mut n = readed;
+    if n >= need {
+        return Ok(n);
+    }
+    for _ in 0..32 {
+        let r = reader.read(&mut buf[n..]).await?;
+        if r <= 0 {
+            return Err(new_message_err("closed"));
+        }
+        n += r;
+        if n >= need {
+            break;
+        }
+    }
+    if need > n {
+        Err(new_message_err("need more data"))
+    } else {
+        Ok(n)
     }
 }

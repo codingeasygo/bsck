@@ -2,30 +2,37 @@ use std::io::ErrorKind;
 
 use async_trait::async_trait;
 use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt, ReadHalf, WriteHalf},
+    io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadHalf, WriteHalf},
     net::TcpStream,
     sync::mpsc::{self, Receiver, Sender},
 };
+use tokio_rustls::client::TlsStream;
 
 use crate::frame::{Reader, Writer};
 
-pub struct WrapTcpReader {
-    inner: ReadHalf<TcpStream>,
+pub struct WrapTcpReader<T> {
+    inner: ReadHalf<T>,
 }
 
 #[async_trait]
-impl Reader for WrapTcpReader {
+impl<T> Reader for WrapTcpReader<T>
+where
+    T: AsyncRead + Send + Sync,
+{
     async fn read(&mut self, buf: &mut [u8]) -> tokio::io::Result<usize> {
         self.inner.read(buf).await
     }
 }
 
-pub struct WrapTcpWriter {
-    inner: WriteHalf<TcpStream>,
+pub struct WrapTcpWriter<T> {
+    inner: WriteHalf<T>,
 }
 
 #[async_trait]
-impl Writer for WrapTcpWriter {
+impl<T> Writer for WrapTcpWriter<T>
+where
+    T: AsyncWrite + Send + Sync,
+{
     async fn write(&mut self, buf: &[u8]) -> tokio::io::Result<usize> {
         self.inner.write(buf).await
     }
@@ -34,17 +41,27 @@ impl Writer for WrapTcpWriter {
     }
 }
 
-unsafe impl Send for WrapTcpReader {}
-unsafe impl Sync for WrapTcpReader {}
-unsafe impl Send for WrapTcpWriter {}
-unsafe impl Sync for WrapTcpWriter {}
+// unsafe impl Send for WrapTcpReader {}
+// unsafe impl Sync for WrapTcpReader {}
+// unsafe impl Send for WrapTcpWriter {}
+// unsafe impl Sync for WrapTcpWriter {}
 
-pub fn wrap_split_tcp(stream: TcpStream) -> (WrapTcpReader, WrapTcpWriter) {
+pub fn wrap_split<T>(stream: T) -> (WrapTcpReader<T>, WrapTcpWriter<T>)
+where
+    T: AsyncRead + AsyncWrite + Send + Sync,
+{
     let (rx, tx) = tokio::io::split(stream);
     (WrapTcpReader { inner: rx }, WrapTcpWriter { inner: tx })
 }
 
 pub fn wrap_split_tcp_w(stream: TcpStream) -> (Box<dyn Reader + Send + Sync>, Box<dyn Writer + Send + Sync>) {
+    let (rx, tx) = tokio::io::split(stream);
+    let rxa = Box::new(WrapTcpReader { inner: rx });
+    let txa = Box::new(WrapTcpWriter { inner: tx });
+    (rxa, txa)
+}
+
+pub fn wrap_split_tls_w(stream: TlsStream<TcpStream>) -> (Box<dyn Reader + Send + Sync>, Box<dyn Writer + Send + Sync>) {
     let (rx, tx) = tokio::io::split(stream);
     let rxa = Box::new(WrapTcpReader { inner: rx });
     let txa = Box::new(WrapTcpWriter { inner: tx });

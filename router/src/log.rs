@@ -20,8 +20,15 @@ impl log::Log for SimpleLogger {
                 Some(n) => n,
                 None => 0,
             };
+            let level = match record.level() {
+                log::Level::Error => "E",
+                log::Level::Warn => "W",
+                log::Level::Info => "I",
+                log::Level::Debug => "D",
+                log::Level::Trace => "T",
+            };
             let time = Local::now();
-            println!("{} {}:{} {} - {}", time.format("%Y/%m/%d %H:%M:%S%.3f"), filename, line, record.level(), record.args());
+            println!("{} {}:{} {} - {}", time.format("%Y/%m/%d %H:%M:%S%.3f"), filename, line, level, record.args());
         }
     }
 
@@ -31,5 +38,5 @@ impl log::Log for SimpleLogger {
 static LOGGER: SimpleLogger = SimpleLogger;
 
 pub fn init_simple_log() -> Result<(), SetLoggerError> {
-    log::set_logger(&LOGGER).map(|()| log::set_max_level(LevelFilter::Debug))
+    log::set_logger(&LOGGER).map(|()| log::set_max_level(LevelFilter::Info))
 }
