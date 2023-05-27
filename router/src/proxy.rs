@@ -1,6 +1,13 @@
-use std::{collections::HashMap, net::SocketAddr, sync::Arc};
-
+use bytes::Bytes;
+use futures::Future;
+use http_body_util::Full;
+use hyper::body::Incoming;
+use hyper::server::conn::http1;
+use hyper::service::Service;
+use hyper::{Request, Response, StatusCode};
 use log::{info, warn};
+use std::pin::Pin;
+use std::{collections::HashMap, net::SocketAddr, sync::Arc};
 use tokio::{
     net::{TcpListener, TcpStream},
     sync::Mutex,
@@ -173,6 +180,42 @@ impl Proxy {
         }
     }
 
+    pub async fn start_web(&mut self, name: String, domain: &String) -> tokio::io::Result<()> {
+        let domain: &str = domain.trim_start_matches("tcp://");
+        let state = Arc::new(Mutex::new(ServerState::new(name.clone(), domain.to_string())));
+        info!("Proxy({}) listen web server {} is success", self.name, domain);
+        let ln = TcpListener::bind(&domain).await?;
+        self.listener.insert(name.clone(), state.clone());
+        let name = self.name.clone();
+        let waiter = self.waiter.clone();
+        let router = self.router.clone();
+        waiter.add(1);
+        tokio::spawn(async move { Self::loop_web_accpet(name, waiter, ln, state, router).await });
+        Ok(())
+    }
+
+    async fn loop_web_accpet(name: String, waiter: Arc<wg::AsyncWaitGroup>, ln: TcpListener, state: Arc<Mutex<ServerState>>, router: Arc<Mutex<Router>>) -> tokio::io::Result<()> {
+        let name = Arc::new(name);
+        info!("Proxy({}) web server {} loop is starting", name, ln.local_addr().unwrap());
+        let err = loop {
+            let (stream, _) = ln.accept().await?;
+            if state.lock().await.stopping {
+                break new_message_err("stopped");
+            }
+            let name = name.clone();
+            let router = router.clone();
+            tokio::task::spawn(async move {
+                let handler = ProxyWebHandler { router };
+                if let Err(e) = http1::Builder::new().keep_alive(true).serve_connection(stream, handler).await {
+                    warn!("Proxy({}) web server proc http fail with {:?}", name, e);
+                }
+            });
+        };
+        info!("Proxy({}) web server {} loop is stopped by {:?}", name, ln.local_addr().unwrap(), err);
+        waiter.done();
+        Ok(())
+    }
+
     pub async fn wait(&self) {
         let waiter = self.router.lock().await.waiter().await;
         waiter.wait().await;
@@ -190,24 +233,42 @@ impl Proxy {
         self.waiter.done();
         self.waiter.clone()
     }
+
+    pub async fn display(&self) -> json::JsonValue {
+        self.router.lock().await.display().await
+    }
 }
 
-// #[async_trait]
-// impl Handler for Proxy {
-//     //on connection dial uri
-//     async fn on_conn_dial_uri(&self, channel: &RouterConn, conn: &String, parts: &Vec<String>) -> tokio::io::Result<()> {
-//         self.handler.on_conn_dial_uri(channel, conn, parts).await
-//     }
-//     //on connection login
-//     async fn on_conn_login(&self, channel: &RouterConn, args: &String) -> tokio::io::Result<(String, String)> {
-//         self.handler.on_conn_login(channel, args).await
-//     }
-//     //on connection close
-//     async fn on_conn_close(&self, conn: &RouterConn) {
-//         self.handler.on_conn_close(conn).await
-//     }
-//     //OnConnJoin is event on channel join
-//     async fn on_conn_join(&self, conn: &RouterConn, option: &String, result: &String) {
-//         self.handler.on_conn_join(conn, option, result).await
-//     }
-// }
+struct ProxyWebHandler {
+    pub router: Arc<Mutex<Router>>,
+}
+
+impl ProxyWebHandler {
+    async fn display(router: Arc<Mutex<Router>>) -> Result<Response<Full<Bytes>>, hyper::Error> {
+        let router = router.lock().await;
+        let display = router.display().await;
+        let data = json::stringify(display);
+        Self::make_response(StatusCode::OK, data)
+    }
+
+    fn make_response(code: StatusCode, s: String) -> Result<Response<Full<Bytes>>, hyper::Error> {
+        Ok(Response::builder().status(code).body(Full::new(Bytes::from(s))).unwrap())
+    }
+}
+
+impl Service<Request<Incoming>> for ProxyWebHandler {
+    type Response = Response<Full<Bytes>>;
+    type Error = hyper::Error;
+    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
+
+    fn call(&mut self, req: Request<Incoming>) -> Self::Future {
+        let uri = req.uri().path().to_string();
+        let router = self.router.clone();
+        Box::pin(async move {
+            match uri.as_str() {
+                "/display" => Self::display(router).await,
+                _ => Self::make_response(StatusCode::NOT_FOUND, format!("{} NOT FOUND", uri)),
+            }
+        })
+    }
+}

@@ -116,11 +116,13 @@ mod tests {
         };
         let join_uri = Arc::new(String::from("tcp://127.0.0.1:13100"));
         let dial_uri = Arc::new(String::from("N0->${HOST}"));
-        let addr = String::from("socks://127.0.0.1:1107");
+        let forward_addr = String::from("socks://127.0.0.1:1107");
+        let web_addr = String::from("127.0.0.1:1100");
         let handler = Arc::new(NormalAcessHandler::new());
         let mut proxy = Proxy::new(String::from("NX"), handler);
         proxy.login(join_uri, &login_optionslet.dump()).await.unwrap();
-        proxy.start_forward(String::from("test"), &addr, dial_uri).await.unwrap();
+        proxy.start_forward(String::from("test"), &forward_addr, dial_uri).await.unwrap();
+        proxy.start_web(String::from("test"), &web_addr).await.unwrap();
         tokio::time::sleep(tokio::time::Duration::from_millis(500000)).await;
         proxy.shutdown().await;
         println!("shutdown is done...");

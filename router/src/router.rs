@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use json::object;
 use log::{debug, info, warn};
 use std::{
     collections::HashMap,
@@ -560,6 +561,14 @@ impl RouterChannel {
             conn.shutdown().await;
         }
     }
+
+    pub async fn display(&self) -> Vec<String> {
+        let mut item_all = Vec::new();
+        for conn in self.conn_all.values() {
+            item_all.push(conn.to_string());
+        }
+        item_all
+    }
 }
 
 pub struct RouterTableItem {
@@ -650,7 +659,6 @@ impl RouterTable {
     }
 
     pub async fn remove_table(&mut self, conn: &Arc<RouterConn>, sid: &ConnID) -> Option<Arc<Mutex<RouterTableItem>>> {
-        println!("remove table is done a by {}", self.table.len());
         let item = match self.find_table(conn, sid) {
             Some(r) => Some(r.clone()),
             None => None,
@@ -658,7 +666,6 @@ impl RouterTable {
         for key in item.lock().await.all_key() {
             self.table.remove(&key);
         }
-        println!("remove table is done b by {}", self.table.len());
         Some(item)
     }
 
@@ -690,6 +697,14 @@ impl RouterTable {
             }
         }
         conn_all
+    }
+
+    pub async fn display(&self) -> Vec<String> {
+        let mut item_all = Vec::new();
+        for v in self.table.values() {
+            item_all.push(v.lock().await.to_string());
+        }
+        item_all
     }
 }
 
@@ -953,6 +968,18 @@ impl RouterForward {
         }
         self.waiter.clone()
     }
+
+    pub async fn display(&self) -> json::JsonValue {
+        let mut channels = HashMap::new();
+        for v in self.channels.values() {
+            channels.insert(v.name.clone(), v.display().await);
+        }
+        object! {
+            "name": self.name.clone(),
+            "table": self.table.display().await,
+            "channels": channels,
+        }
+    }
 }
 
 pub struct Router {
@@ -1167,6 +1194,10 @@ impl Router {
     pub async fn shutdown(&mut self) -> wg::AsyncWaitGroup {
         info!("Router({}) is stopping", self.name);
         self.forward.lock().await.shutdown().await
+    }
+
+    pub async fn display(&self) -> json::JsonValue {
+        self.forward.lock().await.display().await
     }
 }
 
