@@ -9,3 +9,10 @@ edition = "2021"
 json = "0.12.4"
 router = { version = "0.1.0", path = "../router" }
 tokio = "1.28.1"
+
+
+[profile.dev]
+panic = 'abort'
+
+[profile.release]
+panic = 'abort'

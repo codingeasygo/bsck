@@ -97,7 +97,7 @@ impl ConnID {
     }
 
     pub fn to_string(&self) -> String {
-        hex::encode([self.lid, self.rid])
+        hex::encode([self.lid, self.rid]).to_uppercase()
     }
 }
 
@@ -180,8 +180,8 @@ pub struct Ping {
 }
 
 impl Ping {
-    pub fn new() -> Self {
-        Self { speed: 0, last: 0 }
+    pub fn new(speed: i64, last: i64) -> Self {
+        Self { speed, last }
     }
 }
 
@@ -209,35 +209,32 @@ pub trait RouterWriter {
 
 pub struct Conn {
     pub id: u16,
-    pub name: String,
-    pub ping: Ping,
+    pub name: Option<String>,
+    pub ping: Option<Ping>,
     pub recv_last: i64,
     pub conn_type: ConnType,
     pub context: HashMap<String, String>,
     pub conn_seq: u8,
     pub conn_id: HashMap<u8, bool>,
-    pub state: String,
-    pub used: u64,
+    pub state: Option<String>,
+    pub used: Option<u32>,
     pub ready: Arc<Notify>,
-    pub uri: Arc<String>,
 }
 
 impl Conn {
-    pub fn new(id: u16, conn_type: ConnType, uri: Arc<String>) -> Self {
-        Self {
-            id,
-            name: String::from(""),
-            ping: Ping::new(),
-            recv_last: 0,
-            conn_type,
-            context: HashMap::new(),
-            conn_seq: 0,
-            conn_id: HashMap::new(),
-            state: String::from(""),
-            used: 0,
-            ready: Arc::new(Notify::new()),
-            uri,
+    pub fn new(id: u16, conn_type: ConnType) -> Self {
+        Self { id, name: None, ping: None, recv_last: 0, conn_type, context: HashMap::new(), conn_seq: 0, conn_id: HashMap::new(), state: None, used: None, ready: Arc::new(Notify::new()) }
+    }
+
+    pub fn get_used(&self) -> u32 {
+        match self.used {
+            Some(v) => v,
+            None => 0,
         }
+    }
+
+    pub fn add_used(&mut self) {
+        self.used = Some(((self.get_used() as u64) + 1) as u32)
     }
 
     pub fn alloc_conn_id(&mut self) -> tokio::io::Result<u8> {
@@ -262,7 +259,7 @@ impl Conn {
     }
 
     //make ready
-    pub fn make_ready(&mut self, err: String) {
+    pub fn make_ready(&mut self, err: Option<String>) {
         self.state = err;
         self.ready.notify_waiters();
     }
@@ -414,7 +411,7 @@ impl RouterWriter for RouterRawWriter {
 }
 
 pub struct RouterConn {
-    pub name: String,
+    pub name: Arc<String>,
     pub header: Arc<Header>,
     pub id: u16,
     pub conn_type: ConnType,
@@ -425,14 +422,17 @@ pub struct RouterConn {
 }
 
 impl RouterConn {
-    pub fn new(name: String, header: Arc<Header>, id: u16, conn_type: ConnType, conn: Arc<Mutex<Conn>>, reader: Arc<Mutex<dyn RouterReader + Send + Sync>>, writer: Arc<Mutex<dyn RouterWriter + Send + Sync>>, forward: Arc<Mutex<RouterForward>>) -> Self {
+    pub fn new(name: Arc<String>, header: Arc<Header>, id: u16, conn_type: ConnType, conn: Arc<Mutex<Conn>>, reader: Arc<Mutex<dyn RouterReader + Send + Sync>>, writer: Arc<Mutex<dyn RouterWriter + Send + Sync>>, forward: Arc<Mutex<RouterForward>>) -> Self {
         Self { name, header, id, conn_type, conn, reader, writer, forward }
     }
     pub async fn name(&self) -> String {
-        self.conn.lock().await.name.clone()
+        match &self.conn.lock().await.name {
+            Some(n) => n.clone(),
+            None => String::new(),
+        }
     }
     pub async fn set_name(&self, name: String) {
-        self.conn.lock().await.name = name;
+        self.conn.lock().await.name = Some(name);
     }
 
     pub async fn alloc_conn_id(&self) -> tokio::io::Result<u8> {
@@ -474,7 +474,7 @@ impl RouterConn {
         self.writer.lock().await.shutdown().await;
     }
 
-    pub async fn make_ready(&self, err: String) {
+    pub async fn make_ready(&self, err: Option<String>) {
         self.conn.lock().await.make_ready(err);
     }
 
@@ -483,7 +483,11 @@ impl RouterConn {
     }
 
     pub fn to_string(&self) -> String {
-        format!("RouterConn(id:{})", self.id)
+        format!("{:?}({})", self.conn_type, self.id)
+    }
+
+    pub async fn display(&self) -> String {
+        format!("{:?}({},{})", self.conn_type, self.id, self.conn.lock().await.get_used())
     }
 
     pub fn start_read(conn: Arc<RouterConn>) -> JoinHandle<()> {
@@ -500,6 +504,8 @@ impl RouterConn {
             let err = match reader.read().await {
                 Ok(mut frame) => {
                     let mut forward = conn.forward.lock().await;
+                    let now_time = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as i64;
+                    conn.conn.lock().await.recv_last = now_time;
                     match forward.proc_conn_frame(&conn, &mut frame).await {
                         Ok(v) => Ok(v),
                         Err(e) => Err(e),
@@ -548,10 +554,12 @@ impl RouterChannel {
         let mut conn = None;
         let mut min_used = 0;
         for c in self.conn_all.values() {
-            let used = c.conn.lock().await.used;
-            if conn.is_none() || min_used > used {
-                conn = Some(c);
+            let mut min = c.conn.lock().await;
+            let used = min.get_used();
+            if min_used == 0 || min_used >= used {
                 min_used = used;
+                conn = Some(c);
+                min.add_used();
             }
         }
         conn
@@ -565,7 +573,7 @@ impl RouterChannel {
     pub async fn display(&self) -> Vec<String> {
         let mut item_all = Vec::new();
         for conn in self.conn_all.values() {
-            item_all.push(conn.to_string());
+            item_all.push(conn.display().await);
         }
         item_all
     }
@@ -610,7 +618,7 @@ impl RouterTableItem {
     }
 
     pub fn to_string(&self) -> String {
-        format!("{} {}<->{} {:?}", self.from_conn.to_string(), self.from_sid.to_string(), self.next_sid.to_string(), self.next_conn.to_string())
+        format!("{} {}<->{} {}", self.from_conn.to_string(), self.from_sid.to_string(), self.next_sid.to_string(), self.next_conn.to_string())
     }
 
     pub fn router_key(conn: &Arc<RouterConn>, sid: &ConnID) -> Vec<String> {
@@ -721,7 +729,7 @@ pub trait Handler {
 }
 
 pub struct RouterForward {
-    pub name: String,
+    pub name: Arc<String>,
     pub table: RouterTable,
     pub channels: HashMap<String, RouterChannel>,
     pub handler: Arc<dyn Handler + Send + Sync>,
@@ -729,7 +737,7 @@ pub struct RouterForward {
 }
 
 impl RouterForward {
-    pub fn new(name: String, handler: Arc<dyn Handler + Send + Sync>) -> Self {
+    pub fn new(name: Arc<String>, handler: Arc<dyn Handler + Send + Sync>) -> Self {
         Self { name, table: RouterTable::new(), channels: HashMap::new(), handler, waiter: wg::AsyncWaitGroup::new() }
     }
 
@@ -802,8 +810,7 @@ impl RouterForward {
         };
         let now_time = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as i64;
         let mut conn = channel.conn.lock().await;
-        conn.ping.speed = now_time - start_time;
-        conn.ping.last = now_time;
+        conn.ping = Some(Ping::new(now_time - start_time, now_time));
         Ok(())
     }
 
@@ -829,7 +836,7 @@ impl RouterForward {
                             ConnType::Raw => {
                                 //ready to read
                                 info!("Router({}) proc dial back {}->{} success on {}", self.name, next.to_string(), router.uri, channel.to_string());
-                                next.make_ready(String::new()).await;
+                                next.make_ready(None).await;
                                 RouterConn::start_read(next.clone());
                                 Ok(())
                             }
@@ -854,7 +861,7 @@ impl RouterForward {
                     channel.free_conn_id(&frame.sid.lid).await;
                     if let Some((next, _)) = router.next(channel) {
                         next.shutdown().await;
-                        next.make_ready(m.to_string()).await;
+                        next.make_ready(Some(m.to_string())).await;
                     }
                     Ok(())
                 }
@@ -975,7 +982,7 @@ impl RouterForward {
             channels.insert(v.name.clone(), v.display().await);
         }
         object! {
-            "name": self.name.clone(),
+            "name": self.name.to_string(),
             "table": self.table.display().await,
             "channels": channels,
         }
@@ -983,7 +990,7 @@ impl RouterForward {
 }
 
 pub struct Router {
-    pub name: String,
+    pub name: Arc<String>,
     pub header: Arc<Header>,
     pub buffer_size: usize,
     pub forward: Arc<Mutex<RouterForward>>,
@@ -992,7 +999,7 @@ pub struct Router {
 }
 
 impl Router {
-    pub fn new(name: String, handler: Arc<dyn Handler + Send + Sync>) -> Self {
+    pub fn new(name: Arc<String>, handler: Arc<dyn Handler + Send + Sync>) -> Self {
         let mut h = Header::new();
         h.length_field_length = 2;
         h.data_offset = 2;
@@ -1029,11 +1036,11 @@ impl Router {
         RouterConn::start_read(conn);
     }
 
-    pub async fn join_base(&mut self, reader: Box<dyn Reader + Send + Sync>, writer: Box<dyn Writer + Send + Sync>, uri: Arc<String>, options: &String) -> tokio::io::Result<()> {
+    pub async fn join_base(&mut self, reader: Box<dyn Reader + Send + Sync>, writer: Box<dyn Writer + Send + Sync>, options: &String) -> tokio::io::Result<()> {
         let frame_reader = FrameReader::new(self.header.clone(), reader, self.buffer_size);
         let frame_writer = FrameWriter::new(self.header.clone(), writer);
         let id: u16 = self.new_conn_id();
-        let info = Arc::new(Mutex::new(Conn::new(id.clone(), ConnType::Channel, uri)));
+        let info = Arc::new(Mutex::new(Conn::new(id.clone(), ConnType::Channel)));
         let conn_reader = Arc::new(Mutex::new(RouterConnReader::new(self.header.clone(), frame_reader, info.clone()).await));
         let conn_writer = Arc::new(Mutex::new(RouterConnWriter::new(self.header.clone(), frame_writer, info.clone()).await));
         let conn = Arc::new(RouterConn::new(self.name.clone(), self.header.clone(), id, ConnType::Channel, info, conn_reader, conn_writer, self.forward.clone()));
@@ -1073,7 +1080,7 @@ impl Router {
 
     pub async fn dial_base(&mut self, reader: Box<dyn Reader + Send + Sync>, writer: Box<dyn Writer + Send + Sync>, uri: Arc<String>) -> tokio::io::Result<Arc<RouterConn>> {
         let id: u16 = self.new_conn_id();
-        let info = Arc::new(Mutex::new(Conn::new(id.clone(), ConnType::Raw, uri.clone())));
+        let info = Arc::new(Mutex::new(Conn::new(id.clone(), ConnType::Raw)));
         let conn_reader = Arc::new(Mutex::new(RouterRawReader::new(self.header.clone(), reader, info.clone(), self.buffer_size).await));
         let conn_writer = Arc::new(Mutex::new(RouterRawWriter::new(self.header.clone(), writer, info.clone()).await));
         let conn = Arc::new(RouterConn::new(self.name.clone(), self.header.clone(), id, ConnType::Raw, info, conn_reader, conn_writer, self.forward.clone()));
@@ -1094,7 +1101,7 @@ impl Router {
         let conn_sid = ConnID::new(lid, lid);
         conn.set_conn_id(conn_sid.clone()).await;
         debug!("Router({}) start dial({}-{}->{}-{}) to {} on channel({})", self.name, conn.id, conn_sid.to_string(), channel.id, channel_sid.to_string(), uri, channel.to_string());
-        self.add_table(channel.clone(), channel_sid.clone(), conn.clone(), conn_sid, uri.clone()).await;
+        self.add_table(channel.clone(), channel_sid.clone(), conn.clone(), conn_sid, Arc::new(String::new())).await;
         match RouterForward::write_message(&channel, &channel_sid, &RouterCmd::DialConn, format!("{}|{}", parts[0], parts[1]).as_bytes()).await {
             Ok(_) => Ok(()),
             Err(e) => {

@@ -10,6 +10,7 @@ async fn main() {
         name: "NX",
         token:"123",
     };
+    let name = Arc::new(String::from("NX"));
     let join_uri = Arc::new(String::from("tcp://127.0.0.1:13100"));
     let socks_dial_uri = Arc::new(String::from("N0->${HOST}"));
     let tcp_dial_uri = Arc::new(String::from("N0->tcp://127.0.0.1:13200"));
@@ -17,10 +18,11 @@ async fn main() {
     let tcp_addr = String::from("tcp://127.0.0.1:13300");
     let web_addr = String::from("tcp://127.0.0.1:1100");
     let handler = Arc::new(NormalAcessHandler::new());
-    let mut proxy = Proxy::new(String::from("NX"), handler);
+    let mut proxy = Proxy::new(name, handler);
+    proxy.router.lock().await.buffer_size = 4 * 1024;
     proxy.login(join_uri, &login_optionslet.dump()).await.unwrap();
-    proxy.start_forward(String::from("s01"), &socks_addr, socks_dial_uri).await.unwrap();
-    proxy.start_forward(String::from("t01"), &tcp_addr, tcp_dial_uri).await.unwrap();
-    proxy.start_web(String::from("web"), &web_addr).await.unwrap();
+    proxy.start_forward(Arc::new(String::from("s01")), &socks_addr, socks_dial_uri).await.unwrap();
+    proxy.start_forward(Arc::new(String::from("t01")), &tcp_addr, tcp_dial_uri).await.unwrap();
+    proxy.start_web(Arc::new(String::from("web")), &web_addr).await.unwrap();
     proxy.wait().await;
 }

@@ -20,13 +20,13 @@ use crate::{
 };
 
 pub struct ServerState {
-    pub name: String,
+    pub name: Arc<String>,
     pub stopper: String,
     pub stopping: bool,
 }
 
 impl ServerState {
-    pub fn new(name: String, stopper: String) -> Self {
+    pub fn new(name: Arc<String>, stopper: String) -> Self {
         Self { name, stopper, stopping: false }
     }
 
@@ -41,7 +41,7 @@ impl ServerState {
 }
 
 pub struct Proxy {
-    pub name: String,
+    pub name: Arc<String>,
     pub router: Arc<Mutex<Router>>,
     pub config: Option<Arc<rustls::ClientConfig>>,
     listener: HashMap<String, Arc<Mutex<ServerState>>>,
@@ -49,7 +49,7 @@ pub struct Proxy {
 }
 
 impl Proxy {
-    pub fn new(name: String, handler: Arc<dyn Handler + Send + Sync>) -> Self {
+    pub fn new(name: Arc<String>, handler: Arc<dyn Handler + Send + Sync>) -> Self {
         let router = Arc::new(Mutex::new(Router::new(name.clone(), handler)));
         let waiter = Arc::new(wg::AsyncWaitGroup::new());
         waiter.add(1);
@@ -60,7 +60,7 @@ impl Proxy {
         if remote.starts_with("tcp://") {
             let stream = TcpStream::connect(remote.trim_start_matches("tcp://")).await?;
             let (rx, tx) = wrap_split_tcp_w(stream);
-            self.router.lock().await.join_base(rx, tx, remote, options).await?;
+            self.router.lock().await.join_base(rx, tx, options).await?;
             Ok(())
         } else if remote.starts_with("tls://") {
             if let Some(tls) = &self.config {
@@ -70,7 +70,7 @@ impl Proxy {
                 let domain = rustls::ServerName::try_from(domain).map_err(|_| new_message_err("invalid domain"))?;
                 let stream = connector.connect(domain, stream).await?;
                 let (rx, tx) = wrap_split_tls_w(stream);
-                self.router.lock().await.join_base(rx, tx, remote, options).await?;
+                self.router.lock().await.join_base(rx, tx, options).await?;
                 Ok(())
             } else {
                 Err(new_message_err("not tls client config"))
@@ -80,14 +80,13 @@ impl Proxy {
         }
     }
 
-    pub async fn start_forward(&mut self, name: String, loc: &String, remote: Arc<String>) -> tokio::io::Result<()> {
+    pub async fn start_forward(&mut self, name: Arc<String>, loc: &String, remote: Arc<String>) -> tokio::io::Result<()> {
         if loc.starts_with("socks://") {
             let domain: &str = loc.trim_start_matches("socks://");
             let ln = TcpListener::bind(&domain).await?;
             let state = Arc::new(Mutex::new(ServerState::new(name.clone(), domain.to_string())));
             info!("Proxy({}) listen socks {} is success", self.name, ln.local_addr().unwrap());
-            self.listener.insert(name.clone(), state.clone());
-            let name = self.name.clone();
+            self.listener.insert(name.to_string(), state.clone());
             let waiter = self.waiter.clone();
             let router = self.router.clone();
             waiter.add(1);
@@ -97,8 +96,7 @@ impl Proxy {
             let ln = TcpListener::bind(&domain).await?;
             let state = Arc::new(Mutex::new(ServerState::new(name.clone(), domain.to_string())));
             info!("Proxy({}) listen tcp {} is success", self.name, ln.local_addr().unwrap());
-            self.listener.insert(name.clone(), state.clone());
-            let name = self.name.clone();
+            self.listener.insert(name.to_string(), state.clone());
             let waiter = self.waiter.clone();
             let router = self.router.clone();
             waiter.add(1);
@@ -107,7 +105,7 @@ impl Proxy {
         Ok(())
     }
 
-    async fn loop_tcp_accpet(name: String, waiter: Arc<wg::AsyncWaitGroup>, ln: TcpListener, state: Arc<Mutex<ServerState>>, router: Arc<Mutex<Router>>, remote: Arc<String>) -> tokio::io::Result<()> {
+    async fn loop_tcp_accpet(name: Arc<String>, waiter: Arc<wg::AsyncWaitGroup>, ln: TcpListener, state: Arc<Mutex<ServerState>>, router: Arc<Mutex<Router>>, remote: Arc<String>) -> tokio::io::Result<()> {
         waiter.add(1);
         info!("Proxy({}) forward tcp {:?}->{} loop is starting", name, ln.local_addr().unwrap(), &remote);
         let err = loop {
@@ -128,7 +126,7 @@ impl Proxy {
         Ok(())
     }
 
-    async fn proc_tcp_conn(name: &String, router: Arc<Mutex<Router>>, stream: TcpStream, from: SocketAddr, remote: Arc<String>) {
+    async fn proc_tcp_conn(name: &Arc<String>, router: Arc<Mutex<Router>>, stream: TcpStream, from: SocketAddr, remote: Arc<String>) {
         info!("Proxy({}) start forward tcp conn {:?} to {:?}", name, from, &remote);
         let (reader, writer) = wrap_split_tcp_w(stream);
         match router.lock().await.dial_base(reader, writer, remote.clone()).await {
@@ -139,7 +137,7 @@ impl Proxy {
         }
     }
 
-    async fn loop_socks_accpet(name: String, waiter: Arc<wg::AsyncWaitGroup>, ln: TcpListener, state: Arc<Mutex<ServerState>>, router: Arc<Mutex<Router>>, remote: Arc<String>) -> tokio::io::Result<()> {
+    async fn loop_socks_accpet(name: Arc<String>, waiter: Arc<wg::AsyncWaitGroup>, ln: TcpListener, state: Arc<Mutex<ServerState>>, router: Arc<Mutex<Router>>, remote: Arc<String>) -> tokio::io::Result<()> {
         info!("Proxy({}) forward socks5 {:?}->{} loop is starting", name, ln.local_addr().unwrap(), remote);
         let err = loop {
             match ln.accept().await {
@@ -169,7 +167,7 @@ impl Proxy {
         Ok(())
     }
 
-    async fn proc_socks_conn(name: String, router: Arc<Mutex<Router>>, stream: TcpStream, from: SocketAddr, remote: Arc<String>) {
+    async fn proc_socks_conn(name: Arc<String>, router: Arc<Mutex<Router>>, stream: TcpStream, from: SocketAddr, remote: Arc<String>) {
         info!("Proxy({}) start forward socks conn {:?} to {:?}", name, from, &remote);
         let (reader, writer) = wrap_split_tcp_w(stream);
         match Router::dial_socks(router, reader, writer, remote.clone()).await {
@@ -180,12 +178,12 @@ impl Proxy {
         }
     }
 
-    pub async fn start_web(&mut self, name: String, domain: &String) -> tokio::io::Result<()> {
+    pub async fn start_web(&mut self, name: Arc<String>, domain: &String) -> tokio::io::Result<()> {
         let domain: &str = domain.trim_start_matches("tcp://");
         let state = Arc::new(Mutex::new(ServerState::new(name.clone(), domain.to_string())));
         info!("Proxy({}) listen web server {} is success", self.name, domain);
         let ln = TcpListener::bind(&domain).await?;
-        self.listener.insert(name.clone(), state.clone());
+        self.listener.insert(name.to_string(), state.clone());
         let name = self.name.clone();
         let waiter = self.waiter.clone();
         let router = self.router.clone();
@@ -194,7 +192,7 @@ impl Proxy {
         Ok(())
     }
 
-    async fn loop_web_accpet(name: String, waiter: Arc<wg::AsyncWaitGroup>, ln: TcpListener, state: Arc<Mutex<ServerState>>, router: Arc<Mutex<Router>>) -> tokio::io::Result<()> {
+    async fn loop_web_accpet(name: Arc<String>, waiter: Arc<wg::AsyncWaitGroup>, ln: TcpListener, state: Arc<Mutex<ServerState>>, router: Arc<Mutex<Router>>) -> tokio::io::Result<()> {
         let name = Arc::new(name);
         info!("Proxy({}) web server {} loop is starting", name, ln.local_addr().unwrap());
         let err = loop {

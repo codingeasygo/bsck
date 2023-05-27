@@ -53,14 +53,14 @@ mod tests {
             name: "NX",
             token:"123",
         };
-        let join_uri = Arc::new(String::from("piped"));
+        // let join_uri = Arc::new(String::from("piped"));
         let dial_uri = Arc::new(String::from("N0->tcp://127.0.0.1:13200"));
 
         let handler = Arc::new(NormalAcessHandler::new());
-        let mut router = Router::new(String::from("NX"), handler);
+        let mut router = Router::new(Arc::new(String::from("NX")), handler);
         let stream = TcpStream::connect("127.0.0.1:13100").await.unwrap();
         let (rx, tx) = wrap_split_tcp_w(stream);
-        let res = router.join_base(rx, tx, join_uri, &login_optionslet.dump()).await;
+        let res = router.join_base(rx, tx, &login_optionslet.dump()).await;
         assert!(res.is_ok(), "{:?}", res);
         // tokio::time::sleep(Duration::from_millis(1000000)).await;
         for i in 0..10 {
@@ -100,9 +100,9 @@ mod tests {
         let dial_uri = Arc::new(String::from("N0->tcp://127.0.0.1:13200"));
         let addr = String::from("tcp://127.0.0.1:1107");
         let handler = Arc::new(NormalAcessHandler::new());
-        let mut proxy = Proxy::new(String::from("NX"), handler);
+        let mut proxy = Proxy::new(Arc::new(String::from("NX")), handler);
         proxy.login(join_uri, &login_optionslet.dump()).await.unwrap();
-        proxy.start_forward(String::from("test"), &addr, dial_uri).await.unwrap();
+        proxy.start_forward(Arc::new(String::from("test")), &addr, dial_uri).await.unwrap();
         tokio::time::sleep(tokio::time::Duration::from_millis(1000000)).await;
         // proxy.start_forward(loc, remote)
     }
@@ -119,10 +119,10 @@ mod tests {
         let forward_addr = String::from("socks://127.0.0.1:1107");
         let web_addr = String::from("127.0.0.1:1100");
         let handler = Arc::new(NormalAcessHandler::new());
-        let mut proxy = Proxy::new(String::from("NX"), handler);
+        let mut proxy = Proxy::new(Arc::new(String::from("NX")), handler);
         proxy.login(join_uri, &login_optionslet.dump()).await.unwrap();
-        proxy.start_forward(String::from("test"), &forward_addr, dial_uri).await.unwrap();
-        proxy.start_web(String::from("test"), &web_addr).await.unwrap();
+        proxy.start_forward(Arc::new(String::from("test")), &forward_addr, dial_uri).await.unwrap();
+        proxy.start_web(Arc::new(String::from("test")), &web_addr).await.unwrap();
         tokio::time::sleep(tokio::time::Duration::from_millis(500000)).await;
         proxy.shutdown().await;
         println!("shutdown is done...");

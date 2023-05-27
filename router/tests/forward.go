@@ -109,12 +109,16 @@ func runServer() {
 	access0.LoginAccess["NX"] = "123"
 	access0.DialAccess = append(access0.DialAccess, []string{".*", ".*"})
 	proxy0 := router.NewProxy("N0", access0)
+	proxy0.Router.BufferSize = 4 * 1024
+	proxy0.Forward.BufferSize = 4 * 1024
 	proxy0.Heartbeat = time.Second
 
 	access1 := router.NewNormalAcessHandler("N1")
 	access1.LoginAccess["NX"] = "123"
 	access1.DialAccess = append(access1.DialAccess, []string{".*", ".*"})
 	proxy1 := router.NewProxy("N1", access1)
+	proxy0.Router.BufferSize = 4 * 1024
+	proxy0.Forward.BufferSize = 4 * 1024
 	proxy1.Heartbeat = time.Second
 	err := proxy0.Listen(":13100")
 	if err != nil {
