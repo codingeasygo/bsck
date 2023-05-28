@@ -19,8 +19,9 @@ async fn main() {
     let web_addr = String::from("tcp://127.0.0.1:1100");
     let handler = Arc::new(NormalAcessHandler::new());
     let mut proxy = Proxy::new(name, handler);
-    proxy.router.lock().await.buffer_size = 4 * 1024;
-    proxy.login(join_uri, &login_optionslet.dump()).await.unwrap();
+    for _ in 0..32 {
+        proxy.login(join_uri.clone(), &login_optionslet.dump()).await.unwrap();
+    }
     proxy.start_forward(Arc::new(String::from("s01")), &socks_addr, socks_dial_uri).await.unwrap();
     proxy.start_forward(Arc::new(String::from("t01")), &tcp_addr, tcp_dial_uri).await.unwrap();
     proxy.start_web(Arc::new(String::from("web")), &web_addr).await.unwrap();

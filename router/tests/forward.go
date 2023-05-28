@@ -109,16 +109,16 @@ func runServer() {
 	access0.LoginAccess["NX"] = "123"
 	access0.DialAccess = append(access0.DialAccess, []string{".*", ".*"})
 	proxy0 := router.NewProxy("N0", access0)
-	proxy0.Router.BufferSize = 4 * 1024
-	proxy0.Forward.BufferSize = 4 * 1024
+	proxy0.Router.BufferSize = 2 * 1024
+	proxy0.Forward.BufferSize = 2 * 1024
 	proxy0.Heartbeat = time.Second
 
 	access1 := router.NewNormalAcessHandler("N1")
 	access1.LoginAccess["NX"] = "123"
 	access1.DialAccess = append(access1.DialAccess, []string{".*", ".*"})
 	proxy1 := router.NewProxy("N1", access1)
-	proxy0.Router.BufferSize = 4 * 1024
-	proxy0.Forward.BufferSize = 4 * 1024
+	proxy1.Router.BufferSize = 2 * 1024
+	proxy1.Forward.BufferSize = 2 * 1024
 	proxy1.Heartbeat = time.Second
 	err := proxy0.Listen(":13100")
 	if err != nil {
@@ -180,7 +180,7 @@ func benchGet(uri string) {
 	})
 	for x := 0; x < 100; x++ {
 		waiter := sync.WaitGroup{}
-		for i := 0; i < 2048; i++ {
+		for i := 0; i < 1000; i++ {
 			waiter.Add(1)
 			go func(v int) {
 				data, err := client.GetText(uri)

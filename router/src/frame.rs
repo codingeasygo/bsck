@@ -25,17 +25,6 @@ impl Header {
         Self { byte_order: ByteOrder::BE, length_field_magic: 0, length_field_offset: 0, length_field_length: 4, length_adjustment: 0, data_offset: 4 }
     }
 
-    // pub fn set_date_prefix(&mut self, sid: &ConnID, cmd: &RouterCmd) {
-    //     self.data_prefix = vec![0; 3];
-    //     self.data_prefix[0] = sid.lid.clone();
-    //     self.data_prefix[1] = sid.rid.clone();
-    //     self.data_prefix[3] = cmd.as_u8();
-    // }
-
-    // pub fn data_prefix_offset(&self) -> usize {
-    //     self.data_offset + self.data_prefix.len()
-    // }
-
     pub fn write_head(&self, buffer: &mut [u8]) {
         let n = buffer.len() + self.length_adjustment;
         let target = &mut buffer[self.length_field_offset..];
@@ -77,26 +66,26 @@ impl Header {
 }
 
 #[async_trait]
-pub trait Reader {
+pub trait RawReader {
     async fn read(&mut self, buf: &mut [u8]) -> tokio::io::Result<usize>;
 }
 
 #[async_trait]
-pub trait Writer {
+pub trait RawWriter {
     async fn write(&mut self, buf: &[u8]) -> tokio::io::Result<usize>;
     async fn shutdown(&mut self);
 }
 
-pub struct FrameReader {
+pub struct Reader {
     pub header: Arc<Header>,
-    pub inner: Box<dyn Reader + Send + Sync>,
+    pub inner: Box<dyn RawReader + Send + Sync>,
     buf: Box<Vec<u8>>,
     filled: usize,
     readed: usize,
 }
 
-impl FrameReader {
-    pub fn new(header: Arc<Header>, inner: Box<dyn Reader + Send + Sync>, buffer_size: usize) -> Self {
+impl Reader {
+    pub fn new(header: Arc<Header>, inner: Box<dyn RawReader + Send + Sync>, buffer_size: usize) -> Self {
         if buffer_size < 1 {
             panic!("buffer size is {}", buffer_size);
         }
@@ -123,7 +112,7 @@ impl FrameReader {
             let n = match s.inner.read(&mut sbuf[s.filled..]).await {
                 Ok(n) => {
                     if n < 1 {
-                        break Err(std::io::Error::new(ErrorKind::UnexpectedEof, "EOF"));
+                        break Err(std::io::Error::new(ErrorKind::UnexpectedEof, "C-EOF"));
                     } else {
                         n
                     }
@@ -143,13 +132,13 @@ impl FrameReader {
     }
 }
 
-pub struct FrameWriter {
+pub struct Writer {
     pub header: Arc<Header>,
-    pub inner: Box<dyn Writer + Send + Sync>,
+    pub inner: Box<dyn RawWriter + Send + Sync>,
 }
 
-impl FrameWriter {
-    pub fn new(header: Arc<Header>, inner: Box<dyn Writer + Send + Sync>) -> Self {
+impl Writer {
+    pub fn new(header: Arc<Header>, inner: Box<dyn RawWriter + Send + Sync>) -> Self {
         Self { header, inner }
     }
 
@@ -162,7 +151,7 @@ impl FrameWriter {
     }
 }
 
-pub async fn read_full(reader: &mut Box<dyn Reader + Send + Sync>, buf: &mut [u8], readed: usize, need: usize) -> tokio::io::Result<usize> {
+pub async fn read_full(reader: &mut Box<dyn RawReader + Send + Sync>, buf: &mut [u8], readed: usize, need: usize) -> tokio::io::Result<usize> {
     let mut n = readed;
     if n >= need {
         return Ok(n);

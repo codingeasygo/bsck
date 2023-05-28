@@ -2,49 +2,14 @@
 mod tests {
     use std::sync::Arc;
 
-    use async_trait::async_trait;
     use json::object;
     use router::{
-        frame::{Reader, Writer},
         log::init_simple_log,
         proxy::Proxy,
         router::{NormalAcessHandler, Router},
         wrapper::{wrap_channel, wrap_split_tcp_w},
     };
-    use tokio::{
-        io::{AsyncReadExt, AsyncWriteExt},
-        net::TcpStream,
-    };
-    use tokio_pipe::{PipeRead, PipeWrite};
-
-    pub struct WrapPipeReader {
-        inner: PipeRead,
-    }
-
-    #[async_trait]
-    impl Reader for WrapPipeReader {
-        async fn read(&mut self, buf: &mut [u8]) -> tokio::io::Result<usize> {
-            self.inner.read(buf).await
-        }
-    }
-
-    pub struct WrapPipeWriter {
-        inner: PipeWrite,
-    }
-
-    #[async_trait]
-    impl Writer for WrapPipeWriter {
-        async fn write(&mut self, buf: &[u8]) -> tokio::io::Result<usize> {
-            self.inner.write(buf).await
-        }
-        async fn shutdown(&mut self) {
-            _ = self.inner.shutdown();
-        }
-    }
-    unsafe impl Send for WrapPipeReader {}
-    unsafe impl Sync for WrapPipeReader {}
-    unsafe impl Send for WrapPipeWriter {}
-    unsafe impl Sync for WrapPipeWriter {}
+    use tokio::net::TcpStream;
 
     #[tokio::test]
     async fn base_router() {
@@ -57,7 +22,7 @@ mod tests {
         let dial_uri = Arc::new(String::from("N0->tcp://127.0.0.1:13200"));
 
         let handler = Arc::new(NormalAcessHandler::new());
-        let mut router = Router::new(Arc::new(String::from("NX")), handler);
+        let router = Router::new(Arc::new(String::from("NX")), handler);
         let stream = TcpStream::connect("127.0.0.1:13100").await.unwrap();
         let (rx, tx) = wrap_split_tcp_w(stream);
         let res = router.join_base(rx, tx, &login_optionslet.dump()).await;
@@ -67,7 +32,7 @@ mod tests {
             let (rxb, mut txa) = wrap_channel();
             let (mut rxa, txb) = wrap_channel();
             let conn = router.dial_base(rxb, txb, dial_uri.clone()).await.unwrap();
-            conn.wait_ready().await.unwrap();
+            conn.wait().await.unwrap();
             println!("forward is started");
             let data = format!("123-{}", i);
             match txa.write(data.as_bytes()).await {
@@ -85,7 +50,7 @@ mod tests {
             }
             txa.shutdown().await;
         }
-        router.shutdown().await.wait().await;
+        router.shutdown().await;
         // tokio::time::sleep(tokio::time::Duration::from_millis(1000000)).await;
     }
 
@@ -121,12 +86,11 @@ mod tests {
         let handler = Arc::new(NormalAcessHandler::new());
         let mut proxy = Proxy::new(Arc::new(String::from("NX")), handler);
         proxy.login(join_uri, &login_optionslet.dump()).await.unwrap();
-        proxy.start_forward(Arc::new(String::from("test")), &forward_addr, dial_uri).await.unwrap();
-        proxy.start_web(Arc::new(String::from("test")), &web_addr).await.unwrap();
-        tokio::time::sleep(tokio::time::Duration::from_millis(500000)).await;
+        proxy.start_forward(Arc::new(String::from("f1")), &forward_addr, dial_uri).await.unwrap();
+        proxy.start_web(Arc::new(String::from("w1")), &web_addr).await.unwrap();
+        tokio::time::sleep(tokio::time::Duration::from_millis(8000)).await;
         proxy.shutdown().await;
+        proxy.wait().await;
         println!("shutdown is done...");
-        tokio::time::sleep(tokio::time::Duration::from_millis(500000)).await;
-        // proxy.start_forward(loc, remote)
     }
 }

@@ -8,14 +8,14 @@ use tokio::{
 };
 use tokio_rustls::client::TlsStream;
 
-use crate::frame::{Reader, Writer};
+use crate::frame;
 
 pub struct WrapTcpReader<T> {
     inner: ReadHalf<T>,
 }
 
 #[async_trait]
-impl<T> Reader for WrapTcpReader<T>
+impl<T> frame::RawReader for WrapTcpReader<T>
 where
     T: AsyncRead + Send + Sync,
 {
@@ -29,12 +29,14 @@ pub struct WrapTcpWriter<T> {
 }
 
 #[async_trait]
-impl<T> Writer for WrapTcpWriter<T>
+impl<T> frame::RawWriter for WrapTcpWriter<T>
 where
     T: AsyncWrite + Send + Sync,
 {
     async fn write(&mut self, buf: &[u8]) -> tokio::io::Result<usize> {
-        self.inner.write(buf).await
+        self.inner.write_all(buf).await?;
+        self.inner.flush().await?;
+        Ok(buf.len())
     }
     async fn shutdown(&mut self) {
         _ = self.inner.shutdown().await;
@@ -54,14 +56,14 @@ where
     (WrapTcpReader { inner: rx }, WrapTcpWriter { inner: tx })
 }
 
-pub fn wrap_split_tcp_w(stream: TcpStream) -> (Box<dyn Reader + Send + Sync>, Box<dyn Writer + Send + Sync>) {
+pub fn wrap_split_tcp_w(stream: TcpStream) -> (Box<dyn frame::RawReader + Send + Sync>, Box<dyn frame::RawWriter + Send + Sync>) {
     let (rx, tx) = tokio::io::split(stream);
     let rxa = Box::new(WrapTcpReader { inner: rx });
     let txa = Box::new(WrapTcpWriter { inner: tx });
     (rxa, txa)
 }
 
-pub fn wrap_split_tls_w(stream: TlsStream<TcpStream>) -> (Box<dyn Reader + Send + Sync>, Box<dyn Writer + Send + Sync>) {
+pub fn wrap_split_tls_w(stream: TlsStream<TcpStream>) -> (Box<dyn frame::RawReader + Send + Sync>, Box<dyn frame::RawWriter + Send + Sync>) {
     let (rx, tx) = tokio::io::split(stream);
     let rxa = Box::new(WrapTcpReader { inner: rx });
     let txa = Box::new(WrapTcpWriter { inner: tx });
@@ -82,7 +84,7 @@ pub struct WrapChannelReader {
 }
 
 #[async_trait]
-impl Reader for WrapChannelReader {
+impl frame::RawReader for WrapChannelReader {
     async fn read(&mut self, buf: &mut [u8]) -> tokio::io::Result<usize> {
         match self.inner.recv().await {
             Some(data) => {
@@ -104,7 +106,7 @@ pub struct WrapChannelWriter {
 }
 
 #[async_trait]
-impl Writer for WrapChannelWriter {
+impl frame::RawWriter for WrapChannelWriter {
     async fn write(&mut self, buf: &[u8]) -> tokio::io::Result<usize> {
         match self.inner.send(Vec::from(buf)).await {
             Ok(_) => Ok(buf.len()),
@@ -121,7 +123,7 @@ unsafe impl Sync for WrapChannelReader {}
 unsafe impl Send for WrapChannelWriter {}
 unsafe impl Sync for WrapChannelWriter {}
 
-pub fn wrap_channel() -> (Box<dyn Reader + Send + Sync>, Box<dyn Writer + Send + Sync>) {
+pub fn wrap_channel() -> (Box<dyn frame::RawReader + Send + Sync>, Box<dyn frame::RawWriter + Send + Sync>) {
     let (tx, rx) = mpsc::channel::<Vec<u8>>(16);
     let rxa = Box::new(WrapChannelReader { inner: rx });
     let txa = Box::new(WrapChannelWriter { inner: tx });
