@@ -1407,6 +1407,10 @@ impl Router {
         self.job.wait().await;
     }
 
+    pub async fn list_channel_count(&self) -> HashMap<String, usize> {
+        self.router.lock().await.list_channel_count()
+    }
+
     pub async fn shutdown(&self) {
         info!("Router({}) is stopping", self.name);
         _ = self.router.lock().await.shutdown().await.call(&self.job).await;

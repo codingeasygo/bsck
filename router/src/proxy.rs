@@ -7,11 +7,9 @@ use hyper::server::conn::http1;
 use hyper::service::Service;
 use hyper::{Request, Response, StatusCode};
 use log::{info, warn};
-use rustls::OwnedTrustAnchor;
-use std::fs::File;
-use std::io::BufReader;
 use std::os::fd::{AsRawFd, RawFd};
 use std::pin::Pin;
+use std::time::Duration;
 use std::{collections::HashMap, net::SocketAddr, sync::Arc};
 use tokio::net::TcpSocket;
 use tokio::{
@@ -20,7 +18,7 @@ use tokio::{
 };
 use tokio_rustls::TlsConnector;
 
-use crate::util::{json_must_str, json_option_i64, json_option_str, json_option_str_tuple, read_certs, wrap_err, SkipServerVerification, JSON};
+use crate::util::{json_must_str, json_option_i64, load_tls_config, wrap_err, JSON};
 use crate::wrapper::wrap_quinn_w;
 use crate::{
     router::{Handler, Router},
@@ -71,64 +69,83 @@ impl Preparer for SkipPreparer {
 
 pub struct Proxy {
     pub name: Arc<String>,
+    pub dir: Arc<String>,
     pub router: Arc<Router>,
     pub handler: Arc<dyn Handler + Send + Sync>,
     pub preparer: Arc<dyn Preparer + Send + Sync>,
+    pub channels: HashMap<String, Arc<JSON>>,
     listener: HashMap<String, Arc<Mutex<ServerState>>>,
     waiter: Arc<wg::AsyncWaitGroup>,
 }
 
 impl Proxy {
     pub fn new(name: Arc<String>, handler: Arc<dyn Handler + Send + Sync>) -> Self {
+        let dir = Arc::new(String::from("."));
         let router = Arc::new(Router::new(name.clone(), handler.clone()));
         let waiter = Arc::new(wg::AsyncWaitGroup::new());
         waiter.add(1);
         let preparer = Arc::new(SkipPreparer::new());
-        Self { name, router, handler, preparer, listener: HashMap::new(), waiter }
+        Self { name, dir, router, handler, preparer, channels: HashMap::new(), listener: HashMap::new(), waiter }
     }
 
-    fn load_tls_config(option: &Arc<JSON>) -> tokio::io::Result<Arc<rustls::ClientConfig>> {
-        let mut root_store = rustls::RootCertStore::empty();
-        match json_option_str(&option, "tls_ca") {
-            Some(ca) => {
-                let mut pem = BufReader::new(File::open(ca.as_str())?);
-                let certs = rustls_pemfile::certs(&mut pem)?;
-                let trust_anchors = certs.iter().map(|cert| {
-                    let ta = webpki::TrustAnchor::try_from_cert_der(&cert[..]).unwrap();
-                    OwnedTrustAnchor::from_subject_spki_name_constraints(ta.subject, ta.spki, ta.name_constraints)
-                });
-                root_store.add_server_trust_anchors(trust_anchors);
-            }
-            None => {
-                root_store.add_server_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.0.iter().map(|ta| OwnedTrustAnchor::from_subject_spki_name_constraints(ta.subject, ta.spki, ta.name_constraints)));
-            }
+    pub async fn run(&mut self, ms: u64) {
+        let mut interval = tokio::time::interval(Duration::from_millis(ms));
+        loop {
+            interval.tick().await;
+            _ = self.keep().await;
         }
+    }
 
-        let verify = match json_option_i64(&option, "tls_verify") {
-            Some(v) => v > 0,
-            None => true,
-        };
-        if verify {
-            let builder = rustls::ClientConfig::builder().with_safe_defaults().with_root_certificates(root_store);
-            let config = match json_option_str_tuple(&option, "tls_cert", "tls_key") {
-                Some((cert, key)) => {
-                    let (cert, key) = read_certs(cert, key)?;
-                    match builder.with_single_cert(cert, key) {
-                        Ok(v) => Ok(v),
-                        Err(e) => Err(new_message_err(e)),
-                    }?
-                }
-                None => builder.with_no_client_auth(),
-            };
-            Ok(Arc::new(config))
-        } else {
-            let builder = rustls::ClientConfig::builder().with_safe_defaults().with_custom_certificate_verifier(SkipServerVerification::new());
-            let config = builder.with_no_client_auth();
-            Ok(Arc::new(config))
+    pub async fn start_keep(proxy: Arc<Mutex<Proxy>>, ms: u64) {
+        tokio::spawn(async move {
+            Self::loop_keep(proxy, ms).await;
+        });
+    }
+
+    async fn loop_keep(proxy: Arc<Mutex<Proxy>>, ms: u64) {
+        let mut interval = tokio::time::interval(Duration::from_millis(ms));
+        loop {
+            interval.tick().await;
+            _ = proxy.lock().await.keep().await;
         }
+    }
+
+    pub async fn keep(&mut self) -> tokio::io::Result<()> {
+        let connected = self.router.list_channel_count().await;
+        let mut to_login = Vec::new();
+        let mut to_conn = Vec::new();
+        for (name, option) in &self.channels {
+            let keep = match json_option_i64(option, "keep") {
+                Some(v) => v as usize,
+                None => 1,
+            };
+            let count = match connected.get(name) {
+                Some(c) => c.clone(),
+                None => 0,
+            };
+            if count >= keep {
+                continue;
+            }
+            to_login.push(option.clone());
+            to_conn.push(keep - count);
+        }
+        for i in 0..to_login.len() {
+            let option = &to_login[i];
+            for _ in 0..to_conn[i] {
+                match self.login(option.clone()).await {
+                    Ok(_) => (),
+                    Err(e) => {
+                        warn!("Proxy({}) keep login fail with {:?}", self.name, e);
+                        break;
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 
     pub async fn login(&mut self, option: Arc<JSON>) -> tokio::io::Result<()> {
+        let dir = self.dir.clone();
         let remote = json_must_str(&option, "remote")?;
         if remote.starts_with("tcp://") {
             let conn = TcpSocket::new_v4()?;
@@ -150,7 +167,7 @@ impl Proxy {
 
             let domain = remote.trim_start_matches("tcp://");
             let addr = wrap_err(domain.parse())?;
-            let tls = Self::load_tls_config(&option)?;
+            let tls = load_tls_config(dir, &option)?;
             let connector = TlsConnector::from(tls);
             let stream = conn.connect(addr).await?;
             let server_name = rustls::ServerName::try_from(domain).map_err(|_| new_message_err("invalid domain"))?;
@@ -167,7 +184,7 @@ impl Proxy {
             let addr = wrap_err(domain.parse())?;
             let runtime = quinn::default_runtime().ok_or_else(|| new_message_err("no async runtime found"))?;
             let mut endpoint = quinn::Endpoint::new(quinn::EndpointConfig::default(), None, conn, runtime)?;
-            let tls = Self::load_tls_config(&option)?;
+            let tls = load_tls_config(dir, &option)?;
             endpoint.set_default_client_config(quinn::ClientConfig::new(tls));
             let conn = wrap_err(endpoint.connect(addr, domain))?.await?;
             let (send, recv) = conn.open_bi().await?;
