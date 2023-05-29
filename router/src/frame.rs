@@ -2,7 +2,7 @@ use std::{io::ErrorKind, sync::Arc};
 
 use async_trait::async_trait;
 
-use crate::router::new_message_err;
+use crate::util::new_message_err;
 
 #[derive(Clone)]
 pub enum ByteOrder {

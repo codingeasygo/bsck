@@ -2,6 +2,7 @@ pub mod frame;
 pub mod log;
 pub mod proxy;
 pub mod router;
+pub mod util;
 pub mod wrapper;
 // use quinn::Endpoint;
 // use std::{error::Error, fs, net::SocketAddr, sync::Arc};

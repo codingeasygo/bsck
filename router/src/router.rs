@@ -14,35 +14,11 @@ use tokio::{
     task::JoinHandle,
 };
 
-use crate::frame;
+use crate::util::{json_must_i64, json_must_str, JSON};
+use crate::{frame, util::new_message_err};
 
 const CONN_OK: &str = "OK";
 const CONN_CLOSED: &str = "CLOSED";
-
-pub fn new_message_err<E>(err: E) -> std::io::Error
-where
-    E: Into<Box<dyn std::error::Error + Send + Sync>>,
-{
-    std::io::Error::new(ErrorKind::Other, err)
-}
-
-fn json_must_i32(value: &json::JsonValue, key: &str) -> tokio::io::Result<i32> {
-    match value[key].as_i32() {
-        Some(v) => Ok(v),
-        None => Err(new_message_err(format!("read {} fail", key))),
-    }
-}
-
-fn json_must_str<'a>(value: &'a json::JsonValue, key: &'a str) -> tokio::io::Result<&'a str> {
-    match value[key].as_str() {
-        Some(v) => Ok(v),
-        None => Err(new_message_err(format!("read {} fail", key))),
-    }
-}
-
-pub fn now() -> i64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as i64
-}
 
 #[derive(Clone, Debug)]
 pub enum Cmd {
@@ -727,11 +703,11 @@ pub trait Handler {
     //on connection dial uri
     async fn on_conn_dial_uri(&self, channel: &Conn, conn: &String, parts: &Vec<String>) -> tokio::io::Result<()>;
     //on connection login
-    async fn on_conn_login(&self, channel: &Conn, args: &String) -> tokio::io::Result<(String, String)>;
+    async fn on_conn_login(&self, channel: &Conn, args: &String) -> tokio::io::Result<(String, Arc<JSON>)>;
     //on connection close
     async fn on_conn_close(&self, conn: &Conn);
     //OnConnJoin is event on channel join
-    async fn on_conn_join(&self, conn: &Conn, option: &String, result: &String);
+    async fn on_conn_join(&self, conn: &Conn, option: Arc<JSON>, result: Arc<JSON>);
 }
 
 #[derive(Clone)]
@@ -1282,7 +1258,7 @@ impl Router {
         self.router.lock().await.close_conn(&conn_id).await
     }
 
-    pub async fn join_base(&self, reader: Box<dyn frame::RawReader + Send + Sync>, writer: Box<dyn frame::RawWriter + Send + Sync>, options: &String) -> tokio::io::Result<()> {
+    pub async fn join_base(&self, reader: Box<dyn frame::RawReader + Send + Sync>, writer: Box<dyn frame::RawWriter + Send + Sync>, option: Arc<JSON>) -> tokio::io::Result<()> {
         let frame_reader = frame::Reader::new(self.header.clone(), reader, self.buffer_size);
         let frame_writer = frame::Writer::new(self.header.clone(), writer);
         let id: u16 = self.new_conn_id().await;
@@ -1290,12 +1266,12 @@ impl Router {
         let conn_reader = Arc::new(Mutex::new(ChannelReader::new(frame_reader, conn_waiter.clone()).await));
         let conn_writer = Arc::new(Mutex::new(ChannelWriter::new(frame_writer, conn_waiter.clone()).await));
         let conn = Conn::new(id, ConnType::Channel, self.header.clone(), conn_waiter, conn_reader, conn_writer);
-        self.join_conn(conn, options).await
+        self.join_conn(conn, option).await
     }
 
-    pub async fn join_conn(&self, conn: Conn, options: &String) -> tokio::io::Result<()> {
-        info!("Router({}) start login join connection {} by options {}", self.name, conn.to_string(), options);
-        let mut task = match self.join_call(conn.clone(), options).await {
+    pub async fn join_conn(&self, conn: Conn, option: Arc<JSON>) -> tokio::io::Result<()> {
+        info!("Router({}) start login join connection {} by options {:?}", self.name, conn.to_string(), option);
+        let mut task = match self.join_call(conn.clone(), option).await {
             Ok(v) => Ok(v),
             Err(e) => {
                 warn!("Router({}) login to {} fail with {}", self.name, conn.to_string(), e);
@@ -1306,22 +1282,21 @@ impl Router {
         task.call(&self.job).await
     }
 
-    async fn join_call(&self, conn: Conn, options: &String) -> tokio::io::Result<Task> {
+    async fn join_call(&self, conn: Conn, option: Arc<JSON>) -> tokio::io::Result<Task> {
+        let login_option = serde_json::to_string(option.as_ref())?;
         let mut conn = conn;
-        conn.write_message(&ConnID::zero(), &Cmd::LoginChannel, options.as_bytes()).await?;
+        conn.write_message(&ConnID::zero(), &Cmd::LoginChannel, login_option.as_bytes()).await?;
         let message = conn.read_str().await?;
-        let result = match json::parse(&message) {
-            Ok(v) => Ok(v),
-            Err(e) => Err(new_message_err(e)),
-        }?;
-        let code = json_must_i32(&result, &"code")?;
+        let result: JSON = serde_json::from_str(&message)?;
+        let result = Arc::new(result);
+        let code = json_must_i64(&result, &"code")?;
         if code != 0 {
             return Err(new_message_err(message));
         }
         let name = String::from(json_must_str(&result, &"name")?);
         conn.name = Arc::new(name.clone());
         info!("Router({}) login to {} success, bind to {}", self.name, conn.to_string(), name);
-        self.handler.on_conn_join(&conn, &options, &message).await;
+        self.handler.on_conn_join(&conn, option, result).await;
         self.register(conn).await
     }
 
@@ -1471,7 +1446,7 @@ impl Handler for NormalAcessHandler {
         Err(new_message_err("not supported"))
     }
     //on connection login
-    async fn on_conn_login(&self, _: &Conn, _: &String) -> tokio::io::Result<(String, String)> {
+    async fn on_conn_login(&self, _: &Conn, _: &String) -> tokio::io::Result<(String, Arc<JSON>)> {
         Err(new_message_err("not supported"))
     }
     //on connection close
@@ -1488,7 +1463,7 @@ impl Handler for NormalAcessHandler {
         }
     }
     //OnConnJoin is event on channel join
-    async fn on_conn_join(&self, conn: &Conn, _: &String, _: &String) {
+    async fn on_conn_join(&self, conn: &Conn, _: Arc<JSON>, _: Arc<JSON>) {
         match &self.sender {
             Some(sender) => {
                 let event = NormalAcessEvent::new(HandlerAction::Join, conn.clone());
@@ -1518,7 +1493,7 @@ impl NormalEventHandler {
                             HandlerAction::Dial => (),
                             HandlerAction::Login => (),
                             HandlerAction::Close => next.on_conn_close(&event.conn).await,
-                            HandlerAction::Join => next.on_conn_join(&event.conn, &String::new(), &String::new()).await,
+                            HandlerAction::Join => next.on_conn_join(&event.conn, Arc::new(JSON::new()), Arc::new(JSON::new())).await,
                         }
                     }
                 }

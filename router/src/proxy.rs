@@ -1,3 +1,4 @@
+use async_trait::async_trait;
 use bytes::Bytes;
 use futures::Future;
 use http_body_util::Full;
@@ -6,16 +7,24 @@ use hyper::server::conn::http1;
 use hyper::service::Service;
 use hyper::{Request, Response, StatusCode};
 use log::{info, warn};
+use rustls::OwnedTrustAnchor;
+use std::fs::File;
+use std::io::BufReader;
+use std::os::fd::{AsRawFd, RawFd};
 use std::pin::Pin;
 use std::{collections::HashMap, net::SocketAddr, sync::Arc};
+use tokio::net::TcpSocket;
 use tokio::{
     net::{TcpListener, TcpStream},
     sync::Mutex,
 };
 use tokio_rustls::TlsConnector;
 
+use crate::util::{json_must_str, json_option_i64, json_option_str, json_option_str_tuple, read_certs, wrap_err, SkipServerVerification, JSON};
+use crate::wrapper::wrap_quinn_w;
 use crate::{
-    router::{new_message_err, Handler, Router},
+    router::{Handler, Router},
+    util::new_message_err,
     wrapper::{wrap_split_tcp_w, wrap_split_tls_w},
 };
 
@@ -40,11 +49,31 @@ impl ServerState {
     }
 }
 
+#[async_trait]
+pub trait Preparer {
+    async fn prepare_fd(&self, fd: RawFd) -> tokio::io::Result<()>;
+}
+
+pub struct SkipPreparer {}
+
+impl SkipPreparer {
+    pub fn new() -> Self {
+        Self {}
+    }
+}
+
+#[async_trait]
+impl Preparer for SkipPreparer {
+    async fn prepare_fd(&self, _: RawFd) -> tokio::io::Result<()> {
+        Ok(())
+    }
+}
+
 pub struct Proxy {
     pub name: Arc<String>,
     pub router: Arc<Router>,
-    pub config: Option<Arc<rustls::ClientConfig>>,
     pub handler: Arc<dyn Handler + Send + Sync>,
+    pub preparer: Arc<dyn Preparer + Send + Sync>,
     listener: HashMap<String, Arc<Mutex<ServerState>>>,
     waiter: Arc<wg::AsyncWaitGroup>,
 }
@@ -54,28 +83,97 @@ impl Proxy {
         let router = Arc::new(Router::new(name.clone(), handler.clone()));
         let waiter = Arc::new(wg::AsyncWaitGroup::new());
         waiter.add(1);
-        Self { name, router, config: None, listener: HashMap::new(), waiter, handler }
+        let preparer = Arc::new(SkipPreparer::new());
+        Self { name, router, handler, preparer, listener: HashMap::new(), waiter }
     }
 
-    pub async fn login(&mut self, remote: Arc<String>, options: &String) -> tokio::io::Result<()> {
+    fn load_tls_config(option: &Arc<JSON>) -> tokio::io::Result<Arc<rustls::ClientConfig>> {
+        let mut root_store = rustls::RootCertStore::empty();
+        match json_option_str(&option, "tls_ca") {
+            Some(ca) => {
+                let mut pem = BufReader::new(File::open(ca.as_str())?);
+                let certs = rustls_pemfile::certs(&mut pem)?;
+                let trust_anchors = certs.iter().map(|cert| {
+                    let ta = webpki::TrustAnchor::try_from_cert_der(&cert[..]).unwrap();
+                    OwnedTrustAnchor::from_subject_spki_name_constraints(ta.subject, ta.spki, ta.name_constraints)
+                });
+                root_store.add_server_trust_anchors(trust_anchors);
+            }
+            None => {
+                root_store.add_server_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.0.iter().map(|ta| OwnedTrustAnchor::from_subject_spki_name_constraints(ta.subject, ta.spki, ta.name_constraints)));
+            }
+        }
+
+        let verify = match json_option_i64(&option, "tls_verify") {
+            Some(v) => v > 0,
+            None => true,
+        };
+        if verify {
+            let builder = rustls::ClientConfig::builder().with_safe_defaults().with_root_certificates(root_store);
+            let config = match json_option_str_tuple(&option, "tls_cert", "tls_key") {
+                Some((cert, key)) => {
+                    let (cert, key) = read_certs(cert, key)?;
+                    match builder.with_single_cert(cert, key) {
+                        Ok(v) => Ok(v),
+                        Err(e) => Err(new_message_err(e)),
+                    }?
+                }
+                None => builder.with_no_client_auth(),
+            };
+            Ok(Arc::new(config))
+        } else {
+            let builder = rustls::ClientConfig::builder().with_safe_defaults().with_custom_certificate_verifier(SkipServerVerification::new());
+            let config = builder.with_no_client_auth();
+            Ok(Arc::new(config))
+        }
+    }
+
+    pub async fn login(&mut self, option: Arc<JSON>) -> tokio::io::Result<()> {
+        let remote = json_must_str(&option, "remote")?;
         if remote.starts_with("tcp://") {
-            let stream = TcpStream::connect(remote.trim_start_matches("tcp://")).await?;
+            let conn = TcpSocket::new_v4()?;
+            conn.bind("0.0.0.0:0".parse().unwrap())?;
+            let fd = conn.as_raw_fd();
+            self.preparer.prepare_fd(fd).await?;
+
+            let domain = remote.trim_start_matches("tcp://");
+            let addr = wrap_err(domain.parse())?;
+            let stream = conn.connect(addr).await?;
             let (rx, tx) = wrap_split_tcp_w(stream);
-            self.router.join_base(rx, tx, options).await?;
+            self.router.join_base(rx, tx, option).await?;
             Ok(())
         } else if remote.starts_with("tls://") {
-            if let Some(tls) = &self.config {
-                let domain = remote.trim_start_matches("tcp://");
-                let connector = TlsConnector::from(tls.clone());
-                let stream = TcpStream::connect(domain).await?;
-                let domain = rustls::ServerName::try_from(domain).map_err(|_| new_message_err("invalid domain"))?;
-                let stream = connector.connect(domain, stream).await?;
-                let (rx, tx) = wrap_split_tls_w(stream);
-                self.router.join_base(rx, tx, options).await?;
-                Ok(())
-            } else {
-                Err(new_message_err("not tls client config"))
-            }
+            let conn = TcpSocket::new_v4()?;
+            conn.bind(":0".parse().unwrap())?;
+            let fd = conn.as_raw_fd();
+            self.preparer.prepare_fd(fd).await?;
+
+            let domain = remote.trim_start_matches("tcp://");
+            let addr = wrap_err(domain.parse())?;
+            let tls = Self::load_tls_config(&option)?;
+            let connector = TlsConnector::from(tls);
+            let stream = conn.connect(addr).await?;
+            let server_name = rustls::ServerName::try_from(domain).map_err(|_| new_message_err("invalid domain"))?;
+            let stream = connector.connect(server_name, stream).await?;
+            let (rx, tx) = wrap_split_tls_w(stream);
+            self.router.join_base(rx, tx, option).await?;
+            Ok(())
+        } else if remote.starts_with("quic://") {
+            let conn = std::net::UdpSocket::bind(":0")?;
+            let fd = conn.as_raw_fd();
+            self.preparer.prepare_fd(fd).await?;
+
+            let domain = remote.trim_start_matches("quic://");
+            let addr = wrap_err(domain.parse())?;
+            let runtime = quinn::default_runtime().ok_or_else(|| new_message_err("no async runtime found"))?;
+            let mut endpoint = quinn::Endpoint::new(quinn::EndpointConfig::default(), None, conn, runtime)?;
+            let tls = Self::load_tls_config(&option)?;
+            endpoint.set_default_client_config(quinn::ClientConfig::new(tls));
+            let conn = wrap_err(endpoint.connect(addr, domain))?.await?;
+            let (send, recv) = conn.open_bi().await?;
+            let (rx, tx) = wrap_quinn_w(send, recv);
+            self.router.join_base(rx, tx, option).await?;
+            Ok(())
         } else {
             Err(new_message_err("not tls client config"))
         }

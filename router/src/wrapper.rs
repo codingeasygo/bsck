@@ -70,6 +70,42 @@ pub fn wrap_split_tls_w(stream: TlsStream<TcpStream>) -> (Box<dyn frame::RawRead
     (rxa, txa)
 }
 
+pub struct WrapQuinnReader {
+    inner: quinn::RecvStream,
+}
+
+#[async_trait]
+impl frame::RawReader for WrapQuinnReader {
+    async fn read(&mut self, buf: &mut [u8]) -> tokio::io::Result<usize> {
+        match self.inner.read(buf).await? {
+            Some(v) => Ok(v),
+            None => Ok(0),
+        }
+    }
+}
+
+pub struct WrapQuinnWriter {
+    inner: quinn::SendStream,
+}
+
+#[async_trait]
+impl frame::RawWriter for WrapQuinnWriter {
+    async fn write(&mut self, buf: &[u8]) -> tokio::io::Result<usize> {
+        self.inner.write_all(buf).await?;
+        self.inner.flush().await?;
+        Ok(buf.len())
+    }
+    async fn shutdown(&mut self) {
+        _ = self.inner.shutdown().await;
+    }
+}
+
+pub fn wrap_quinn_w(send: quinn::SendStream, recv: quinn::RecvStream) -> (Box<dyn frame::RawReader + Send + Sync>, Box<dyn frame::RawWriter + Send + Sync>) {
+    let rxa = Box::new(WrapQuinnReader { inner: recv });
+    let txa = Box::new(WrapQuinnWriter { inner: send });
+    (rxa, txa)
+}
+
 // pub fn wrap_conn_tcp(header: Arc<Header>, id: u16, conn_type: ConnType, forward: Arc<Mutex<RouterForward>>,buffer_size:usize, stream: TcpStream) -> Arc<RouterConn> {
 //     let (rx, tx) = wrap_split_tcp_w(stream);
 //     let conn=Arc::new(Mutex::new(Conn::new(id.clone(),conn_type.clone())));
