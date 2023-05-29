@@ -4,10 +4,13 @@ use std::{
     collections::{HashMap, HashSet},
     io::ErrorKind,
     sync::Arc,
-    time::{SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use tokio::{
-    sync::{Mutex, Notify},
+    sync::{
+        mpsc::{Receiver, Sender},
+        Mutex, Notify,
+    },
     task::JoinHandle,
 };
 
@@ -712,6 +715,13 @@ impl Table {
     }
 }
 
+pub enum HandlerAction {
+    Dial,
+    Login,
+    Close,
+    Join,
+}
+
 #[async_trait]
 pub trait Handler {
     //on connection dial uri
@@ -799,6 +809,10 @@ impl Channel {
             conn_all.push(conn.clone());
         }
         conn_all
+    }
+
+    pub fn len(&self) -> usize {
+        self.conn_all.len()
     }
 }
 
@@ -1142,12 +1156,21 @@ impl Router_ {
                 if conn.conn_type == ConnType::Channel {
                     self.remove_channel(&conn.name, &conn)
                 }
+                self.handler.on_conn_close(&conn).await;
                 task.more(TaskItem::shutdown(Arc::new(conn), Some(CONN_CLOSED.to_string())));
             }
             None => (),
         }
         self.cseq_all.remove(conn_id);
         task
+    }
+
+    pub fn list_channel_count(&self) -> HashMap<String, usize> {
+        let mut counts = HashMap::new();
+        for channel in self.channels.values() {
+            counts.insert(channel.name.to_string(), channel.len());
+        }
+        counts
     }
 
     pub async fn shutdown(&mut self) -> Task {
@@ -1218,11 +1241,13 @@ impl Router_ {
     }
 }
 
+#[derive(Clone)]
 pub struct Router {
     pub name: Arc<String>,
     pub header: Arc<frame::Header>,
     pub buffer_size: usize,
     pub job: Job,
+    pub handler: Arc<dyn Handler + Send + Sync>,
     // pub forward: Arc<Mutex<RouterForward>>,
     router: Arc<Mutex<Router_>>,
 }
@@ -1240,9 +1265,9 @@ impl Router {
         h.length_field_length = 2;
         h.data_offset = 2;
         let header = Arc::new(h);
-        let router = Arc::new(Mutex::new(Router_::new(name.clone(), handler)));
+        let router = Arc::new(Mutex::new(Router_::new(name.clone(), handler.clone())));
         let job = Job::new(name.clone(), router.clone());
-        Self { name, header, buffer_size: 2 * 1024, router, job }
+        Self { name, header, buffer_size: 2 * 1024, router, job, handler: handler }
     }
 
     pub async fn new_conn_id(&self) -> u16 {
@@ -1296,6 +1321,7 @@ impl Router {
         let name = String::from(json_must_str(&result, &"name")?);
         conn.name = Arc::new(name.clone());
         info!("Router({}) login to {} success, bind to {}", self.name, conn.to_string(), name);
+        self.handler.on_conn_join(&conn, &options, &message).await;
         self.register(conn).await
     }
 
@@ -1416,11 +1442,25 @@ impl Router {
     }
 }
 
-pub struct NormalAcessHandler {}
+pub struct NormalAcessEvent {
+    pub action: HandlerAction,
+    pub conn: Conn,
+}
+
+impl NormalAcessEvent {
+    pub fn new(action: HandlerAction, conn: Conn) -> Self {
+        Self { action, conn }
+    }
+}
+
+pub struct NormalAcessHandler {
+    pub sender: Option<Sender<NormalAcessEvent>>,
+    pub send_raw: bool,
+}
 
 impl NormalAcessHandler {
     pub fn new() -> Self {
-        Self {}
+        Self { sender: None, send_raw: false }
     }
 }
 
@@ -1428,14 +1468,62 @@ impl NormalAcessHandler {
 impl Handler for NormalAcessHandler {
     //on connection dial uri
     async fn on_conn_dial_uri(&self, _: &Conn, _: &String, _: &Vec<String>) -> tokio::io::Result<()> {
-        Ok(())
+        Err(new_message_err("not supported"))
     }
     //on connection login
     async fn on_conn_login(&self, _: &Conn, _: &String) -> tokio::io::Result<(String, String)> {
-        Ok((String::from("NX"), String::from("OK")))
+        Err(new_message_err("not supported"))
     }
     //on connection close
-    async fn on_conn_close(&self, _: &Conn) {}
+    async fn on_conn_close(&self, conn: &Conn) {
+        if !self.send_raw && conn.conn_type == ConnType::Raw {
+            return;
+        }
+        match &self.sender {
+            Some(sender) => {
+                let event = NormalAcessEvent::new(HandlerAction::Close, conn.clone());
+                _ = sender.send_timeout(event, Duration::from_millis(500)).await;
+            }
+            None => (),
+        }
+    }
     //OnConnJoin is event on channel join
-    async fn on_conn_join(&self, _: &Conn, _: &String, _: &String) {}
+    async fn on_conn_join(&self, conn: &Conn, _: &String, _: &String) {
+        match &self.sender {
+            Some(sender) => {
+                let event = NormalAcessEvent::new(HandlerAction::Join, conn.clone());
+                _ = sender.send_timeout(event, Duration::from_millis(500)).await;
+            }
+            None => (),
+        }
+    }
+}
+
+pub struct NormalEventHandler {
+    pub reciver: Receiver<NormalAcessEvent>,
+    pub next: HashSet<Arc<dyn Handler + Send + Sync>>,
+}
+
+impl NormalEventHandler {
+    pub fn new(reciver: Receiver<NormalAcessEvent>) -> Self {
+        Self { reciver, next: HashSet::new() }
+    }
+
+    pub async fn receive(&mut self) {
+        loop {
+            match self.reciver.recv().await {
+                Some(event) => {
+                    for next in &self.next {
+                        match event.action {
+                            HandlerAction::Dial => (),
+                            HandlerAction::Login => (),
+                            HandlerAction::Close => next.on_conn_close(&event.conn).await,
+                            HandlerAction::Join => next.on_conn_join(&event.conn, &String::new(), &String::new()).await,
+                        }
+                    }
+                }
+                None => break,
+            }
+        }
+    }
 }
