@@ -44,16 +44,17 @@ pub struct Proxy {
     pub name: Arc<String>,
     pub router: Arc<Router>,
     pub config: Option<Arc<rustls::ClientConfig>>,
+    pub handler: Arc<dyn Handler + Send + Sync>,
     listener: HashMap<String, Arc<Mutex<ServerState>>>,
     waiter: Arc<wg::AsyncWaitGroup>,
 }
 
 impl Proxy {
     pub fn new(name: Arc<String>, handler: Arc<dyn Handler + Send + Sync>) -> Self {
-        let router = Arc::new(Router::new(name.clone(), handler));
+        let router = Arc::new(Router::new(name.clone(), handler.clone()));
         let waiter = Arc::new(wg::AsyncWaitGroup::new());
         waiter.add(1);
-        Self { name, router, config: None, listener: HashMap::new(), waiter }
+        Self { name, router, config: None, listener: HashMap::new(), waiter, handler }
     }
 
     pub async fn login(&mut self, remote: Arc<String>, options: &String) -> tokio::io::Result<()> {
@@ -81,6 +82,7 @@ impl Proxy {
     }
 
     pub async fn start_forward(&mut self, name: Arc<String>, loc: &String, remote: Arc<String>) -> tokio::io::Result<()> {
+        let router = self.router.clone();
         if loc.starts_with("socks://") {
             let domain: &str = loc.trim_start_matches("socks://");
             let ln = TcpListener::bind(&domain).await?;
@@ -88,7 +90,6 @@ impl Proxy {
             info!("Proxy({}) listen socks {} is success", self.name, ln.local_addr().unwrap());
             self.listener.insert(name.to_string(), state.clone());
             let waiter = self.waiter.clone();
-            let router = self.router.clone();
             waiter.add(1);
             tokio::spawn(async move { Self::loop_socks_accpet(name, waiter, ln, state, router, remote).await });
         } else {
@@ -98,7 +99,6 @@ impl Proxy {
             info!("Proxy({}) listen tcp {} is success", self.name, ln.local_addr().unwrap());
             self.listener.insert(name.to_string(), state.clone());
             let waiter = self.waiter.clone();
-            let router = self.router.clone();
             waiter.add(1);
             tokio::spawn(async move { Self::loop_tcp_accpet(name, waiter, ln, state, router, remote).await });
         }
@@ -178,6 +178,7 @@ impl Proxy {
     }
 
     pub async fn start_web(&mut self, name: Arc<String>, domain: &String) -> tokio::io::Result<()> {
+        let router = self.router.clone();
         let domain: &str = domain.trim_start_matches("tcp://");
         let state = Arc::new(Mutex::new(ServerState::new(name.clone(), domain.to_string())));
         info!("Proxy({}) listen web server {} is success", self.name, domain);
@@ -185,7 +186,6 @@ impl Proxy {
         self.listener.insert(name.to_string(), state.clone());
         let name = self.name.clone();
         let waiter = self.waiter.clone();
-        let router = self.router.clone();
         waiter.add(1);
         tokio::spawn(async move { Self::loop_web_accpet(name, waiter, ln, state, router).await });
         Ok(())
