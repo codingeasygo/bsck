@@ -5,7 +5,7 @@ use serde_json::json;
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 3)]
 async fn main() {
-    init_simple_log().unwrap();
+    init_simple_log(0).unwrap();
     let name = Arc::new(String::from("NX"));
     let mut options = JSON::new();
     options.insert(String::from("name"), serde_json::Value::String(String::from("NX")));
@@ -26,5 +26,5 @@ async fn main() {
     proxy.start_forward(Arc::new(String::from("s01")), &socks_addr, socks_dial_uri).await.unwrap();
     proxy.start_forward(Arc::new(String::from("t01")), &tcp_addr, tcp_dial_uri).await.unwrap();
     proxy.start_web(Arc::new(String::from("web")), &web_addr).await.unwrap();
-    proxy.run(3000).await;
+    proxy.run().await;
 }

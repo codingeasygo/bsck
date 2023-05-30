@@ -2,5 +2,6 @@
 
 members = [
     "router",
-    "bsrouter"
+    "bsrouter",
+    "bind"
 ]

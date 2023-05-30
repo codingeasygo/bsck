@@ -13,7 +13,7 @@ mod tests {
 
     #[tokio::test]
     async fn base_router() {
-        init_simple_log().unwrap();
+        init_simple_log(0).unwrap();
         let mut options = JSON::new();
         options.insert(String::from("name"), serde_json::Value::String(String::from("NX")));
         options.insert(String::from("token"), serde_json::Value::String(String::from("123")));
@@ -55,7 +55,7 @@ mod tests {
 
     #[tokio::test]
     async fn proxy_tcp() {
-        init_simple_log().unwrap();
+        init_simple_log(0).unwrap();
         let mut options = JSON::new();
         options.insert(String::from("name"), serde_json::Value::String(String::from("NX")));
         options.insert(String::from("token"), serde_json::Value::String(String::from("123")));
@@ -72,7 +72,7 @@ mod tests {
 
     #[tokio::test]
     async fn proxy_socks() {
-        init_simple_log().unwrap();
+        init_simple_log(0).unwrap();
         let mut options = JSON::new();
         options.insert(String::from("name"), serde_json::Value::String(String::from("NX")));
         options.insert(String::from("token"), serde_json::Value::String(String::from("123")));

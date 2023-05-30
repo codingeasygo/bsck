@@ -6,7 +6,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_wrap_channel() {
-        init_simple_log().unwrap();
+        init_simple_log(0).unwrap();
         info!("{}", "test_wrap_channel");
         let mut handles = vec![];
         let (mut rx, mut tx) = wrap_channel();

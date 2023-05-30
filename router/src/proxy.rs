@@ -18,7 +18,7 @@ use tokio::{
 };
 use tokio_rustls::TlsConnector;
 
-use crate::util::{json_must_str, json_option_i64, json_option_str, load_tls_config, wrap_err, JSON};
+use crate::util::{json_must_obj, json_must_str, json_option_i64, json_option_str, load_tls_config, wrap_err, JSON};
 use crate::wrapper::wrap_quinn_w;
 use crate::{
     router::{Handler, Router},
@@ -74,6 +74,7 @@ pub struct Proxy {
     pub handler: Arc<dyn Handler + Send + Sync>,
     pub preparer: Arc<dyn Preparer + Send + Sync>,
     pub channels: HashMap<String, Arc<JSON>>,
+    pub interval: u64,
     listener: HashMap<String, Arc<Mutex<ServerState>>>,
     waiter: Arc<wg::AsyncWaitGroup>,
 }
@@ -85,11 +86,41 @@ impl Proxy {
         let waiter = Arc::new(wg::AsyncWaitGroup::new());
         waiter.add(1);
         let preparer = Arc::new(SkipPreparer::new());
-        Self { name, dir, router, handler, preparer, channels: HashMap::new(), listener: HashMap::new(), waiter }
+        Self { name, dir, router, handler, preparer, channels: HashMap::new(), interval: 3000, listener: HashMap::new(), waiter }
     }
 
-    pub async fn run(&mut self, ms: u64) {
-        let mut interval = tokio::time::interval(Duration::from_millis(ms));
+    pub async fn bootstrap(handler: Arc<dyn Handler + Send + Sync>, config: Arc<JSON>) -> tokio::io::Result<Self> {
+        let name = Arc::new(json_must_str(&config, "name")?.to_string());
+        let mut proxy = Self::new(name, handler);
+        proxy.dir = Arc::new(json_option_str(&config, "dir").unwrap_or(&String::from(".")).to_string());
+        let channels = json_must_obj(&config, "channels")?;
+        for name in channels.keys() {
+            let channel = json_must_obj(&channels, name)?;
+            proxy.channels.insert(name.clone(), channel);
+        }
+        let forwards = json_must_obj(&config, "forwards")?;
+        for loc in forwards.keys() {
+            let parts: Vec<_> = loc.splitn(2, "~").collect();
+            if parts.len() < 2 {
+                return Err(new_message_err(format!("{} is invalid", loc)));
+            }
+            let remote = json_must_str(&forwards, &loc)?;
+            let name = Arc::new(parts[0].to_string());
+            let loc = &parts[1].to_string();
+            let remote = Arc::new(remote.to_string());
+            proxy.start_forward(name, loc, remote).await?;
+        }
+        let web = json_must_obj(&config, "web")?;
+        for name in web.keys() {
+            let domain = json_must_str(&web, name)?;
+            let name = Arc::new(name.clone());
+            proxy.start_web(name, domain).await?;
+        }
+        Ok(proxy)
+    }
+
+    pub async fn run(&mut self) {
+        let mut interval = tokio::time::interval(Duration::from_millis(self.interval));
         loop {
             interval.tick().await;
             _ = self.keep().await;

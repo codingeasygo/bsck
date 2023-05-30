@@ -37,6 +37,13 @@ impl log::Log for SimpleLogger {
 
 static LOGGER: SimpleLogger = SimpleLogger;
 
-pub fn init_simple_log() -> Result<(), SetLoggerError> {
-    log::set_logger(&LOGGER).map(|()| log::set_max_level(LevelFilter::Info))
+pub fn init_simple_log(l: i32) -> Result<(), SetLoggerError> {
+    let filter = match l {
+        10 => LevelFilter::Error,
+        20 => LevelFilter::Warn,
+        30 => LevelFilter::Info,
+        40 => LevelFilter::Debug,
+        _ => LevelFilter::Info,
+    };
+    log::set_logger(&LOGGER).map(|()| log::set_max_level(filter))
 }
