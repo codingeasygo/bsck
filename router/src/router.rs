@@ -14,7 +14,7 @@ use tokio::{
     task::JoinHandle,
 };
 
-use crate::util::{json_must_i64, json_must_str, JSON};
+use crate::util::{display_option, json_must_i64, json_must_str, JSON};
 use crate::{frame, util::new_message_err};
 
 const CONN_OK: &str = "OK";
@@ -1270,7 +1270,7 @@ impl Router {
     }
 
     pub async fn join_conn(&self, conn: Conn, option: Arc<JSON>) -> tokio::io::Result<()> {
-        info!("Router({}) start login join connection {} by options {:?}", self.name, conn.to_string(), option);
+        info!("Router({}) start login join connection {} by options {:?}", self.name, conn.to_string(), display_option(&option));
         let mut task = match self.join_call(conn.clone(), option).await {
             Ok(v) => Ok(v),
             Err(e) => {

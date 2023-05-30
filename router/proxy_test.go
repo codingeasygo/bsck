@@ -47,13 +47,13 @@ func newTlsProxy() (proxy0, proxy1 *Proxy, err error) {
 	access1.LoginAccess["N2"] = "123"
 	access1.DialAccess = append(access1.DialAccess, []string{".*", ".*"})
 	proxy1 = NewProxy("N1", access1)
-	err = proxy0.Listen("127.0.0.1:15023")
+	err = proxy0.Listen("tls://127.0.0.1:15023")
 	if err != nil {
 		return
 	}
 	_, _, err = proxy1.Login(xmap.M{
 		"local":  "127.0.0.1:0",
-		"remote": "127.0.0.1:15023",
+		"remote": "tls://127.0.0.1:15023",
 		"token":  "123",
 		"tls_ca": "../certs/rootCA.crt",
 	})
@@ -74,13 +74,13 @@ func newTlsVerifyProxy() (proxy0, proxy1 *Proxy, err error) {
 	access1.LoginAccess["N2"] = "123"
 	access1.DialAccess = append(access1.DialAccess, []string{".*", ".*"})
 	proxy1 = NewProxy("N1", access1)
-	err = proxy0.Listen("127.0.0.1:15023")
+	err = proxy0.Listen("tls://127.0.0.1:15023")
 	if err != nil {
 		return
 	}
 	_, _, err = proxy1.Login(xmap.M{
 		"local":      "127.0.0.1:0",
-		"remote":     "127.0.0.1:15023",
+		"remote":     "tls://127.0.0.1:15023",
 		"token":      "123",
 		"tls_cert":   "../certs/server.crt",
 		"tls_key":    "../certs/server.key",
@@ -163,6 +163,32 @@ func newWssVerifyProxy() (proxy0, proxy1 *Proxy, err error) {
 	return
 }
 
+func newQuicProxy() (proxy0, proxy1 *Proxy, err error) {
+	access0 := NewNormalAcessHandler("N0")
+	access0.LoginAccess["N1"] = "123"
+	access0.LoginAccess["N2"] = "123"
+	access0.DialAccess = append(access0.DialAccess, []string{".*", ".*"})
+	proxy0 = NewProxy("N0", access0)
+	proxy0.CA = "../certs/rootCA.crt"
+	proxy0.Cert = "../certs/server.crt"
+	proxy0.Key = "../certs/server.key"
+
+	access1 := NewNormalAcessHandler("N1")
+	access1.LoginAccess["N2"] = "123"
+	access1.DialAccess = append(access1.DialAccess, []string{".*", ".*"})
+	proxy1 = NewProxy("N1", access1)
+	err = proxy0.Listen("quic://127.0.0.1:15023")
+	if err != nil {
+		return
+	}
+	_, _, err = proxy1.Login(xmap.M{
+		"remote": "quic://127.0.0.1:15023",
+		"token":  "123",
+		"tls_ca": "../certs/rootCA.crt",
+	})
+	return
+}
+
 func TestProxy(t *testing.T) {
 	testProxy := func(proxy0, proxy1 *Proxy, err error) error {
 		if err != nil {
@@ -209,6 +235,9 @@ func TestProxy(t *testing.T) {
 	if tester.Run() && testProxy(newWssVerifyProxy()) != nil {
 		return
 	}
+	if tester.Run() && testProxy(newQuicProxy()) != nil {
+		return
+	}
 	if tester.Run() { //reconnect
 		proxy0, proxy1, err := newBaseProxy()
 		if err != nil {
@@ -247,7 +276,7 @@ func TestProxy(t *testing.T) {
 		proxy0 := NewProxy("N0", access0)
 		proxy0.Cert = "../certs/server.crt"
 		proxy0.Key = "xxx.key"
-		err := proxy0.Listen(":0")
+		err := proxy0.Listen("tls://:0")
 		if err == nil {
 			t.Error(err)
 			return

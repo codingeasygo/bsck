@@ -18,7 +18,7 @@ use tokio::{
 };
 use tokio_rustls::TlsConnector;
 
-use crate::util::{json_must_str, json_option_i64, load_tls_config, wrap_err, JSON};
+use crate::util::{json_must_str, json_option_i64, json_option_str, load_tls_config, wrap_err, JSON};
 use crate::wrapper::wrap_quinn_w;
 use crate::{
     router::{Handler, Router},
@@ -145,55 +145,57 @@ impl Proxy {
     }
 
     pub async fn login(&mut self, option: Arc<JSON>) -> tokio::io::Result<()> {
-        let dir = self.dir.clone();
-        let remote = json_must_str(&option, "remote")?;
-        if remote.starts_with("tcp://") {
-            let conn = TcpSocket::new_v4()?;
-            conn.bind("0.0.0.0:0".parse().unwrap())?;
-            let fd = conn.as_raw_fd();
-            self.preparer.prepare_fd(fd).await?;
+        let remote_all = json_must_str(&option, "remote")?;
+        for remote in remote_all.split(",") {
+            let remote = remote.to_string();
+            if remote.starts_with("tcp://") {
+                let conn = TcpSocket::new_v4()?;
+                conn.bind("0.0.0.0:0".parse().unwrap())?;
+                let fd = conn.as_raw_fd();
+                self.preparer.prepare_fd(fd).await?;
 
-            let domain = remote.trim_start_matches("tcp://");
-            let addr = wrap_err(domain.parse())?;
-            let stream = conn.connect(addr).await?;
-            let (rx, tx) = wrap_split_tcp_w(stream);
-            self.router.join_base(rx, tx, option).await?;
-            Ok(())
-        } else if remote.starts_with("tls://") {
-            let conn = TcpSocket::new_v4()?;
-            conn.bind(":0".parse().unwrap())?;
-            let fd = conn.as_raw_fd();
-            self.preparer.prepare_fd(fd).await?;
+                let domain = remote.trim_start_matches("tcp://");
+                let addr = wrap_err(domain.parse())?;
+                let stream = conn.connect(addr).await?;
+                let (rx, tx) = wrap_split_tcp_w(stream);
+                self.router.join_base(rx, tx, option.clone()).await?;
+            } else if remote.starts_with("tls://") {
+                let conn = TcpSocket::new_v4()?;
+                conn.bind(":0".parse().unwrap())?;
+                let fd = conn.as_raw_fd();
+                self.preparer.prepare_fd(fd).await?;
 
-            let domain = remote.trim_start_matches("tcp://");
-            let addr = wrap_err(domain.parse())?;
-            let tls = load_tls_config(dir, &option)?;
-            let connector = TlsConnector::from(tls);
-            let stream = conn.connect(addr).await?;
-            let server_name = rustls::ServerName::try_from(domain).map_err(|_| new_message_err("invalid domain"))?;
-            let stream = connector.connect(server_name, stream).await?;
-            let (rx, tx) = wrap_split_tls_w(stream);
-            self.router.join_base(rx, tx, option).await?;
-            Ok(())
-        } else if remote.starts_with("quic://") {
-            let conn = std::net::UdpSocket::bind(":0")?;
-            let fd = conn.as_raw_fd();
-            self.preparer.prepare_fd(fd).await?;
+                let addr = remote.trim_start_matches("tcp://").to_string();
+                let domain = json_option_str(&option, "domain").unwrap_or(&addr);
+                let addr_conn = wrap_err(addr.parse())?;
+                let tls = load_tls_config(self.dir.clone(), &option)?;
+                let connector = TlsConnector::from(tls);
+                let stream = conn.connect(addr_conn).await?;
+                let server_name = rustls::ServerName::try_from(domain.as_str()).map_err(|_| new_message_err("invalid domain"))?;
+                let stream = connector.connect(server_name, stream).await?;
+                let (rx, tx) = wrap_split_tls_w(stream);
+                self.router.join_base(rx, tx, option.clone()).await?;
+            } else if remote.starts_with("quic://") {
+                let conn = std::net::UdpSocket::bind("0.0.0.0:0")?;
+                let fd = conn.as_raw_fd();
+                self.preparer.prepare_fd(fd).await?;
 
-            let domain = remote.trim_start_matches("quic://");
-            let addr = wrap_err(domain.parse())?;
-            let runtime = quinn::default_runtime().ok_or_else(|| new_message_err("no async runtime found"))?;
-            let mut endpoint = quinn::Endpoint::new(quinn::EndpointConfig::default(), None, conn, runtime)?;
-            let tls = load_tls_config(dir, &option)?;
-            endpoint.set_default_client_config(quinn::ClientConfig::new(tls));
-            let conn = wrap_err(endpoint.connect(addr, domain))?.await?;
-            let (send, recv) = conn.open_bi().await?;
-            let (rx, tx) = wrap_quinn_w(send, recv);
-            self.router.join_base(rx, tx, option).await?;
-            Ok(())
-        } else {
-            Err(new_message_err("not tls client config"))
+                let addr = remote.trim_start_matches("quic://").to_string();
+                let domain: &String = json_option_str(&option, "domain").unwrap_or(&addr);
+                let addr_conn = wrap_err(addr.parse())?;
+                let runtime = quinn::default_runtime().ok_or_else(|| new_message_err("no async runtime found"))?;
+                let mut endpoint = quinn::Endpoint::new(quinn::EndpointConfig::default(), None, conn, runtime)?;
+                let tls = load_tls_config(self.dir.clone(), &option)?;
+                endpoint.set_default_client_config(quinn::ClientConfig::new(tls));
+                let conn = wrap_err(endpoint.connect(addr_conn, domain))?.await?;
+                let (send, recv) = conn.open_bi().await?;
+                let (rx, tx) = wrap_quinn_w(send, recv);
+                self.router.join_base(rx, tx, option.clone()).await?;
+            } else {
+                return Err(new_message_err(format!("not supporeted {}", remote)));
+            }
         }
+        Ok(())
     }
 
     pub async fn start_forward(&mut self, name: Arc<String>, loc: &String, remote: Arc<String>) -> tokio::io::Result<()> {

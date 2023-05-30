@@ -1,6 +1,7 @@
 package router
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
@@ -20,8 +21,55 @@ import (
 	"github.com/codingeasygo/util/proxy"
 	"github.com/codingeasygo/util/xmap"
 	"github.com/codingeasygo/util/xnet"
+	"github.com/quic-go/quic-go"
 	"golang.org/x/net/websocket"
 )
+
+type quicConn struct {
+	quic.Connection
+	quic.Stream
+}
+
+type quicListener struct {
+	quic.Listener
+}
+
+func quicListen(addr string, tls *tls.Config) (ln net.Listener, err error) {
+	quicConf := &quic.Config{EnableDatagrams: true}
+	quicConf.KeepAlivePeriod = time.Second
+	base, err := quic.ListenAddr(addr, tls, quicConf)
+	if err != nil {
+		return
+	}
+	ln = &quicListener{Listener: base}
+	return
+}
+
+func quicDial(addr string, tls *tls.Config) (conn net.Conn, err error) {
+	quicConf := &quic.Config{EnableDatagrams: true}
+	quicConf.KeepAlivePeriod = time.Second
+	base, err := quic.DialAddr(addr, tls, quicConf)
+	if err != nil {
+		return
+	}
+	stream, err := base.OpenStream()
+	if err != nil {
+		return
+	}
+	return &quicConn{Connection: base, Stream: stream}, nil
+}
+
+func (q *quicListener) Accept() (net.Conn, error) {
+	conn, err := q.Listener.Accept(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	stream, err := conn.AcceptStream(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	return &quicConn{Connection: conn, Stream: stream}, nil
+}
 
 // Proxy is an implementation of proxy router
 type Proxy struct {
@@ -57,31 +105,58 @@ func NewProxy(name string, handler Handler) (px *Proxy) {
 	return
 }
 
+func (p *Proxy) listenConfig() (config *tls.Config, err error) {
+	if len(p.Cert) < 1 {
+		err = fmt.Errorf("cert is not config")
+		return
+	}
+	InfoLog("Proxy(%v) load x509 cert:%v,key:%v", p.Name, p.Cert, p.Key)
+	var cert tls.Certificate
+	cert, err = tls.LoadX509KeyPair(p.Cert, p.Key)
+	if err != nil {
+		ErrorLog("Proxy(%v) load cert fail with %v", p.Name, err)
+		return
+	}
+	config = &tls.Config{InsecureSkipVerify: p.Insecure}
+	config.Certificates = append(config.Certificates, cert)
+	config.Rand = rand.Reader
+	return
+}
+
+func (p *Proxy) listenAddr(network, addr string) (ln net.Listener, err error) {
+	var config *tls.Config
+	switch network {
+	case "wss", "tls":
+		config, err = p.listenConfig()
+		if err == nil {
+			ln, err = tls.Listen("tcp", addr, config)
+		}
+	case "ws", "tcp":
+		ln, err = net.Listen("tcp", addr)
+	case "quic":
+		config, err = p.listenConfig()
+		if err == nil {
+			config.NextProtos = []string{"bs"}
+			ln, err = quicListen(addr, config)
+		}
+	default:
+		err = fmt.Errorf("%v is not supported", network)
+	}
+	return
+}
+
 // Listen will listen master router on address
 func (p *Proxy) Listen(addr string) (err error) {
-	var tlsConfig *tls.Config
-	if len(p.Cert) > 0 {
-		InfoLog("Proxy(%v) load x509 cert:%v,key:%v", p.Name, p.Cert, p.Key)
-		var cert tls.Certificate
-		cert, err = tls.LoadX509KeyPair(p.Cert, p.Key)
-		if err != nil {
-			ErrorLog("Proxy(%v) load cert fail with %v", p.Name, err)
-			return
-		}
-		tlsConfig = &tls.Config{InsecureSkipVerify: p.Insecure}
-		tlsConfig.Certificates = append(tlsConfig.Certificates, cert)
-		tlsConfig.Rand = rand.Reader
-	}
 	addrParts := strings.SplitN(addr, "://", 2)
-	addrListen := addr
+	var addrNetwork, addrListen string
 	if len(addrParts) > 1 {
+		addrNetwork = addrParts[0]
 		addrListen = addrParts[1]
-	}
-	if tlsConfig != nil {
-		p.master, err = tls.Listen("tcp", addrListen, tlsConfig)
 	} else {
-		p.master, err = net.Listen("tcp", addrListen)
+		addrNetwork = "tcp"
+		addrListen = addr
 	}
+	p.master, err = p.listenAddr(addrNetwork, addrListen)
 	if err != nil {
 		return
 	}
@@ -104,12 +179,11 @@ func (p *Proxy) Listen(addr string) (err error) {
 			server.Serve(p.master)
 			p.waiter.Done()
 		}()
-		InfoLog("Proxy(%v) listen web master on %v", p.Name, addr)
 	default:
 		p.waiter.Add(1)
 		go p.loopMaster(p.master)
-		InfoLog("Proxy(%v) listen tcp master on %v", p.Name, addr)
 	}
+	InfoLog("Proxy(%v) listen %v master on %v", p.Name, addrNetwork, addrListen)
 	return
 }
 
@@ -222,7 +296,11 @@ func (p *Proxy) OnConnJoin(channel Conn, option interface{}, result xmap.M) {
 	}
 }
 
-func (p *Proxy) loadTlsConfig(tlsCert, tlsKey, tlsCA string) (config *tls.Config, err error) {
+func (p *Proxy) loadTlsConfig(tlsCert, tlsKey, tlsCA, tlsVerify string) (config *tls.Config, err error) {
+	if len(tlsCA) < 1 && len(tlsCert) < 1 && (len(tlsVerify) < 1 || tlsVerify == "1") {
+		err = fmt.Errorf("at least one of tls_ca/tls_cert is required")
+		return
+	}
 	if len(tlsCert) > 0 && !filepath.IsAbs(tlsCert) {
 		tlsCert = filepath.Join(p.Dir, tlsCert)
 	}
@@ -232,7 +310,6 @@ func (p *Proxy) loadTlsConfig(tlsCert, tlsKey, tlsCA string) (config *tls.Config
 	if len(tlsCA) > 0 && !filepath.IsAbs(tlsCA) {
 		tlsCA = filepath.Join(p.Dir, tlsCA)
 	}
-	fmt.Println(tlsCA)
 	config = &tls.Config{InsecureSkipVerify: p.Insecure}
 	config.Rand = rand.Reader
 	if len(tlsCert) > 0 {
@@ -259,6 +336,9 @@ func (p *Proxy) loadTlsConfig(tlsCert, tlsKey, tlsCA string) (config *tls.Config
 		}
 		config.RootCAs = certPool
 	}
+	if len(tlsVerify) > 0 {
+		config.InsecureSkipVerify = tlsVerify == "0"
+	}
 	return
 }
 
@@ -284,78 +364,82 @@ func (p *Proxy) LoginChannel(reconnect bool, channels ...xmap.M) (err error) {
 
 // Login will add channel by local address, master address, auth token, channel index.
 func (p *Proxy) Login(option xmap.M) (channel Conn, result xmap.M, err error) {
-	var local, remote, tlsCert, tlsKey, tlsCA, tlsVerify string
+	var remoteAll, tlsCert, tlsKey, tlsCA, tlsVerify string
 	err = option.ValidFormat(`
-		local,O|S,L:0;
 		remote,R|S,L:0;
 		tls_cert,O|S,L:0;
 		tls_key,O|S,L:0;
 		tls_ca,O|S,L:0;
-	`, &local, &remote, &tlsCert, &tlsKey, &tlsCA)
+	`, &remoteAll, &tlsCert, &tlsKey, &tlsCA)
 	if err != nil {
 		return
 	}
 	tlsVerify = option.StrDef("", "tls_verify")
-	var conn net.Conn
-	if strings.HasPrefix(remote, "ws://") || strings.HasPrefix(remote, "wss://") {
-		InfoLog("Proxy(%v) start dial to %v by cert:%v,key:%v,ca:%v,verify:%v", p.Name, remote, tlsCert, tlsKey, tlsCA, tlsVerify)
-		var rawConn io.ReadWriteCloser
-		dialer := xnet.NewWebsocketDialer()
-		if len(tlsCert) > 0 || len(tlsCA) > 0 {
-			var config *tls.Config
-			config, err = p.loadTlsConfig(tlsCert, tlsKey, tlsCA)
-			if err != nil {
-				ErrorLog("Proxy(%v) load tls config fail with %v", p.Name, err)
-				return
-			}
-			dialer.TlsConfig = config
-		}
-		if len(tlsVerify) > 0 {
-			dialer.TlsConfig.InsecureSkipVerify = tlsVerify == "0"
-		}
-		rawConn, err = dialer.Dial(remote)
-		if err == nil {
-			conn = rawConn.(net.Conn)
-		}
-	} else {
-		var dialer net.Dialer
-		if len(local) > 0 {
-			dialer.LocalAddr, err = net.ResolveTCPAddr("tcp", local)
-			if err != nil {
-				return
-			}
-		}
-		InfoLog("Proxy(%v) start dial to %v by cert:%v,key:%v,ca:%v,verify:%v", p.Name, remote, tlsCert, tlsKey, tlsCA, tlsVerify)
-		if len(tlsCert) > 0 || len(tlsCA) > 0 {
-			var config *tls.Config
-			config, err = p.loadTlsConfig(tlsCert, tlsKey, tlsCA)
-			if err != nil {
-				ErrorLog("Proxy(%v) load tls config fail with %v", p.Name, err)
-				return
-			}
-			if len(tlsVerify) > 0 {
-				config.InsecureSkipVerify = tlsVerify == "0"
-			}
-			conn, err = tls.DialWithDialer(&dialer, "tcp", remote, config)
+	for _, remote := range strings.Split(remoteAll, ",") {
+		var remoteNetwork, remoteAddr string
+		remoteParts := strings.SplitN(remote, "://", 2)
+		if len(remoteParts) > 1 {
+			remoteNetwork = remoteParts[0]
+			remoteAddr = remoteParts[1]
 		} else {
-			InfoLog("Router(%v) start dial to %v", p.Name, remote)
-			conn, err = dialer.Dial("tcp", remote)
+			remoteNetwork = "tcp"
+			remoteAddr = remote
 		}
-	}
-	if err != nil {
-		WarnLog("Proxy(%v) dial to %v fail with %v", p.Name, remote, err)
-		return
-	}
-	auth := xmap.M{}
-	for key, val := range option {
-		auth[key] = val
-	}
-	auth["name"] = p.Name
-	channel, result, err = p.JoinConn(NewInfoRWC(conn, conn.RemoteAddr().String()), auth)
-	if err == nil {
-		channel.Context()["option"] = option
-		channel.Context()["login_conn"] = 1
-		p.Handler.OnConnJoin(channel, option, result)
+		var conn net.Conn
+		var config *tls.Config
+		switch remoteNetwork {
+		case "ws", "wss":
+			InfoLog("Proxy(%v) start dial to %v by cert:%v,key:%v,ca:%v,verify:%v", p.Name, remote, tlsCert, tlsKey, tlsCA, tlsVerify)
+			dialer := xnet.NewWebsocketDialer()
+			if remoteNetwork == "wss" {
+				dialer.TlsConfig, err = p.loadTlsConfig(tlsCert, tlsKey, tlsCA, tlsVerify)
+				if err != nil {
+					ErrorLog("Proxy(%v) load tls config fail with %v", p.Name, err)
+					return
+				}
+			}
+			var rawConn io.ReadWriteCloser
+			rawConn, err = dialer.Dial(remote)
+			if err == nil {
+				conn = rawConn.(net.Conn)
+			}
+		case "tls":
+			InfoLog("Proxy(%v) start dial to %v by cert:%v,key:%v,ca:%v,verify:%v", p.Name, remote, tlsCert, tlsKey, tlsCA, tlsVerify)
+			config, err = p.loadTlsConfig(tlsCert, tlsKey, tlsCA, tlsVerify)
+			if err != nil {
+				ErrorLog("Proxy(%v) load tls config fail with %v", p.Name, err)
+				return
+			}
+			var dialer net.Dialer
+			conn, err = tls.DialWithDialer(&dialer, "tcp", remoteAddr, config)
+		case "tcp":
+			InfoLog("Router(%v) start dial to %v", p.Name, remote)
+			conn, err = net.Dial("tcp", remoteAddr)
+		case "quic":
+			config, err = p.loadTlsConfig(tlsCert, tlsKey, tlsCA, tlsVerify)
+			if err != nil {
+				ErrorLog("Proxy(%v) load tls config fail with %v", p.Name, err)
+				return
+			}
+			config.NextProtos = []string{"bs"}
+			conn, err = quicDial(remoteAddr, config)
+		}
+		if err != nil {
+			WarnLog("Proxy(%v) dial to %v fail with %v", p.Name, remote, err)
+			return
+		}
+		auth := xmap.M{}
+		for key, val := range option {
+			auth[key] = val
+		}
+		auth["name"] = p.Name
+		channel, result, err = p.JoinConn(NewInfoRWC(conn, conn.RemoteAddr().String()), auth)
+		if err == nil {
+			channel.Context()["option"] = option
+			channel.Context()["login_conn"] = 1
+			p.Handler.OnConnJoin(channel, option, result)
+			break
+		}
 	}
 	return
 }

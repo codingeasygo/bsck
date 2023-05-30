@@ -105,16 +105,6 @@ pub fn option_must<T>(v: Option<T>, m: String) -> tokio::io::Result<T> {
     }
 }
 
-pub fn read_certs(cert: &String, key: &String) -> tokio::io::Result<(Vec<rustls::Certificate>, rustls::PrivateKey)> {
-    let mut cert_chain_reader = BufReader::new(File::open(cert)?);
-    let certs = rustls_pemfile::certs(&mut cert_chain_reader)?.into_iter().map(rustls::Certificate).collect();
-    let mut key_reader = BufReader::new(File::open(key)?);
-    let mut keys = rustls_pemfile::pkcs8_private_keys(&mut key_reader)?;
-    assert_eq!(keys.len(), 1);
-    let key = rustls::PrivateKey(keys.remove(0));
-    Ok((certs, key))
-}
-
 pub fn wrap_err<T, E>(result: Result<T, E>) -> tokio::io::Result<T>
 where
     E: Into<Box<dyn std::error::Error + Send + Sync>>,
@@ -154,9 +144,8 @@ pub fn load_tls_config(dir: Arc<String>, option: &Arc<JSON>) -> tokio::io::Resul
     let mut root_store = rustls::RootCertStore::empty();
     match json_option_str(&option, "tls_ca") {
         Some(ca) => {
-            let ca = check_join(&dir, ca);
-            let mut pem = BufReader::new(File::open(ca.as_str())?);
-            let certs = rustls_pemfile::certs(&mut pem)?;
+            let ca = CertType::CA(ca.to_string());
+            let certs = ca.load_bytes(dir.clone())?;
             let trust_anchors = certs.iter().map(|cert| {
                 let ta = webpki::TrustAnchor::try_from_cert_der(&cert[..]).unwrap();
                 OwnedTrustAnchor::from_subject_spki_name_constraints(ta.subject, ta.spki, ta.name_constraints)
@@ -176,9 +165,8 @@ pub fn load_tls_config(dir: Arc<String>, option: &Arc<JSON>) -> tokio::io::Resul
         let builder = rustls::ClientConfig::builder().with_safe_defaults().with_root_certificates(root_store);
         let config = match json_option_str_tuple(&option, "tls_cert", "tls_key") {
             Some((cert, key)) => {
-                let cert = check_join(&dir, cert);
-                let key = check_join(&dir, key);
-                let (cert, key) = read_certs(&cert, &key)?;
+                let cert = CertType::Cert(cert.to_string()).load_cer(dir.clone())?;
+                let key = CertType::Key(key.to_string()).load_key(dir.clone())?;
                 match builder.with_single_cert(cert, key) {
                     Ok(v) => Ok(v),
                     Err(e) => Err(new_message_err(e)),
@@ -191,5 +179,110 @@ pub fn load_tls_config(dir: Arc<String>, option: &Arc<JSON>) -> tokio::io::Resul
         let builder = rustls::ClientConfig::builder().with_safe_defaults().with_custom_certificate_verifier(SkipServerVerification::new());
         let config = builder.with_no_client_auth();
         Ok(Arc::new(config))
+    }
+}
+
+pub fn display_cer(v: &String) -> String {
+    if v.starts_with("----") {
+        format!("PEM({})", v.split("\n").next().unwrap())
+    } else if v.starts_with("0x") {
+        if v.len() > 8 {
+            format!("HEX({})", &v[0..8])
+        } else {
+            format!("HEX({})", v)
+        }
+    } else {
+        format!("FILE({})", v)
+    }
+}
+
+pub fn display_option(option: &Arc<JSON>) -> Arc<JSON> {
+    let mut show = JSON::new();
+    for (k, v) in &**option {
+        if k.starts_with("tls_") && v.as_str().is_some() {
+            let v = v.as_str().unwrap().to_string();
+            show.insert(k.clone(), serde_json::Value::String(display_cer(&v)));
+        } else {
+            show.insert(k.clone(), v.clone());
+        }
+    }
+    Arc::new(show)
+}
+
+pub enum CertType {
+    CA(String),
+    Cert(String),
+    Key(String),
+}
+
+impl CertType {
+    pub fn load_bytes(&self, dir: Arc<String>) -> tokio::io::Result<Vec<Vec<u8>>> {
+        match self {
+            CertType::CA(v) => {
+                if v.starts_with("----") {
+                    let mut pem = BufReader::new(v.as_bytes());
+                    rustls_pemfile::certs(&mut pem)
+                } else if v.starts_with("0x") {
+                    let mut certs = Vec::new();
+                    certs.push(wrap_err(hex::decode(&v))?);
+                    Ok(certs)
+                } else {
+                    let filename: String = check_join(&dir, &v);
+                    let mut pem = BufReader::new(File::open(filename.as_str())?);
+                    rustls_pemfile::certs(&mut pem)
+                }
+            }
+            CertType::Cert(v) => {
+                if v.starts_with("----") {
+                    let mut pem = BufReader::new(v.as_bytes());
+                    rustls_pemfile::certs(&mut pem)
+                } else if v.starts_with("0x") {
+                    let mut certs = Vec::new();
+                    certs.push(wrap_err(hex::decode(&v))?);
+                    Ok(certs)
+                } else {
+                    let filename: String = check_join(&dir, &v);
+                    let mut pem = BufReader::new(File::open(filename.as_str())?);
+                    rustls_pemfile::certs(&mut pem)
+                }
+            }
+            CertType::Key(v) => {
+                if v.starts_with("----") {
+                    let mut pem = BufReader::new(v.as_bytes());
+                    rustls_pemfile::pkcs8_private_keys(&mut pem)
+                } else if v.starts_with("0x") {
+                    let mut certs = Vec::new();
+                    certs.push(wrap_err(hex::decode(&v))?);
+                    Ok(certs)
+                } else {
+                    let filename: String = check_join(&dir, &v);
+                    let mut pem = BufReader::new(File::open(filename.as_str())?);
+                    rustls_pemfile::pkcs8_private_keys(&mut pem)
+                }
+            }
+        }
+    }
+
+    pub fn load_cer(&self, dir: Arc<String>) -> tokio::io::Result<Vec<rustls::Certificate>> {
+        match self {
+            CertType::CA(_) => Ok(self.load_bytes(dir)?.into_iter().map(rustls::Certificate).collect()),
+            CertType::Cert(_) => Ok(self.load_bytes(dir)?.into_iter().map(rustls::Certificate).collect()),
+            CertType::Key(_) => Err(new_message_err("not cert")),
+        }
+    }
+
+    pub fn load_key(&self, dir: Arc<String>) -> tokio::io::Result<rustls::PrivateKey> {
+        match self {
+            CertType::CA(_) => Err(new_message_err("not key")),
+            CertType::Cert(_) => Err(new_message_err("not key")),
+            CertType::Key(_) => {
+                let mut keys: Vec<_> = self.load_bytes(dir)?.into_iter().map(rustls::PrivateKey).collect();
+                if keys.len() < 1 {
+                    Err(new_message_err("key is empty"))
+                } else {
+                    Ok(keys.remove(0))
+                }
+            }
+        }
     }
 }

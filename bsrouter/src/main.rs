@@ -10,7 +10,9 @@ async fn main() {
     let mut options = JSON::new();
     options.insert(String::from("name"), serde_json::Value::String(String::from("NX")));
     options.insert(String::from("token"), serde_json::Value::String(String::from("123")));
-    options.insert(String::from("remote"), serde_json::Value::String(String::from("tcp://127.0.0.1:13100")));
+    options.insert(String::from("remote"), serde_json::Value::String(String::from("quic://127.0.0.1:13100,tcp://127.0.0.1:13100")));
+    options.insert(String::from("domain"), serde_json::Value::String(String::from("test.loc")));
+    options.insert(String::from("tls_ca"), json!("certs/rootCA.crt"));
     options.insert(String::from("keep"), json!(10));
     let options = Arc::new(options);
     let socks_dial_uri = Arc::new(String::from("N0->${HOST}"));
