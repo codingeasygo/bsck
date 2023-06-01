@@ -151,6 +151,21 @@ impl Writer {
     }
 }
 
+pub struct NoneReader {}
+
+impl NoneReader {
+    pub fn new() -> Self {
+        Self {}
+    }
+}
+
+#[async_trait]
+impl RawReader for NoneReader {
+    async fn read(&mut self, _: &mut [u8]) -> tokio::io::Result<usize> {
+        Err(new_message_err("NoneReader"))
+    }
+}
+
 pub async fn read_full(reader: &mut Box<dyn RawReader + Send + Sync>, buf: &mut [u8], readed: usize, need: usize) -> tokio::io::Result<usize> {
     let mut n = readed;
     if n >= need {

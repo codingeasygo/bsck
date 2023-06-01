@@ -1,6 +1,7 @@
 pub mod frame;
 pub mod log;
 pub mod proxy;
+pub mod relay;
 pub mod router;
 pub mod util;
 pub mod wrapper;

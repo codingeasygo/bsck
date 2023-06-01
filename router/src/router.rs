@@ -250,7 +250,7 @@ pub struct ChannelReader {
 }
 
 impl ChannelReader {
-    pub async fn new(inner: frame::Reader, waiter: StateWaiter) -> Self {
+    pub fn new(inner: frame::Reader, waiter: StateWaiter) -> Self {
         Self { header: inner.header.clone(), inner, waiter }
     }
 }
@@ -276,7 +276,7 @@ pub struct ChannelWriter {
 }
 
 impl ChannelWriter {
-    pub async fn new(inner: frame::Writer, waiter: StateWaiter) -> Self {
+    pub fn new(inner: frame::Writer, waiter: StateWaiter) -> Self {
         Self { header: inner.header.clone(), inner, waiter }
     }
 }
@@ -305,7 +305,7 @@ pub struct RawReader {
 }
 
 impl RawReader {
-    pub async fn new(header: Arc<frame::Header>, inner: Box<dyn frame::RawReader + Send + Sync>, waiter: StateWaiter, buffer_size: usize) -> Self {
+    pub fn new(header: Arc<frame::Header>, inner: Box<dyn frame::RawReader + Send + Sync>, waiter: StateWaiter, buffer_size: usize) -> Self {
         Self { header, inner, waiter, buf: Box::new(vec![0; buffer_size]), conn_id: ConnID::zero() }
     }
 }
@@ -336,6 +336,32 @@ impl Reader for RawReader {
     }
 }
 
+pub struct NoneReader {
+    pub waiter: StateWaiter,
+    pub conn_id: ConnID,
+}
+
+impl NoneReader {
+    pub fn new(waiter: StateWaiter) -> Self {
+        Self { waiter, conn_id: ConnID::zero() }
+    }
+}
+
+#[async_trait]
+impl Reader for NoneReader {
+    async fn read(&mut self) -> tokio::io::Result<Frame> {
+        Err(new_message_err("NoneReader"))
+    }
+
+    async fn set_conn_id(&mut self, conn_id: ConnID) {
+        self.conn_id = conn_id;
+    }
+
+    async fn wait_ready(&self) -> Option<String> {
+        self.waiter.wait().await
+    }
+}
+
 pub struct RawWriter {
     pub header: Arc<frame::Header>,
     pub inner: Box<dyn frame::RawWriter + Send + Sync>,
@@ -343,7 +369,7 @@ pub struct RawWriter {
 }
 
 impl RawWriter {
-    pub async fn new(header: Arc<frame::Header>, inner: Box<dyn frame::RawWriter + Send + Sync>, waiter: StateWaiter) -> Self {
+    pub fn new(header: Arc<frame::Header>, inner: Box<dyn frame::RawWriter + Send + Sync>, waiter: StateWaiter) -> Self {
         Self { header, inner, waiter }
     }
 }
@@ -407,6 +433,17 @@ impl Ping {
     }
 }
 
+pub struct Outer {
+    pub writer: Option<Arc<Mutex<dyn Writer + Send + Sync>>>,
+    pub sid: ConnID,
+}
+
+impl Outer {
+    pub fn new() -> Self {
+        Self { writer: None, sid: ConnID::zero() }
+    }
+}
+
 #[derive(Clone)]
 pub struct Conn {
     pub id: u16,
@@ -414,8 +451,10 @@ pub struct Conn {
     pub conn_type: ConnType,
     pub header: Arc<frame::Header>,
     pub waiter: StateWaiter,
+    pub readed: bool,
     pub reader: Arc<Mutex<dyn Reader + Send + Sync>>,
     pub writer: Arc<Mutex<dyn Writer + Send + Sync>>,
+    pub output: Arc<Mutex<Outer>>,
     pub recv_last: i64,
     pub ping: Option<Ping>,
     pub used: u32,
@@ -423,11 +462,18 @@ pub struct Conn {
 
 impl Conn {
     pub fn new(id: u16, conn_type: ConnType, header: Arc<frame::Header>, waiter: StateWaiter, reader: Arc<Mutex<dyn Reader + Send + Sync>>, writer: Arc<Mutex<dyn Writer + Send + Sync>>) -> Self {
-        Self { id, name: Arc::new(String::new()), conn_type, header, waiter, reader, writer, recv_last: 0, ping: None, used: 0 }
+        let output = Arc::new(Mutex::new(Outer::new()));
+        Self { id, name: Arc::new(String::new()), conn_type, header, waiter, readed: true, reader, writer, output, recv_last: 0, ping: None, used: 0 }
     }
 
-    pub async fn set_conn_id(&mut self, conn_id: ConnID) {
+    pub async fn set_conn_id(&self, conn_id: ConnID) {
         self.reader.lock().await.set_conn_id(conn_id).await;
+    }
+
+    pub async fn set_output(&self, writer: Arc<Mutex<dyn Writer + Send + Sync>>, sid: ConnID) {
+        let mut output = self.output.lock().await;
+        output.writer = Some(writer);
+        output.sid = sid;
     }
 
     pub async fn write(&self, frame: &Frame<'_>) -> tokio::io::Result<usize> {
@@ -836,7 +882,9 @@ impl TaskItem {
             },
             TaskAction::Ready => {
                 self.conn.ready(self.state.clone()).await;
-                _ = Conn::start_read(job.clone(), self.conn.clone());
+                if self.conn.readed {
+                    _ = Conn::start_read(job.clone(), self.conn.clone());
+                }
                 Ok(())
             }
             TaskAction::Shutdown => {
@@ -1034,18 +1082,21 @@ impl Router_ {
     pub async fn proc_dial_back(&mut self, conn: Conn, frame: &mut Frame<'_>) -> tokio::io::Result<Task> {
         match frame.str().as_str() {
             CONN_OK => match self.next_table(&conn.id, &frame.sid, true) {
-                Some((next, next_sid)) => match next.conn_type {
-                    ConnType::Channel => {
-                        //forward to next
-                        info!("Router({}) proc dial back {}->{} success", self.name, next.to_string(), conn.to_string());
-                        Ok(Task::message(next, &next_sid, &Cmd::DialBack, frame.data()))
+                Some((next, next_sid)) => {
+                    next.set_output(conn.writer.clone(), frame.sid.clone()).await;
+                    match next.conn_type {
+                        ConnType::Channel => {
+                            //forward to next
+                            info!("Router({}) proc dial back {}->{} success", self.name, next.to_string(), conn.to_string());
+                            Ok(Task::message(next, &next_sid, &Cmd::DialBack, frame.data()))
+                        }
+                        ConnType::Raw => {
+                            //ready to read
+                            info!("Router({}) proc dial back {}->{} success", self.name, next.to_string(), conn.to_string());
+                            Ok(Task::ready(next, None))
+                        }
                     }
-                    ConnType::Raw => {
-                        //ready to read
-                        info!("Router({}) proc dial back {}->{} success", self.name, next.to_string(), conn.to_string());
-                        Ok(Task::ready(next, None))
-                    }
-                },
+                }
                 None => {
                     info!("Router({}) proc dial back fail with not router by {},{} on {}", self.name, conn.id, frame.sid.to_string(), conn.to_string());
                     let conn = Arc::new(conn.clone());
@@ -1263,8 +1314,8 @@ impl Router {
         let frame_writer = frame::Writer::new(self.header.clone(), writer);
         let id: u16 = self.new_conn_id().await;
         let conn_waiter = StateWaiter::new();
-        let conn_reader = Arc::new(Mutex::new(ChannelReader::new(frame_reader, conn_waiter.clone()).await));
-        let conn_writer = Arc::new(Mutex::new(ChannelWriter::new(frame_writer, conn_waiter.clone()).await));
+        let conn_reader = Arc::new(Mutex::new(ChannelReader::new(frame_reader, conn_waiter.clone())));
+        let conn_writer = Arc::new(Mutex::new(ChannelWriter::new(frame_writer, conn_waiter.clone())));
         let conn = Conn::new(id, ConnType::Channel, self.header.clone(), conn_waiter, conn_reader, conn_writer);
         self.join_conn(conn, option).await
     }
@@ -1303,9 +1354,20 @@ impl Router {
     pub async fn dial_base(&self, reader: Box<dyn frame::RawReader + Send + Sync>, writer: Box<dyn frame::RawWriter + Send + Sync>, uri: Arc<String>) -> tokio::io::Result<Conn> {
         let id: u16 = self.new_conn_id().await;
         let conn_waiter = StateWaiter::new();
-        let conn_reader = Arc::new(Mutex::new(RawReader::new(self.header.clone(), reader, conn_waiter.clone(), self.buffer_size).await));
-        let conn_writer = Arc::new(Mutex::new(RawWriter::new(self.header.clone(), writer, conn_waiter.clone()).await));
+        let conn_reader = Arc::new(Mutex::new(RawReader::new(self.header.clone(), reader, conn_waiter.clone(), self.buffer_size)));
+        let conn_writer = Arc::new(Mutex::new(RawWriter::new(self.header.clone(), writer, conn_waiter.clone())));
         let conn = Conn::new(id, ConnType::Raw, self.header.clone(), conn_waiter, conn_reader, conn_writer);
+        self.dial_conn(conn.clone(), uri).await?;
+        Ok(conn)
+    }
+
+    pub async fn dial_writer(&self, writer: Box<dyn frame::RawWriter + Send + Sync>, uri: Arc<String>) -> tokio::io::Result<Conn> {
+        let id: u16 = self.new_conn_id().await;
+        let conn_waiter = StateWaiter::new();
+        let conn_reader = Arc::new(Mutex::new(NoneReader::new(conn_waiter.clone())));
+        let conn_writer = Arc::new(Mutex::new(RawWriter::new(self.header.clone(), writer, conn_waiter.clone())));
+        let mut conn = Conn::new(id, ConnType::Raw, self.header.clone(), conn_waiter, conn_reader, conn_writer);
+        conn.readed = false;
         self.dial_conn(conn.clone(), uri).await?;
         Ok(conn)
     }
