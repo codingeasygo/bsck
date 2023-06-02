@@ -1,8 +1,9 @@
 use std::{io::ErrorKind, sync::Arc};
 
 use async_trait::async_trait;
+use tokio::sync::mpsc::{Receiver, Sender};
 
-use crate::util::new_message_err;
+use crate::util::{new_message_err, wrap_err};
 
 #[derive(Clone)]
 pub enum ByteOrder {
@@ -22,7 +23,14 @@ pub struct Header {
 
 impl Header {
     pub fn new() -> Self {
-        Self { byte_order: ByteOrder::BE, length_field_magic: 0, length_field_offset: 0, length_field_length: 4, length_adjustment: 0, data_offset: 4 }
+        Self {
+            byte_order: ByteOrder::BE,
+            length_field_magic: 0,
+            length_field_offset: 0,
+            length_field_length: 4,
+            length_adjustment: 0,
+            data_offset: 4,
+        }
     }
 
     pub fn write_head(&self, buffer: &mut [u8]) {
@@ -89,7 +97,13 @@ impl Reader {
         if buffer_size < 1 {
             panic!("buffer size is {}", buffer_size);
         }
-        Self { header, inner, buf: Box::new(vec![0; buffer_size]), filled: 0, readed: 0 }
+        Self {
+            header,
+            inner,
+            buf: Box::new(vec![0; buffer_size]),
+            filled: 0,
+            readed: 0,
+        }
     }
 
     pub async fn read(&mut self) -> tokio::io::Result<&mut [u8]> {
@@ -185,5 +199,57 @@ pub async fn read_full(reader: &mut Box<dyn RawReader + Send + Sync>, buf: &mut 
         Err(new_message_err("need more data"))
     } else {
         Ok(n)
+    }
+}
+
+pub struct RecvReader {
+    recv: Receiver<Vec<u8>>,
+}
+
+impl RecvReader {
+    pub fn new(recv: Receiver<Vec<u8>>) -> Self {
+        Self { recv }
+    }
+}
+
+#[async_trait]
+impl RawReader for RecvReader {
+    async fn read(&mut self, buf: &mut [u8]) -> tokio::io::Result<usize> {
+        match self.recv.recv().await {
+            Some(v) => {
+                if v.is_empty() {
+                    self.recv.close();
+                    Err(new_message_err("close received"))
+                } else {
+                    buf[0..v.len()].copy_from_slice(&v);
+                    Ok(v.len())
+                }
+            }
+            None => Err(new_message_err("already closed")),
+        }
+    }
+}
+
+pub struct SendWriter {
+    send: Sender<Vec<u8>>,
+    signal: Sender<u16>,
+}
+
+impl SendWriter {
+    pub fn new(send: Sender<Vec<u8>>, signal: Sender<u16>) -> Self {
+        Self { send, signal }
+    }
+}
+
+#[async_trait]
+impl RawWriter for SendWriter {
+    async fn write(&mut self, buf: &[u8]) -> tokio::io::Result<usize> {
+        wrap_err(self.send.send(buf.to_vec()).await)?;
+        _ = self.signal.try_send(1);
+        Ok(buf.len())
+    }
+    async fn shutdown(&mut self) {
+        _ = self.send.send(Vec::new()).await;
+        _ = self.signal.try_send(1);
     }
 }

@@ -6,6 +6,8 @@ import (
 	"net"
 	"net/http"
 	_ "net/http/pprof"
+	"os"
+	"time"
 
 	"github.com/codingeasygo/bsck/dialer"
 	"github.com/codingeasygo/util/xhttp"
@@ -18,7 +20,59 @@ func init() {
 	go http.ListenAndServe(":6063", nil)
 }
 
+func run_bandwidth(addr string) {
+	conn, err := net.Dial("tcp", addr)
+	if err != nil {
+		panic(err)
+	}
+	go func() {
+		buf := make([]byte, 1024)
+		for {
+			conn.Write(buf)
+			time.Sleep(time.Second)
+		}
+	}()
+	buf := make([]byte, 8*1024)
+	all := []int64{}
+	last := time.Now()
+	show := time.Now()
+	readed := int64(0)
+	for {
+		n, err := conn.Read(buf)
+		if err != nil {
+			panic(err)
+		}
+		readed += int64(n)
+		if time.Since(last) >= time.Second {
+			all = append(all, readed)
+			readed = 0
+			last = time.Now()
+			if len(all) > 5 {
+				all = all[1:]
+			}
+		}
+		if time.Since(show) > 2*time.Second && len(all) > 0 {
+			total := int64(0)
+			for _, v := range all {
+				total += v
+			}
+			total = total / int64(len(all))
+			if total > 1024*1024*1024 {
+				fmt.Printf("speed %v GB/s =>%v\n", float64(total)/1024/1024/1024, total)
+			} else if total > 1024*1024 {
+				fmt.Printf("speed %v MB/s =>%v\n", float64(total)/1024/1024, total)
+			} else if total > 1024 {
+				fmt.Printf("speed %v KB/s =>%v\n", float64(total)/1024, total)
+			}
+		}
+	}
+}
+
 func main() {
+	if true {
+		run_bandwidth(os.Args[1])
+		return
+	}
 	handler := websocket.Server{
 		Handler: func(c *websocket.Conn) {
 			fmt.Fprintf(c, "connected\n")
