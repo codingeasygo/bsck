@@ -36,3 +36,4 @@ certs/csr.conf
 certs/cert.conf
 target
 router/tests/tests
+test/test
