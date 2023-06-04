@@ -18,7 +18,7 @@ use tokio::{
 };
 use tokio_rustls::TlsConnector;
 
-use crate::util::{json_must_obj, json_must_str, json_option_i64, json_option_str, load_tls_config, wrap_err, JSON};
+use crate::util::{json_must_obj, json_must_str, json_option_i64, json_option_obj, json_option_str, load_tls_config, wrap_err, JSON};
 use crate::wrapper::wrap_quinn_w;
 use crate::{
     router::{Handler, Router},
@@ -26,15 +26,17 @@ use crate::{
     wrapper::{wrap_split_tcp_w, wrap_split_tls_w},
 };
 
+#[derive(Clone)]
 pub struct ServerState {
     pub name: Arc<String>,
     pub stopper: String,
     pub stopping: bool,
+    pub addr: SocketAddr,
 }
 
 impl ServerState {
-    pub fn new(name: Arc<String>, stopper: String) -> Self {
-        Self { name, stopper, stopping: false }
+    pub fn new(name: Arc<String>, stopper: String, addr: SocketAddr) -> Self {
+        Self { name, stopper, stopping: false, addr }
     }
 
     pub async fn stop(&mut self) {
@@ -67,6 +69,7 @@ impl Preparer for SkipPreparer {
     }
 }
 
+#[derive(Clone)]
 pub struct Proxy {
     pub name: Arc<String>,
     pub dir: Arc<String>,
@@ -93,12 +96,12 @@ impl Proxy {
         let name = Arc::new(json_must_str(&config, "name")?.to_string());
         let mut proxy = Self::new(name, handler);
         proxy.dir = Arc::new(json_option_str(&config, "dir").unwrap_or(&String::from(".")).to_string());
-        let channels = json_must_obj(&config, "channels")?;
+        let channels = json_option_obj(&config, "channels")?;
         for name in channels.keys() {
             let channel = json_must_obj(&channels, name)?;
             proxy.channels.insert(name.clone(), channel);
         }
-        let forwards = json_must_obj(&config, "forwards")?;
+        let forwards = json_option_obj(&config, "forwards")?;
         for loc in forwards.keys() {
             let parts: Vec<_> = loc.splitn(2, "~").collect();
             if parts.len() < 2 {
@@ -110,7 +113,7 @@ impl Proxy {
             let remote = Arc::new(remote.to_string());
             proxy.start_forward(name, loc, remote).await?;
         }
-        let web = json_must_obj(&config, "web")?;
+        let web = json_option_obj(&config, "web")?;
         for name in web.keys() {
             let domain = json_must_str(&web, name)?;
             let name = Arc::new(name.clone());
@@ -229,33 +232,45 @@ impl Proxy {
         Ok(())
     }
 
-    pub async fn start_forward(&mut self, name: Arc<String>, loc: &String, remote: Arc<String>) -> tokio::io::Result<()> {
+    pub async fn load_state(&self, name: Arc<String>) -> Option<ServerState> {
+        match self.listener.get(name.as_ref()) {
+            Some(v) => Some(v.lock().await.clone()),
+            None => None,
+        }
+    }
+
+    pub async fn start_forward(&mut self, key: Arc<String>, loc: &String, remote: Arc<String>) -> tokio::io::Result<SocketAddr> {
+        let name = self.name.clone();
+        info!("Proxy({}) {} start forward by{}=>{}", name, key, loc, remote);
         let router = self.router.clone();
         if loc.starts_with("socks://") {
             let domain: &str = loc.trim_start_matches("socks://");
             let ln = TcpListener::bind(&domain).await?;
-            let state = Arc::new(Mutex::new(ServerState::new(name.clone(), domain.to_string())));
-            info!("Proxy({}) listen socks {} is success", self.name, ln.local_addr().unwrap());
-            self.listener.insert(name.to_string(), state.clone());
+            let addr: SocketAddr = ln.local_addr().unwrap();
+            let state = Arc::new(Mutex::new(ServerState::new(name.clone(), domain.to_string(), addr)));
+            info!("Proxy({}) {} listen socks {} is success", name, key, addr);
+            self.listener.insert(key.to_string(), state.clone());
             let waiter = self.waiter.clone();
             waiter.add(1);
-            tokio::spawn(async move { Self::loop_socks_accpet(name, waiter, ln, state, router, remote).await });
+            tokio::spawn(async move { Self::loop_socks_accpet(name, key, waiter, ln, state, router, remote).await });
+            Ok(addr)
         } else {
             let domain: &str = loc.trim_start_matches("tcp://");
             let ln = TcpListener::bind(&domain).await?;
-            let state = Arc::new(Mutex::new(ServerState::new(name.clone(), domain.to_string())));
-            info!("Proxy({}) listen tcp {} is success", self.name, ln.local_addr().unwrap());
-            self.listener.insert(name.to_string(), state.clone());
+            let addr: SocketAddr = ln.local_addr().unwrap();
+            let state = Arc::new(Mutex::new(ServerState::new(name.clone(), domain.to_string(), addr)));
+            info!("Proxy({}) {} listen tcp {} is success", name, key, addr);
+            self.listener.insert(key.to_string(), state.clone());
             let waiter = self.waiter.clone();
             waiter.add(1);
-            tokio::spawn(async move { Self::loop_tcp_accpet(name, waiter, ln, state, router, remote).await });
+            tokio::spawn(async move { Self::loop_tcp_accpet(name, key, waiter, ln, state, router, remote).await });
+            Ok(addr)
         }
-        Ok(())
     }
 
-    async fn loop_tcp_accpet(name: Arc<String>, waiter: Arc<wg::AsyncWaitGroup>, ln: TcpListener, state: Arc<Mutex<ServerState>>, router: Arc<Router>, remote: Arc<String>) -> tokio::io::Result<()> {
+    async fn loop_tcp_accpet(name: Arc<String>, key: Arc<String>, waiter: Arc<wg::AsyncWaitGroup>, ln: TcpListener, state: Arc<Mutex<ServerState>>, router: Arc<Router>, remote: Arc<String>) -> tokio::io::Result<()> {
         waiter.add(1);
-        info!("Proxy({}) forward tcp {:?}->{} loop is starting", name, ln.local_addr().unwrap(), &remote);
+        info!("Proxy({}) {} forward tcp {:?}->{} loop is starting", name, key, ln.local_addr().unwrap(), &remote);
         let err = loop {
             match ln.accept().await {
                 Ok((stream, from)) => {
@@ -265,11 +280,11 @@ impl Proxy {
                     Self::proc_tcp_conn(&name, router.clone(), stream, from, remote.clone()).await;
                 }
                 Err(e) => {
-                    warn!("Proxy({}) accept tcp on {:?} is fail by {:?}", name, ln.local_addr().unwrap(), e);
+                    warn!("Proxy({}) {} accept tcp on {:?} is fail by {:?}", name, key, ln.local_addr().unwrap(), e);
                 }
             }
         };
-        info!("Proxy({}) forward tcp {:?}->{} loop is stopped by {:?}", name, ln.local_addr().unwrap(), &remote, err);
+        info!("Proxy({}) {} forward tcp {:?}->{} loop is stopped by {:?}", name, key, ln.local_addr().unwrap(), &remote, err);
         waiter.done();
         Ok(())
     }
@@ -285,8 +300,8 @@ impl Proxy {
         }
     }
 
-    async fn loop_socks_accpet(name: Arc<String>, waiter: Arc<wg::AsyncWaitGroup>, ln: TcpListener, state: Arc<Mutex<ServerState>>, router: Arc<Router>, remote: Arc<String>) -> tokio::io::Result<()> {
-        info!("Proxy({}) forward socks5 {:?}->{} loop is starting", name, ln.local_addr().unwrap(), remote);
+    async fn loop_socks_accpet(name: Arc<String>, key: Arc<String>, waiter: Arc<wg::AsyncWaitGroup>, ln: TcpListener, state: Arc<Mutex<ServerState>>, router: Arc<Router>, remote: Arc<String>) -> tokio::io::Result<()> {
+        info!("Proxy({}) {} forward socks5 {:?}->{} loop is starting", name, key, ln.local_addr().unwrap(), remote);
         let err = loop {
             match ln.accept().await {
                 Ok((stream, from)) => {
@@ -305,11 +320,11 @@ impl Proxy {
                     });
                 }
                 Err(e) => {
-                    warn!("Proxy({}) accept socks5 on {:?} is fail by {:?}", name, ln.local_addr().unwrap(), e);
+                    warn!("Proxy({}) {} accept socks5 on {:?} is fail by {:?}", name, key, ln.local_addr().unwrap(), e);
                 }
             }
         };
-        info!("Proxy({}) forward socks5 {:?}->{} loop is stopped by {:?}", name, ln.local_addr().unwrap(), &remote, err);
+        info!("Proxy({}) {} forward socks5 {:?}->{} loop is stopped by {:?}", name, key, ln.local_addr().unwrap(), &remote, err);
         waiter.done();
         Ok(())
     }
@@ -325,38 +340,39 @@ impl Proxy {
         }
     }
 
-    pub async fn start_web(&mut self, name: Arc<String>, domain: &String) -> tokio::io::Result<()> {
+    pub async fn start_web(&mut self, key: Arc<String>, domain: &String) -> tokio::io::Result<()> {
         let router = self.router.clone();
         let domain: &str = domain.trim_start_matches("tcp://");
-        let state = Arc::new(Mutex::new(ServerState::new(name.clone(), domain.to_string())));
-        info!("Proxy({}) listen web server {} is success", self.name, domain);
         let ln = TcpListener::bind(&domain).await?;
-        self.listener.insert(name.to_string(), state.clone());
+        let addr = ln.local_addr().unwrap();
+        let state = Arc::new(Mutex::new(ServerState::new(key.clone(), domain.to_string(), addr)));
+        info!("Proxy({}) {} listen web server {} is success", self.name, key, domain);
+        self.listener.insert(key.to_string(), state.clone());
         let name = self.name.clone();
         let waiter = self.waiter.clone();
         waiter.add(1);
-        tokio::spawn(async move { Self::loop_web_accpet(name, waiter, ln, state, router).await });
+        tokio::spawn(async move { Self::loop_web_accpet(name, key, waiter, ln, state, router).await });
         Ok(())
     }
 
-    async fn loop_web_accpet(name: Arc<String>, waiter: Arc<wg::AsyncWaitGroup>, ln: TcpListener, state: Arc<Mutex<ServerState>>, router: Arc<Router>) -> tokio::io::Result<()> {
-        let name = Arc::new(name);
-        info!("Proxy({}) web server {} loop is starting", name, ln.local_addr().unwrap());
+    async fn loop_web_accpet(name: Arc<String>, key: Arc<String>, waiter: Arc<wg::AsyncWaitGroup>, ln: TcpListener, state: Arc<Mutex<ServerState>>, router: Arc<Router>) -> tokio::io::Result<()> {
+        info!("Proxy({}) {} web server {} loop is starting", name, key, ln.local_addr().unwrap());
         let err = loop {
             let (stream, _) = ln.accept().await?;
             if state.lock().await.stopping {
                 break new_message_err("stopped");
             }
             let name = name.clone();
+            let key = key.clone();
             let router = router.clone();
             tokio::task::spawn(async move {
                 let handler = ProxyWebHandler { router };
                 if let Err(e) = http1::Builder::new().keep_alive(true).serve_connection(stream, handler).await {
-                    warn!("Proxy({}) web server proc http fail with {:?}", name, e);
+                    warn!("Proxy({}) {} web server proc http fail with {:?}", name, key, e);
                 }
             });
         };
-        info!("Proxy({}) web server {} loop is stopped by {:?}", name, ln.local_addr().unwrap(), err);
+        info!("Proxy({}) {} web server {} loop is stopped by {:?}", name, key, ln.local_addr().unwrap(), err);
         waiter.done();
         Ok(())
     }

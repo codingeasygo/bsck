@@ -90,6 +90,22 @@ pub fn json_must_obj(value: &Arc<JSON>, key: &str) -> tokio::io::Result<Arc<JSON
     }
 }
 
+pub fn json_option_obj(value: &Arc<JSON>, key: &str) -> tokio::io::Result<Arc<JSON>> {
+    match value.get(key) {
+        Some(v) => match v {
+            serde_json::Value::Object(o) => {
+                let mut obj = JSON::new();
+                for (k, v) in o {
+                    obj.insert(k.clone(), v.clone());
+                }
+                Ok(Arc::new(obj))
+            }
+            _ => Err(new_message_err(format!("read {} fail", key))),
+        },
+        None => Ok(Arc::new(JSON::new())),
+    }
+}
+
 pub fn json_option_str<'a>(value: &'a Arc<JSON>, key: &'a str) -> Option<&'a String> {
     match value.get(key) {
         Some(v) => match v {
