@@ -195,11 +195,11 @@ impl Proxy {
                 self.router.join_base(rx, tx, option.clone()).await?;
             } else if remote.starts_with("tls://") {
                 let conn = TcpSocket::new_v4()?;
-                conn.bind(":0".parse().unwrap())?;
+                conn.bind("0.0.0.0:0".parse().unwrap())?;
                 let fd = conn.as_raw_fd();
                 self.preparer.prepare_fd(fd).await?;
 
-                let addr = remote.trim_start_matches("tcp://").to_string();
+                let addr = remote.trim_start_matches("tls://").to_string();
                 let domain = json_option_str(&option, "domain").unwrap_or(&addr);
                 let addr_conn = wrap_err(addr.parse())?;
                 let tls = load_tls_config(self.dir.clone(), &option)?;
