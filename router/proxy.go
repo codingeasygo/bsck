@@ -31,7 +31,7 @@ type quicConn struct {
 }
 
 type quicListener struct {
-	quic.Listener
+	*quic.Listener
 }
 
 func quicListen(addr string, tls *tls.Config) (ln net.Listener, err error) {
@@ -48,7 +48,7 @@ func quicListen(addr string, tls *tls.Config) (ln net.Listener, err error) {
 func quicDial(addr string, tls *tls.Config) (conn net.Conn, err error) {
 	quicConf := &quic.Config{EnableDatagrams: true}
 	quicConf.KeepAlivePeriod = time.Second
-	base, err := quic.DialAddr(addr, tls, quicConf)
+	base, err := quic.DialAddr(context.Background(), addr, tls, quicConf)
 	if err != nil {
 		return
 	}
