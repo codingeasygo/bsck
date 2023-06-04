@@ -364,34 +364,34 @@ func (p *Proxy) LoginChannel(reconnect bool, channels ...xmap.M) (err error) {
 
 // Login will add channel by local address, master address, auth token, channel index.
 func (p *Proxy) Login(option xmap.M) (channel Conn, result xmap.M, err error) {
-	var remoteAll, tlsCert, tlsKey, tlsCA, tlsVerify string
+	var remoteAll, tlsCert, tlsKey, tlsCA, tlsHost, tlsVerify string
 	err = option.ValidFormat(`
 		remote,R|S,L:0;
 		tls_cert,O|S,L:0;
 		tls_key,O|S,L:0;
+		tls_host,O|S,L:0;
 		tls_ca,O|S,L:0;
-	`, &remoteAll, &tlsCert, &tlsKey, &tlsCA)
+	`, &remoteAll, &tlsCert, &tlsKey, &tlsHost, &tlsCA)
 	if err != nil {
 		return
 	}
 	tlsVerify = option.StrDef("", "tls_verify")
 	for _, remote := range strings.Split(remoteAll, ",") {
-		var remoteNetwork, remoteAddr string
-		remoteParts := strings.SplitN(remote, "://", 2)
-		if len(remoteParts) > 1 {
-			remoteNetwork = remoteParts[0]
-			remoteAddr = remoteParts[1]
-		} else {
-			remoteNetwork = "tcp"
-			remoteAddr = remote
+		if !strings.Contains(remote, "://") {
+			remote = "tcp://" + remote
+		}
+		remoteURI, xerr := url.Parse(remote)
+		if xerr != nil {
+			err = xerr
+			return
 		}
 		var conn net.Conn
 		var config *tls.Config
-		switch remoteNetwork {
+		switch remoteURI.Scheme {
 		case "ws", "wss":
 			InfoLog("Proxy(%v) start dial to %v by cert:%v,key:%v,ca:%v,verify:%v", p.Name, remote, tlsCert, tlsKey, tlsCA, tlsVerify)
 			dialer := xnet.NewWebsocketDialer()
-			if remoteNetwork == "wss" {
+			if remoteURI.Scheme == "wss" {
 				dialer.TlsConfig, err = p.loadTlsConfig(tlsCert, tlsKey, tlsCA, tlsVerify)
 				if err != nil {
 					ErrorLog("Proxy(%v) load tls config fail with %v", p.Name, err)
@@ -411,10 +411,10 @@ func (p *Proxy) Login(option xmap.M) (channel Conn, result xmap.M, err error) {
 				return
 			}
 			var dialer net.Dialer
-			conn, err = tls.DialWithDialer(&dialer, "tcp", remoteAddr, config)
+			conn, err = tls.DialWithDialer(&dialer, "tcp", remoteURI.Host, config)
 		case "tcp":
 			InfoLog("Router(%v) start dial to %v", p.Name, remote)
-			conn, err = net.Dial("tcp", remoteAddr)
+			conn, err = net.Dial("tcp", remoteURI.Host)
 		case "quic":
 			config, err = p.loadTlsConfig(tlsCert, tlsKey, tlsCA, tlsVerify)
 			if err != nil {
@@ -422,7 +422,11 @@ func (p *Proxy) Login(option xmap.M) (channel Conn, result xmap.M, err error) {
 				return
 			}
 			config.NextProtos = []string{"bs"}
-			conn, err = quicDial(remoteAddr, config)
+			config.ServerName = tlsHost
+			if len(config.ServerName) < 1 {
+				config.ServerName = remoteURI.Hostname()
+			}
+			conn, err = quicDial(remoteURI.Host, config)
 		}
 		if err != nil {
 			WarnLog("Proxy(%v) dial to %v fail with %v", p.Name, remote, err)
