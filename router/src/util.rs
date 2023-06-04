@@ -215,6 +215,7 @@ pub fn load_tls_config(dir: Arc<String>, option: &Arc<JSON>) -> tokio::io::Resul
 }
 
 pub fn display_cer(v: &String) -> String {
+    let v = v.trim().to_string();
     if v.starts_with("----") {
         format!("PEM({})", v.split("\n").next().unwrap())
     } else if v.starts_with("0x") {
@@ -251,6 +252,7 @@ impl CertType {
     pub fn load_bytes(&self, dir: Arc<String>) -> tokio::io::Result<Vec<Vec<u8>>> {
         match self {
             CertType::CA(v) => {
+                let v = v.trim().to_string();
                 if v.starts_with("----") {
                     let mut pem = BufReader::new(v.as_bytes());
                     rustls_pemfile::certs(&mut pem)
@@ -265,6 +267,7 @@ impl CertType {
                 }
             }
             CertType::Cert(v) => {
+                let v = v.trim().to_string();
                 if v.starts_with("----") {
                     let mut pem = BufReader::new(v.as_bytes());
                     rustls_pemfile::certs(&mut pem)
@@ -279,6 +282,7 @@ impl CertType {
                 }
             }
             CertType::Key(v) => {
+                let v = v.trim().to_string();
                 if v.starts_with("----") {
                     let mut pem = BufReader::new(v.as_bytes());
                     rustls_pemfile::pkcs8_private_keys(&mut pem)
