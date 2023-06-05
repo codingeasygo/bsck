@@ -358,7 +358,7 @@ func TestProxy(t *testing.T) {
 	}
 	if tester.Run() {
 		proxy := NewProxy("N1", nil)
-		proxy.DialRaw(nil, 0, "")
+		proxy.DialRawConn(nil, 0, "")
 		proxy.OnConnDialURI(nil, "", nil)
 		proxy.OnConnLogin(nil, "")
 	}

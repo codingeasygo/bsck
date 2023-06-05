@@ -3,7 +3,6 @@ package dialer
 import (
 	"bytes"
 	"encoding/json"
-	"io"
 	"net/url"
 
 	"github.com/codingeasygo/util/xmap"
@@ -87,12 +86,9 @@ func (s *StateDialer) Matched(uri string) bool {
 }
 
 // Dial raw connection
-func (s *StateDialer) Dial(channel Channel, sid uint16, uri string, raw io.ReadWriteCloser) (conn Conn, err error) {
+func (s *StateDialer) Dial(channel Channel, sid uint16, uri string) (conn Conn, err error) {
 	data, _ := json.Marshal(s.State.State())
-	conn = NewCopyPipable(NewStateBuffer(s.Alias, bytes.NewBuffer(data)))
-	if raw != nil {
-		conn.Pipe(raw)
-	}
+	conn = NewStateBuffer(s.Alias, bytes.NewBuffer(data))
 	return
 }
 

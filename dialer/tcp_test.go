@@ -18,21 +18,21 @@ func TestTCPDialer(t *testing.T) {
 		t.Error("error")
 		return
 	}
-	con, err := tcp.Dial(nil, 10, "http://localhost", nil)
+	con, err := tcp.Dial(nil, 10, "http://localhost")
 	if err != nil {
 		t.Error(err)
 		return
 	}
 	con.Close()
 	//
-	con, err = tcp.Dial(nil, 10, "https://www.baidu.com", nil)
+	con, err = tcp.Dial(nil, 10, "https://www.baidu.com")
 	if err != nil {
 		t.Error(err)
 		return
 	}
 	con.Close()
 	//
-	con, err = tcp.Dial(nil, 10, "http://localhost?bind=0.0.0.0:0", nil)
+	con, err = tcp.Dial(nil, 10, "http://localhost?bind=0.0.0.0:0")
 	if err != nil {
 		t.Error(err)
 		return
@@ -44,7 +44,7 @@ func TestTCPDialer(t *testing.T) {
 	tcp.Options()
 	//
 	//test error
-	_, err = tcp.Dial(nil, 10, "http://localhost?bind=0.0.0.0", nil)
+	_, err = tcp.Dial(nil, 10, "http://localhost?bind=0.0.0.0")
 	if err == nil {
 		t.Error(err)
 		return
@@ -55,20 +55,10 @@ func TestTCPDialer(t *testing.T) {
 	tcp.Bootstrap(xmap.M{
 		"bind": "0.0.0.0:0",
 	})
-	con, err = tcp.Dial(nil, 10, "http://localhost", nil)
+	con, err = tcp.Dial(nil, 10, "http://localhost")
 	if err != nil {
 		t.Error(err)
 		return
 	}
 	con.Close()
-	//
-	//test pipe
-	cona, conb := CreatePipedConn()
-	con, err = tcp.Dial(nil, 10, "http://localhost", conb)
-	if err != nil {
-		t.Error(err)
-		return
-	}
-	con.Close()
-	cona.Close()
 }

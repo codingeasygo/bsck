@@ -5,7 +5,6 @@ import (
 	"io"
 	"os"
 	"testing"
-	"time"
 )
 
 func TestEcho(t *testing.T) {
@@ -19,7 +18,7 @@ func TestEcho(t *testing.T) {
 		t.Error("error")
 		return
 	}
-	conn, err := dialer.Dial(nil, 10, "tcp://echo", nil)
+	conn, err := dialer.Dial(nil, 10, "tcp://echo")
 	if err != nil {
 		t.Error(err)
 		return
@@ -34,25 +33,6 @@ func TestEcho(t *testing.T) {
 	}()
 	fmt.Fprintf(conn, "data-%v\n", 0)
 	conn.Close()
-	//
-	//test pipe
-	cona, conb := CreatePipedConn()
-	_, err = dialer.Dial(nil, 10, "tcp://echo", conb)
-	if err != nil {
-		t.Error(err)
-		return
-	}
-	go func() {
-		for {
-			_, err := io.Copy(os.Stdout, cona)
-			if err != nil {
-				break
-			}
-		}
-	}()
-	fmt.Fprintf(cona, "data-%v\n", 0)
-	time.Sleep(time.Millisecond)
-	cona.Close()
 
 	//
 	//for cover

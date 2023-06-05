@@ -15,25 +15,13 @@ func init() {
 func TestPool(t *testing.T) {
 	pool := NewPool("test")
 	err := pool.Bootstrap(xmap.M{
-		"dialers": []xmap.M{
-			{
-				"id":      "t0",
-				"type":    "balance",
-				"matcher": "^proxy://.*$",
-			},
-			{
-				"id":      "t1",
-				"type":    "socks",
-				"matcher": "^socks://.*$",
-			},
-		},
 		"std": 1,
 	})
 	if err != nil {
 		t.Error(err)
 		return
 	}
-	_, err = pool.Dial(nil, 10, "http://dav?dir=/tmp", nil)
+	_, err = pool.Dial(nil, 10, "http://dav?dir=/tmp")
 	if err != nil {
 		t.Error(err)
 		return
@@ -41,7 +29,7 @@ func TestPool(t *testing.T) {
 
 	//test not dialer
 	pool = NewPool("test")
-	_, err = pool.Dial(nil, 10, "http://dav?dir=/tmp", nil)
+	_, err = pool.Dial(nil, 10, "http://dav?dir=/tmp")
 	if err == nil {
 		t.Error(err)
 		return

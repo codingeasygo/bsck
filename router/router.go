@@ -272,10 +272,15 @@ type ReadyReadWriteCloser struct {
 	frame.ReadWriteCloser
 }
 
-func WrapReadyReadWriteCloser(base frame.ReadWriteCloser) (wrapped frame.ReadWriteCloser) {
-	wrapped = base
-	if waiter, ok := base.(ReadyWaiter); ok {
-		wrapped = ReadyReadWriteCloser{
+func WrapReadyReadWriteCloser(base frame.ReadWriteCloser, raw interface{}) (target frame.ReadWriteCloser) {
+	target = base
+	if waiter, ok := raw.(ReadyWaiter); waiter != nil && ok {
+		target = &ReadyReadWriteCloser{
+			ReadyWaiter:     waiter,
+			ReadWriteCloser: base,
+		}
+	} else if waiter, ok := base.(ReadyWaiter); waiter != nil && ok {
+		target = &ReadyReadWriteCloser{
 			ReadyWaiter:     waiter,
 			ReadWriteCloser: base,
 		}
@@ -622,24 +627,37 @@ func routerKey(conn Conn, sid ConnID) (local, remote string) {
 	return
 }
 
-// DialRawF is a function type to dial raw connection.
-type DialRawF func(channel Conn, id uint16, uri string) (raw Conn, err error)
+// DialRawStdF is a function type to dial raw connection.
+type DialRawStdF func(channel Conn, id uint16, uri string) (raw io.ReadWriteCloser, err error)
 
 // DialRaw will dial raw connection
-func (d DialRawF) DialRaw(channel Conn, id uint16, uri string) (raw Conn, err error) {
+func (d DialRawStdF) DialRawStd(channel Conn, id uint16, uri string) (raw io.ReadWriteCloser, err error) {
 	raw, err = d(channel, id, uri)
 	return
 }
 
 // RawDialer is dialer to dial raw by uri
 type RawDialer interface {
-	DialRaw(channel Conn, id uint16, uri string) (raw Conn, err error)
+	DialRawStd(channel Conn, id uint16, uri string) (raw io.ReadWriteCloser, err error)
+}
+
+// DialRawConnF is a function type to dial raw connection.
+type DialRawConnF func(channel Conn, id uint16, uri string) (conn Conn, err error)
+
+// DialRaw will dial raw connection
+func (d DialRawConnF) DialRawConn(channel Conn, id uint16, uri string) (conn Conn, err error) {
+	conn, err = d(channel, id, uri)
+	return
+}
+
+type ConnDialer interface {
+	DialRawConn(channel Conn, id uint16, uri string) (conn Conn, err error)
 }
 
 // Handler is the interface that wraps the handler of Router.
 type Handler interface {
-	//raw dialer
-	RawDialer
+	//conn dialer
+	ConnDialer
 	//on connection dial uri
 	OnConnDialURI(channel Conn, conn string, parts []string) (err error)
 	//on connection login
@@ -698,13 +716,16 @@ func (r *Router) NewConn(v interface{}, connID uint16, connType ConnType) (conn 
 		if connID < 1 {
 			connID = r.NewConnID()
 		}
-		conn = NewRouterConn(f, connID, connType)
+		conn = NewRouterConn(WrapReadyReadWriteCloser(f, nil), connID, connType)
 	} else if raw, ok := v.(io.ReadWriteCloser); ok {
-		f := frame.NewReadWriteCloser(r.Header, raw, r.BufferSize)
 		if connID < 1 {
 			connID = r.NewConnID()
 		}
-		conn = NewRouterConn(f, connID, connType)
+		if connType == ConnTypeChannel {
+			conn = NewRouterConn(WrapReadyReadWriteCloser(frame.NewReadWriteCloser(r.Header, raw, r.BufferSize), raw), connID, connType)
+		} else {
+			conn = NewRouterConn(WrapReadyReadWriteCloser(frame.NewRawReadWriteCloser(r.Header, raw, r.BufferSize), raw), connID, connType)
+		}
 	} else {
 		panic(fmt.Sprintf("channel type is not supported by %v=>router.Conn", reflect.TypeOf(v)))
 	}
@@ -911,7 +932,7 @@ func (r *Router) DisplayTable(query xmap.M) (tableList []string) {
 func (r *Router) procPingLoop() {
 	defer func() {
 		r.waiter.Done()
-		InfoLog("Router(%v) the ping runner is stopped")
+		InfoLog("Router(%v) the ping runner is stopped", r.Name)
 	}()
 	InfoLog("Router(%v) the ping runner is starting by %v", r.Name, r.Heartbeat)
 	timer := time.NewTicker(r.Heartbeat)
@@ -929,7 +950,7 @@ func (r *Router) procPingLoop() {
 func (r *Router) procTimeoutLoop() {
 	defer func() {
 		r.waiter.Done()
-		InfoLog("Router(%v) the timeout runner is stopped")
+		InfoLog("Router(%v) the timeout runner is stopped", r.Name)
 	}()
 	InfoLog("Router(%v) the timeout runner is starting by %v", r.Name, r.Timeout)
 	timer := time.NewTicker(r.Timeout)
@@ -1090,7 +1111,7 @@ func (r *Router) procDialRaw(channel Conn, sid ConnID, conn, uri string) (err er
 		return
 	}
 	connID := r.NewConnID()
-	next, nextError := r.Handler.DialRaw(channel, connID, uri)
+	next, nextError := r.Handler.DialRawConn(channel, connID, uri)
 	if nextError != nil {
 		InfoLog("Router(%v) dial %v to %v fail on channel(%v) by %v", r.Name, sid, conn, channel, nextError)
 		message := []byte(fmt.Sprintf("dial to uri(%v) fail with %v", uri, nextError))
@@ -1192,8 +1213,12 @@ func (r *Router) procDialBack(channel Conn, frame *RouterFrame) (err error) {
 			next.Close()
 		}
 	} else {
+		nextSID[0] = next.AllocConnID()
+		router.Update(next, nextSID)
+		r.updateTable(router)
 		writeError := r.procNextForward(channel, frame.SID, next, nextSID, frame)
 		if writeError != nil {
+			r.removeTable(channel, frame.SID)
 			err = writeMessage(channel, nil, frame.SID, CmdConnClosed, []byte("closed"))
 		}
 	}
@@ -1216,6 +1241,8 @@ func (r *Router) procConnData(conn Conn, frame *RouterFrame) (err error) {
 	if router == nil {
 		if conn.Type() == ConnTypeRaw { //if raw should close the raw, else ignore
 			err = fmt.Errorf("not router")
+		} else {
+			err = writeMessage(conn, nil, frame.SID, CmdConnClosed, []byte("closed"))
 		}
 		return
 	}
@@ -1306,12 +1333,11 @@ func (r *Router) SyncDial(raw io.ReadWriteCloser, uri string) (sid ConnID, connI
 }
 
 func (r *Router) dialConnLoc(raw io.ReadWriteCloser, uri string) (sid ConnID, conn Conn, err error) {
-	DebugLog("Router(%v) start raw dial to %v", r.Name, uri)
+	DebugLog("Router(%v) start raw(%v) dial to %v", r.Name, reflect.TypeOf(raw), uri)
 	fromID := r.NewConnID()
-	base := WrapReadyReadWriteCloser(frame.NewRawReadWriteCloser(r.Header, raw, r.BufferSize))
-	from := r.NewConn(base, fromID, ConnTypeRaw)
+	from := r.NewConn(raw, fromID, ConnTypeRaw)
 	nextID := r.NewConnID()
-	next, nextErr := r.Handler.DialRaw(from, nextID, uri)
+	next, nextErr := r.Handler.DialRawConn(from, nextID, uri)
 	if nextErr != nil {
 		err = nextErr
 		return
@@ -1344,10 +1370,9 @@ func (r *Router) DialConn(raw io.ReadWriteCloser, uri string) (sid ConnID, conn 
 	if err != nil {
 		return
 	}
-	base := WrapReadyReadWriteCloser(frame.NewRawReadWriteCloser(r.Header, raw, r.BufferSize))
 	localID := channel.AllocConnID()
 	channelSID := ConnID{localID, 0}
-	conn = r.NewConn(base, 0, ConnTypeRaw)
+	conn = r.NewConn(raw, 0, ConnTypeRaw)
 	connSID := ConnID{localID, localID}
 	conn.Context()["URI"] = uri
 	conn.SetDataPrefix(MakeRawConnPrefix(connSID, CmdConnData))
@@ -1520,7 +1545,8 @@ type NormalAcessHandler struct {
 	Name        string            //the access name
 	LoginAccess map[string]string //the access control
 	DialAccess  [][]string
-	Dialer      RawDialer
+	ConnDialer  ConnDialer
+	RawDialer   RawDialer
 	NetDialer   xnet.Dialer
 	lock        sync.RWMutex
 }
@@ -1537,16 +1563,19 @@ func NewNormalAcessHandler(name string) (handler *NormalAcessHandler) {
 }
 
 // DialRaw is proxy handler to dial remove
-func (n *NormalAcessHandler) DialRaw(channel Conn, id uint16, uri string) (raw Conn, err error) {
-	var conn io.ReadWriteCloser
-	if n.Dialer != nil {
-		raw, err = n.Dialer.DialRaw(channel, id, uri)
-	} else if n.NetDialer != nil {
-		begin := time.Now()
-		conn, err = n.NetDialer.Dial(uri)
-		ErrorLog("NormalAcessHandler(%v) dail %v used %v", n.Name, uri, time.Since(begin))
+func (n *NormalAcessHandler) DialRawConn(channel Conn, id uint16, uri string) (conn Conn, err error) {
+	var raw io.ReadWriteCloser
+	if n.ConnDialer != nil {
+		conn, err = n.ConnDialer.DialRawConn(channel, id, uri)
+	} else if n.RawDialer != nil {
+		raw, err = n.RawDialer.DialRawStd(channel, id, uri)
 		if err == nil {
-			raw = NewRouterConn(frame.NewRawReadWriteCloser(channel, conn, channel.BufferSize()), id, ConnTypeRaw)
+			conn = NewRouterConn(frame.NewRawReadWriteCloser(channel, raw, channel.BufferSize()), id, ConnTypeRaw)
+		}
+	} else if n.NetDialer != nil {
+		raw, err = n.NetDialer.Dial(uri)
+		if err == nil {
+			conn = NewRouterConn(frame.NewRawReadWriteCloser(channel, raw, channel.BufferSize()), id, ConnTypeRaw)
 		}
 	} else {
 		err = fmt.Errorf("not supported")

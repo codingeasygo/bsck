@@ -47,10 +47,12 @@ func main() {
 				panic(err)
 			}
 			go func(c net.Conn) {
-				_, err = dialer.Dial(nil, sid, "http://control", c)
+				raw, err := dialer.Dial(nil, sid, "http://control")
 				if err != nil {
 					panic(err)
 				}
+				go io.Copy(c, raw)
+				io.Copy(raw, c)
 			}(conn)
 		}
 	}()
@@ -61,7 +63,9 @@ func main() {
 				Dial: func(network, addr string) (conn net.Conn, err error) {
 					sid++
 					conn, raw := net.Pipe()
-					_, err = dialer.Dial(nil, sid, "http://control", raw)
+					xx, err := dialer.Dial(nil, sid, "http://control")
+					go io.Copy(xx, raw)
+					go io.Copy(raw, xx)
 					return
 				},
 			},

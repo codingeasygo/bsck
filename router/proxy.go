@@ -242,13 +242,13 @@ func (p *Proxy) runReconnect(args xmap.M) {
 	}
 }
 
-// DialRaw will dial raw connection
-func (p *Proxy) DialRaw(channel Conn, sid uint16, uri string) (raw Conn, err error) {
+// DialRawConn will dial raw connection
+func (p *Proxy) DialRawConn(channel Conn, sid uint16, uri string) (conn Conn, err error) {
 	if p.Handler == nil {
 		err = fmt.Errorf("not supported")
 		return
 	}
-	raw, err = p.Handler.DialRaw(channel, sid, uri)
+	conn, err = p.Handler.DialRawConn(channel, sid, uri)
 	return
 }
 

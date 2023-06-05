@@ -3,7 +3,7 @@
     "listen": "",
     "web": {},
     "console": {
-        "socks": ":1701"
+        "socks": ":1703"
     },
     "forwards": {
         "dav": "http://dav?dir=."

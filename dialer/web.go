@@ -71,7 +71,7 @@ func (web *WebDialer) Matched(uri string) bool {
 }
 
 // Dial to web server
-func (web *WebDialer) Dial(channel Channel, sid uint16, uri string, pipe io.ReadWriteCloser) (raw Conn, err error) {
+func (web *WebDialer) Dial(channel Channel, sid uint16, uri string) (raw Conn, err error) {
 	web.consLck.Lock()
 	defer web.consLck.Unlock()
 	if web.stopped {
@@ -84,10 +84,7 @@ func (web *WebDialer) Dial(channel Channel, sid uint16, uri string, pipe io.Read
 	}
 	web.cons[fmt.Sprintf("%v", sid)] = conn
 	web.accept <- conn
-	raw = NewCopyPipable(basic)
-	if pipe != nil {
-		assert(raw.Pipe(pipe) == nil)
-	}
+	raw = basic
 	return
 }
 

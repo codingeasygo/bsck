@@ -9,3 +9,5 @@ require (
 	golang.org/x/crypto v0.4.0
 	golang.org/x/net v0.7.0
 )
+
+replace github.com/codingeasygo/util => ../util

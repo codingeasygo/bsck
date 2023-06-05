@@ -44,11 +44,8 @@ func (e *EchoDialer) Matched(uri string) bool {
 }
 
 // Dial one echo connection.
-func (e *EchoDialer) Dial(channel Channel, sid uint16, uri string, pipe io.ReadWriteCloser) (r Conn, err error) {
-	r = NewEchoReadWriteCloser()
-	if pipe != nil {
-		err = r.Pipe(pipe)
-	}
+func (e *EchoDialer) Dial(channel Channel, sid uint16, uri string) (raw Conn, err error) {
+	raw = NewEchoReadWriteCloser()
 	return
 }
 

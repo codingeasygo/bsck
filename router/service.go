@@ -435,8 +435,8 @@ func (s *Service) dialOne(uri string, raw io.ReadWriteCloser, sync bool) (sid ui
 }
 
 // DialRaw is router dial implemnet
-func (s *Service) DialRaw(channel Conn, sid uint16, uri string) (conn Conn, err error) {
-	raw, err := s.Dialer.Dial(channel, sid, uri, nil)
+func (s *Service) DialRawConn(channel Conn, sid uint16, uri string) (conn Conn, err error) {
+	raw, err := s.Dialer.Dial(channel, sid, uri)
 	if err == nil {
 		conn = s.Node.NewConn(raw, sid, ConnTypeRaw)
 	}
@@ -526,7 +526,7 @@ func (s *Service) Start() (err error) {
 		if len(s.Config.Access) > 0 {
 			handler.DialAccess = s.Config.Access
 		}
-		handler.Dialer = DialRawF(s.DialRaw)
+		handler.ConnDialer = DialRawConnF(s.DialRawConn)
 		s.Handler = handler
 	}
 	s.Node = NewProxy(s.Config.Name, s.Handler)

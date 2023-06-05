@@ -16,10 +16,7 @@ type Pipable interface {
 	Pipe(r io.ReadWriteCloser) error
 }
 
-type Conn interface {
-	Pipable
-	io.ReadWriteCloser
-}
+type Conn = io.ReadWriteCloser
 
 type CopyPipable struct {
 	io.ReadWriteCloser
@@ -74,7 +71,7 @@ type Dialer interface {
 	//match uri
 	Matched(uri string) bool
 	//dial raw connection
-	Dial(channel Channel, sid uint16, uri string, raw io.ReadWriteCloser) (r Conn, err error)
+	Dial(channel Channel, sid uint16, uri string) (r Conn, err error)
 }
 
 // Pool is the set of Dialer
@@ -148,11 +145,11 @@ func (p *Pool) Bootstrap(options xmap.M) error {
 }
 
 // Dial the uri by dialer poo
-func (p *Pool) Dial(channel Channel, sid uint16, uri string, pipe io.ReadWriteCloser) (r Conn, err error) {
+func (p *Pool) Dial(channel Channel, sid uint16, uri string) (r Conn, err error) {
 	DebugLog("Pool(%v) try dial to %v", p.Name, uri)
 	for _, dialer := range p.Dialers {
 		if dialer.Matched(uri) {
-			r, err = dialer.Dial(channel, sid, uri, pipe)
+			r, err = dialer.Dial(channel, sid, uri)
 			return
 		}
 	}
@@ -167,14 +164,6 @@ func (p *Pool) Shutdown() (err error) {
 
 // DefaultDialerCreator is default all dialer creator
 func DefaultDialerCreator(t string) (dialer Dialer) {
-	switch t {
-	case "balance":
-		dialer = NewBalancedDialer()
-	case "socks":
-		dialer = NewSocksProxyDialer()
-	case "schema":
-		dialer = NewSchemaDialer()
-	}
 	return
 }
 
