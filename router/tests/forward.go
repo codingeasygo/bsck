@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/codingeasygo/bsck/dialer"
 	"github.com/codingeasygo/bsck/router"
 	"github.com/codingeasygo/util/proxy/socks"
 	"github.com/codingeasygo/util/xhttp"
@@ -104,11 +105,21 @@ func runServer() {
 	go runEchoServer(":13200")
 	// router.ShowLog = 3
 	// router.SetLogLevel(router.LogLevelDebug)
+	// dialer.SetLogLevel(router.LogLevelDebug)
 
+	dialer0 := dialer.NewPool("N0")
+	dialer0.Bootstrap(xmap.M{
+		"std":   1,
+		"udpgw": xmap.M{},
+	})
 	access0 := router.NewNormalAcessHandler("N0")
 	access0.LoginAccess["N1"] = "123"
 	access0.LoginAccess["NX"] = "123"
 	access0.DialAccess = append(access0.DialAccess, []string{".*", ".*"})
+	access0.RawDialer = router.DialRawStdF(func(channel router.Conn, id uint16, uri string) (raw io.ReadWriteCloser, err error) {
+		raw, err = dialer0.Dial(channel, id, uri)
+		return
+	})
 	proxy0 := router.NewProxy("N0", access0)
 	proxy0.Router.BufferSize = 2 * 1024
 	proxy0.Forward.BufferSize = 2 * 1024

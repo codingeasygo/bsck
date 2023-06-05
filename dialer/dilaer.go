@@ -135,6 +135,12 @@ func (p *Pool) Bootstrap(options xmap.M) error {
 			InfoLog("Pool(%v) add web/%v dialer to pool", p.Name, n)
 		}
 	}
+	if options.Value("udpgw") != nil {
+		udpgw := NewUdpGwDialer()
+		udpgw.Bootstrap(options.MapDef(xmap.M{}, "udpgw"))
+		p.Dialers = append(p.Dialers, udpgw)
+		InfoLog("Pool(%v) add tcp dialer to pool", p.Name)
+	}
 	if options.Value("tcp") != nil || options.IntDef(0, "standard") > 0 || options.IntDef(0, "std") > 0 {
 		tcp := NewTCPDialer()
 		tcp.Bootstrap(options.MapDef(xmap.M{}, "tcp"))
