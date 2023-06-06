@@ -360,3 +360,9 @@ func (u *UdpGwConn) Timeout() {
 		}
 	}
 }
+
+func (u *UdpGwConn) String() string {
+	u.connLock.RLock()
+	defer u.connLock.RUnlock()
+	return fmt.Sprintf("UdpGwConn:%v/%v", len(u.connAll), u.MaxConn)
+}
