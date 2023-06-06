@@ -181,13 +181,13 @@ func (p *Proxy) Listen(addr string) (err error) {
 		}()
 	default:
 		p.waiter.Add(1)
-		go p.loopMaster(p.master)
+		go p.loopMaster(addr, p.master)
 	}
 	InfoLog("Proxy(%v) listen %v master on %v", p.Name, addrNetwork, addrListen)
 	return
 }
 
-func (p *Proxy) loopMaster(l net.Listener) {
+func (p *Proxy) loopMaster(addr string, l net.Listener) {
 	defer p.waiter.Done()
 	var err error
 	var conn net.Conn
@@ -196,7 +196,7 @@ func (p *Proxy) loopMaster(l net.Listener) {
 		if err != nil {
 			break
 		}
-		DebugLog("Proxy(%v) master accepting connection from %v", p.Name, conn.RemoteAddr())
+		InfoLog("Proxy(%v) master %v accept connection from %v", p.Name, addr, conn.RemoteAddr())
 		p.Router.Accept(NewInfoRWC(conn, conn.RemoteAddr().String()), false)
 	}
 	l.Close()
@@ -204,7 +204,7 @@ func (p *Proxy) loopMaster(l net.Listener) {
 }
 
 func (p *Proxy) AcceptWsConn(conn *websocket.Conn) {
-	DebugLog("Proxy(%v) master accepting connection from %v", p.Name, conn.RemoteAddr())
+	InfoLog("Proxy(%v) master %v accept ws connection from %v", p.Name, conn.LocalAddr(), conn.RemoteAddr())
 	p.Router.Accept(NewInfoRWC(conn, conn.RemoteAddr().String()), true)
 }
 
