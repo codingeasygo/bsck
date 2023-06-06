@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"os/user"
@@ -18,6 +20,7 @@ var exitf = func(code int) {
 }
 
 func main() {
+	go http.ListenAndServe(":6062", nil)
 	if len(os.Args) > 1 && (os.Args[1] == "-v" || os.Args[1] == "--version") {
 		fmt.Println(Version)
 		os.Exit(0)

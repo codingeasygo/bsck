@@ -17,7 +17,8 @@
         }
     ],
     "dialer": {
-        "standard": 1
+        "std": 1,
+        "udpgw": 1
     },
     "log": 40
 }
