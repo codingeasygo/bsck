@@ -96,6 +96,16 @@ func (c RouterCmd) String() string {
 	}
 }
 
+func connInfo(v interface{}) string {
+	local := xio.LocalAddr(v)
+	remote := xio.RemoteAddr(v)
+	if local == remote {
+		return local
+	} else {
+		return local + "<=>" + remote
+	}
+}
+
 type RouterFrame struct {
 	Buffer []byte
 	SID    ConnID
@@ -286,6 +296,10 @@ func WrapReadyReadWriteCloser(base frame.ReadWriteCloser, raw interface{}) (targ
 		}
 	}
 	return
+}
+
+func (r *ReadyReadWriteCloser) String() string {
+	return fmt.Sprintf("%v", r.ReadWriteCloser)
 }
 
 type BondConn struct {
@@ -1010,7 +1024,7 @@ func (r *Router) procConnRead(conn Conn) {
 		}
 	}
 	notified, closed := r.closeConn(conn, err)
-	InfoLog("Router(%v) the reader %v is stopped by %v, notify %v close %v connection", r.Name, conn, err, notified, closed)
+	InfoLog("Router(%v) the reader %v/%v is stopped by %v, notify %v close %v connection", r.Name, reflect.TypeOf(conn), conn, err, notified, closed)
 	r.Handler.OnConnClose(conn)
 }
 
@@ -1537,7 +1551,7 @@ func (r *RouterPiper) Write(p []byte) (n int, err error) {
 }
 
 func (r *RouterPiper) String() string {
-	return fmt.Sprintf("RouterPiper(%v)", xio.RemoteAddr(r.raw))
+	return connInfo(r.raw)
 }
 
 // NormalAcessHandler is normal access handler for proxy handler

@@ -145,7 +145,7 @@ func (p *Pool) Bootstrap(options xmap.M) error {
 		tcp := NewTCPDialer()
 		tcp.Bootstrap(options.MapDef(xmap.M{}, "tcp"))
 		p.Dialers = append(p.Dialers, tcp)
-		InfoLog("Pool(%v) add tcp dialer to pool", p.Name)
+		InfoLog("Pool(%v) add udpgw dialer to pool", p.Name)
 	}
 	return nil
 }
