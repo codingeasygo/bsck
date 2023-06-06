@@ -3,6 +3,7 @@ package dialer
 import (
 	"encoding/binary"
 	"fmt"
+	"io"
 	"net"
 	"sync"
 	"time"
@@ -106,7 +107,10 @@ func (u *UdpGwDialer) Dial(channel Channel, sid uint16, uri string) (conn Conn, 
 	gw.DNS = u.DNS
 	gw.MaxConn = u.MaxConn
 	base := frame.NewPassReadWriteCloser(u.Header, gw, u.Header.GetDataOffset()+u.MTU)
-	conn = NewCopyPipable(base)
+	conn = &udpGwRWC{
+		ReadWriteCloser: NewCopyPipable(base),
+		Info:            gw,
+	}
 	u.connLock.Lock()
 	defer u.connLock.Unlock()
 	u.connAll[sid] = gw
@@ -164,6 +168,15 @@ type udpGwRawConn struct {
 	last  time.Time
 }
 
+type udpGwRWC struct {
+	io.ReadWriteCloser
+	Info interface{}
+}
+
+func (u *udpGwRWC) String() string {
+	return fmt.Sprintf("%v", u.Info)
+}
+
 type UdpGwConn struct {
 	frame.Header
 	ID         uint16
@@ -176,6 +189,7 @@ type UdpGwConn struct {
 	connLock   sync.RWMutex
 	readBuffer chan *udpGwRead
 	readWaiter sync.WaitGroup
+	readClosed int
 	exiter     chan int
 	waiter     sync.WaitGroup
 }
@@ -189,8 +203,9 @@ func NewUdpGwConn(id uint16) (conn *UdpGwConn) {
 		MaxAlive:   time.Minute,
 		connAll:    map[uint16]*udpGwRawConn{},
 		connLock:   sync.RWMutex{},
-		readBuffer: make(chan *udpGwRead, 8),
+		readBuffer: make(chan *udpGwRead, 1024),
 		readWaiter: sync.WaitGroup{},
+		readClosed: 0,
 		exiter:     make(chan int, 8),
 		waiter:     sync.WaitGroup{},
 	}
@@ -202,6 +217,10 @@ func (u *UdpGwConn) Read(p []byte) (n int, err error) {
 		err = fmt.Errorf("p must greater mtu %v>=%v", len(p), u.MTU)
 		return
 	}
+	if u.readClosed > 0 {
+		err = io.EOF
+		return
+	}
 	read := &udpGwRead{
 		Buffer: p,
 		Readed: 0,
@@ -210,6 +229,9 @@ func (u *UdpGwConn) Read(p []byte) (n int, err error) {
 	u.readBuffer <- read
 	u.readWaiter.Wait()
 	n = read.Readed
+	if n < 1 {
+		err = io.EOF
+	}
 	return
 }
 
@@ -306,8 +328,12 @@ func (u *UdpGwConn) procRead(conn *udpGwRawConn) {
 		conn.last = time.Now()
 		select {
 		case p := <-u.readBuffer:
-			p.Readed = copy(p.Buffer, buffer[:offset+n])
-			u.readWaiter.Done()
+			if p != nil {
+				p.Readed = copy(p.Buffer, buffer[:offset+n])
+				u.readWaiter.Done()
+			} else {
+				running = false
+			}
 		case <-u.exiter:
 			running = false
 		}
@@ -333,17 +359,36 @@ func (u *UdpGwConn) limitConn() {
 	}
 }
 
-func (u *UdpGwConn) cloaseAllConn() {
+func (u *UdpGwConn) cloaseAllConn() (closed int) {
 	u.connLock.Lock()
 	defer u.connLock.Unlock()
+	closed = len(u.connAll)
 	for connid, conn := range u.connAll {
 		conn.raw.Close()
 		delete(u.connAll, connid)
 	}
+	return
 }
 
 func (u *UdpGwConn) Close() (err error) {
-	u.cloaseAllConn()
+	closed := u.cloaseAllConn()
+	for i := 0; i < closed; i++ {
+		select {
+		case u.readBuffer <- nil:
+		default:
+		}
+	}
+	u.waiter.Wait()
+	u.readClosed = 1
+	for i := 0; i < 10; i++ {
+		select {
+		case p := <-u.readBuffer:
+			if p != nil {
+				u.readWaiter.Done()
+			}
+		default:
+		}
+	}
 	if u.Dialer != nil {
 		u.Dialer.closeConn(u)
 	}
