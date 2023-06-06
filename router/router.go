@@ -559,7 +559,7 @@ func (r *RouterConn) Ready(failed error, next func(err error)) {
 }
 
 func (r *RouterConn) String() string {
-	return fmt.Sprintf("RouterConn{name:%v,type:%v,id:%v,info:%v}", r.name, r.connType, r.id, r.ReadWriteCloser)
+	return fmt.Sprintf("RouterConn(%v,%v,%v,%v)", r.name, r.connType, r.id, r.ReadWriteCloser)
 }
 
 // RouterItem is the router table item
@@ -973,7 +973,7 @@ func (r *Router) procConnRead(conn Conn) {
 		conn.Close()
 		r.waiter.Done()
 	}()
-	InfoLog("Router(%v) the reader(%v) is starting", r.Name, conn)
+	InfoLog("Router(%v) the reader %v is starting", r.Name, conn)
 	var frame *RouterFrame
 	var err error
 	// offset := conn.GetDataOffset()
@@ -1010,7 +1010,7 @@ func (r *Router) procConnRead(conn Conn) {
 		}
 	}
 	notified, closed := r.closeConn(conn, err)
-	InfoLog("Router(%v) the reader(%v) is stopped by %v, notify %v close %v connection", r.Name, conn, err, notified, closed)
+	InfoLog("Router(%v) the reader %v is stopped by %v, notify %v close %v connection", r.Name, conn, err, notified, closed)
 	r.Handler.OnConnClose(conn)
 }
 
@@ -1050,7 +1050,7 @@ func (r *Router) procLoginChannel(channel Conn, frame *RouterFrame) (err error) 
 	r.addChannel(channel)
 	message := converter.JSON(result)
 	writeMessage(channel, nil, frame.SID, CmdLoginBack, []byte(message))
-	InfoLog("Router(%v) the channel(%v) is login success on %v", r.Name, name, channel)
+	InfoLog("Router(%v) the channel %v is login success on %v", r.Name, name, channel)
 	return
 }
 
