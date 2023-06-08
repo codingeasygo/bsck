@@ -42,7 +42,10 @@ impl ServerState {
 
     pub async fn stop(&mut self) {
         self.stopping = true;
-        _ = TcpStream::connect(&self.stopper).await;
+        for _ in 0..3 {
+            _ = TcpStream::connect(&self.stopper).await;
+            tokio::time::sleep(tokio::time::Duration::from_millis(300)).await;
+        }
     }
 
     pub fn to_string(&self) -> String {
@@ -97,30 +100,42 @@ impl Proxy {
         let name = Arc::new(json_must_str(&config, "name")?.to_string());
         let mut proxy = Self::new(name, handler);
         proxy.dir = Arc::new(json_option_str(&config, "dir").unwrap_or(&String::from(".")).to_string());
-        let channels = json_option_obj(&config, "channels")?;
-        for name in channels.keys() {
-            let channel = json_must_obj(&channels, name)?;
-            proxy.channels.insert(name.clone(), channel);
-        }
-        let forwards = json_option_obj(&config, "forwards")?;
-        for loc in forwards.keys() {
-            let parts: Vec<_> = loc.splitn(2, "~").collect();
-            if parts.len() < 2 {
-                return Err(new_message_err(format!("{} is invalid", loc)));
-            }
-            let remote = json_must_str(&forwards, &loc)?;
-            let name = Arc::new(parts[0].to_string());
-            let loc = &parts[1].to_string();
-            let remote = Arc::new(remote.to_string());
-            proxy.start_forward(name, loc, remote).await?;
-        }
-        let web = json_option_obj(&config, "web")?;
-        for name in web.keys() {
-            let domain = json_must_str(&web, name)?;
-            let name = Arc::new(name.clone());
-            proxy.start_web(name, domain).await?;
-        }
+        proxy.reset(config, true, true, true).await?;
         Ok(proxy)
+    }
+
+    pub async fn reset(&mut self, config: Arc<JSON>, channel: bool, forward: bool, web: bool) -> tokio::io::Result<()> {
+        if channel {
+            self.router.close_all().await;
+            let channels = json_option_obj(&config, "channels")?;
+            for name in channels.keys() {
+                let channel = json_must_obj(&channels, name)?;
+                self.channels.insert(name.clone(), channel);
+            }
+        }
+        if forward {
+            let forwards = json_option_obj(&config, "forwards")?;
+            for loc in forwards.keys() {
+                let parts: Vec<_> = loc.splitn(2, "~").collect();
+                if parts.len() < 2 {
+                    return Err(new_message_err(format!("{} is invalid", loc)));
+                }
+                let remote = json_must_str(&forwards, &loc)?;
+                let name = Arc::new(parts[0].to_string());
+                let loc = &parts[1].to_string();
+                let remote = Arc::new(remote.to_string());
+                self.start_forward(name, loc, remote).await?;
+            }
+        }
+        if web {
+            let web = json_option_obj(&config, "web")?;
+            for name in web.keys() {
+                let domain = json_must_str(&web, name)?;
+                let name = Arc::new(name.clone());
+                self.start_web(name, domain).await?;
+            }
+        }
+        Ok(())
     }
 
     pub async fn run(&mut self, receiver: Receiver<u8>) {

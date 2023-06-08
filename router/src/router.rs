@@ -1149,6 +1149,14 @@ impl Router_ {
         counts
     }
 
+    pub async fn close_all(&mut self) -> Task {
+        let mut task = Task::new();
+        for conn in self.conn_all.values() {
+            task.more(TaskItem::shutdown(Arc::new(conn.clone()), Some(CONN_CLOSED.to_string())))
+        }
+        task
+    }
+
     pub async fn shutdown(&mut self) -> Task {
         let mut task = Task::new();
         for conn in self.conn_all.values() {
@@ -1409,6 +1417,11 @@ impl Router {
 
     pub async fn list_channel_count(&self) -> HashMap<String, usize> {
         self.router.lock().await.list_channel_count()
+    }
+
+    pub async fn close_all(&self) {
+        info!("Router({}) is closing all conn", self.name);
+        _ = self.router.lock().await.close_all().await.call(&self.job).await;
     }
 
     pub async fn shutdown(&self) {
