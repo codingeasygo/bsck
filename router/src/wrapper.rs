@@ -86,6 +86,7 @@ impl frame::RawReader for WrapQuinnReader {
 
 pub struct WrapQuinnWriter {
     inner: quinn::SendStream,
+    closed: bool,
 }
 
 #[async_trait]
@@ -96,13 +97,17 @@ impl frame::RawWriter for WrapQuinnWriter {
         Ok(buf.len())
     }
     async fn shutdown(&mut self) {
+        if self.closed {
+            return;
+        }
+        self.closed = true;
         _ = self.inner.shutdown().await;
     }
 }
 
 pub fn wrap_quinn_w(send: quinn::SendStream, recv: quinn::RecvStream) -> (Box<dyn frame::RawReader + Send + Sync>, Box<dyn frame::RawWriter + Send + Sync>) {
     let rxa = Box::new(WrapQuinnReader { inner: recv });
-    let txa = Box::new(WrapQuinnWriter { inner: send });
+    let txa = Box::new(WrapQuinnWriter { inner: send, closed: false });
     (rxa, txa)
 }
 
