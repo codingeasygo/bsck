@@ -12,6 +12,7 @@ use std::pin::Pin;
 use std::time::Duration;
 use std::{collections::HashMap, net::SocketAddr, sync::Arc};
 use tokio::net::TcpSocket;
+use tokio::sync::mpsc::Receiver;
 use tokio::{
     net::{TcpListener, TcpStream},
     sync::Mutex,
@@ -122,11 +123,16 @@ impl Proxy {
         Ok(proxy)
     }
 
-    pub async fn run(&mut self) {
+    pub async fn run(&mut self, receiver: Receiver<u8>) {
         let mut interval = tokio::time::interval(Duration::from_millis(self.interval));
+        let mut receiver = receiver;
         loop {
-            interval.tick().await;
-            _ = self.keep().await;
+            tokio::select! {
+                _= interval.tick() => {
+                    _=self.keep().await;
+                }
+                _= receiver.recv() =>break,
+            }
         }
     }
 
@@ -247,7 +253,7 @@ impl Proxy {
             let domain: &str = loc.trim_start_matches("socks://");
             let ln = TcpListener::bind(&domain).await?;
             let addr: SocketAddr = ln.local_addr().unwrap();
-            let state = Arc::new(Mutex::new(ServerState::new(name.clone(), domain.to_string(), addr)));
+            let state = Arc::new(Mutex::new(ServerState::new(name.clone(), addr.to_string(), addr)));
             info!("Proxy({}) {} listen socks {} is success", name, key, addr);
             self.listener.insert(key.to_string(), state.clone());
             let waiter = self.waiter.clone();
@@ -258,7 +264,7 @@ impl Proxy {
             let domain: &str = loc.trim_start_matches("tcp://");
             let ln = TcpListener::bind(&domain).await?;
             let addr: SocketAddr = ln.local_addr().unwrap();
-            let state = Arc::new(Mutex::new(ServerState::new(name.clone(), domain.to_string(), addr)));
+            let state = Arc::new(Mutex::new(ServerState::new(name.clone(), addr.to_string(), addr)));
             info!("Proxy({}) {} listen tcp {} is success", name, key, addr);
             self.listener.insert(key.to_string(), state.clone());
             let waiter = self.waiter.clone();
