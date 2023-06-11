@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use router::{log::init_simple_log, proxy::Proxy, router::NormalAcessHandler, util::JSON};
 use serde_json::json;
+use tokio::sync::mpsc;
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 3)]
 async fn main() {
@@ -16,15 +17,21 @@ async fn main() {
     options.insert(String::from("keep"), json!(10));
     let options = Arc::new(options);
     let socks_dial_uri = Arc::new(String::from("N0->${HOST}"));
+    let gw_dial_uri = Arc::new(String::from("N0->${HOST}"));
     let tcp_dial_uri = Arc::new(String::from("N0->tcp://127.0.0.1:13200"));
     let socks_addr = String::from("socks://127.0.0.1:1107");
+    let gw_addr = String::from("gw://0.0.0.0:6238>192.168.1.103:6238");
     let tcp_addr = String::from("tcp://127.0.0.1:13300");
     let web_addr = String::from("tcp://127.0.0.1:1100");
     let handler = Arc::new(NormalAcessHandler::new());
     let mut proxy = Proxy::new(name, handler);
     proxy.channels.insert(String::from("N0"), options);
+    _ = proxy.keep().await;
     proxy.start_forward(Arc::new(String::from("s01")), &socks_addr, socks_dial_uri).await.unwrap();
+    proxy.start_forward(Arc::new(String::from("g01")), &gw_addr, gw_dial_uri).await.unwrap();
     proxy.start_forward(Arc::new(String::from("t01")), &tcp_addr, tcp_dial_uri).await.unwrap();
     proxy.start_web(Arc::new(String::from("web")), &web_addr).await.unwrap();
-    proxy.run().await;
+    let (stopper, receive) = mpsc::channel(8);
+    proxy.run(receive).await;
+    _ = stopper.send(1).await;
 }

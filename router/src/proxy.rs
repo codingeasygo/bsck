@@ -7,6 +7,7 @@ use hyper::server::conn::http1;
 use hyper::service::Service;
 use hyper::{Request, Response, StatusCode};
 use log::{info, warn};
+use smoltcp::iface::{Config, Interface};
 use std::os::fd::{AsRawFd, RawFd};
 use std::pin::Pin;
 use std::time::Duration;
@@ -19,8 +20,10 @@ use tokio::{
 };
 use tokio_rustls::TlsConnector;
 
+use crate::frame;
+use crate::gateway::{CacheDevice, Gateway};
 use crate::util::{json_must_obj, json_must_str, json_option_i64, json_option_obj, json_option_str, load_tls_config, wrap_err, JSON};
-use crate::wrapper::wrap_quinn_w;
+use crate::wrapper::{wrap_quinn_w, WrapUdpConn};
 use crate::{
     router::{Handler, Router},
     util::new_message_err,
@@ -82,6 +85,7 @@ pub struct Proxy {
     pub preparer: Arc<dyn Preparer + Send + Sync>,
     pub channels: HashMap<String, Arc<JSON>>,
     pub interval: u64,
+    pub gateway: Gateway,
     listener: HashMap<String, Arc<Mutex<ServerState>>>,
     waiter: Arc<wg::AsyncWaitGroup>,
 }
@@ -91,9 +95,10 @@ impl Proxy {
         let dir = Arc::new(String::from("."));
         let router = Arc::new(Router::new(name.clone(), handler.clone()));
         let waiter = Arc::new(wg::AsyncWaitGroup::new());
-        waiter.add(1);
         let preparer = Arc::new(SkipPreparer::new());
-        Self { name, dir, router, handler, preparer, channels: HashMap::new(), interval: 3000, listener: HashMap::new(), waiter }
+        let gateway = Gateway::new(router.clone());
+        waiter.add(1);
+        Self { name, dir, router, handler, preparer, channels: HashMap::new(), interval: 3000, gateway, listener: HashMap::new(), waiter }
     }
 
     pub async fn bootstrap(handler: Arc<dyn Handler + Send + Sync>, config: Arc<JSON>) -> tokio::io::Result<Self> {
@@ -275,6 +280,21 @@ impl Proxy {
             waiter.add(1);
             tokio::spawn(async move { Self::loop_socks_accpet(name, key, waiter, ln, state, router, remote).await });
             Ok(addr)
+        } else if loc.starts_with("gw://") {
+            let parts: Vec<_> = loc.trim_start_matches("gw://").splitn(2, ">").collect();
+            let domain = parts[0].to_string();
+            let sendto = parts[1].to_string();
+            let ln_reader = WrapUdpConn::bind(domain.clone(), sendto.clone()).await?;
+            let ln_writer = ln_reader.clone();
+            let addr: SocketAddr = ln_reader.local_addr().unwrap();
+            info!("Proxy({}) {} listen gw {}<=>{} is success", name, key, domain, sendto);
+            let mut device = CacheDevice::new(1600);
+            let mut config = Config::new(smoltcp::wire::HardwareAddress::Ip);
+            config.random_seed = rand::random();
+            let mut iface = Interface::new(config, &mut device);
+            iface.set_any_ip(true);
+            self.gateway.start(self.name.clone(), iface, ln_reader, ln_writer, remote).await;
+            Ok(addr)
         } else {
             let domain: &str = loc.trim_start_matches("tcp://");
             let ln = TcpListener::bind(&domain).await?;
@@ -398,6 +418,14 @@ impl Proxy {
         Ok(())
     }
 
+    pub async fn start_gateway<R, W>(&mut self, iface: Interface, reader: R, writer: W, remote: Arc<String>)
+    where
+        R: frame::RawReader + Send + Sync + 'static,
+        W: frame::RawWriter + Send + Sync + 'static,
+    {
+        self.gateway.start(self.name.clone(), iface, reader, writer, remote).await;
+    }
+
     pub async fn wait(&self) {
         self.router.wait().await;
         self.waiter.clone().wait().await;
@@ -410,7 +438,9 @@ impl Proxy {
             info!("Proxy({}) listener {} is stopping", self.name, server.to_string());
             server.stop().await;
         }
+        self.gateway.stop().await;
         self.router.shutdown().await;
+        self.gateway.wait().await;
         self.waiter.done();
         self.waiter.wait().await;
     }

@@ -14,7 +14,6 @@ import (
 
 const (
 	UDPGW_CLIENT_FLAG_KEEPALIVE = (1 << 0)
-	UDPGW_CLIENT_FLAG_REBIND    = (1 << 1)
 	UDPGW_CLIENT_FLAG_DNS       = (1 << 2)
 	UDPGW_CLIENT_FLAG_IPV6      = (1 << 3)
 )

@@ -1,14 +1,14 @@
-use std::io::ErrorKind;
+use std::{io::ErrorKind, net::SocketAddr, sync::Arc};
 
 use async_trait::async_trait;
 use tokio::{
     io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadHalf, WriteHalf},
-    net::TcpStream,
+    net::{TcpStream, UdpSocket},
     sync::mpsc::{self, Receiver, Sender},
 };
 use tokio_rustls::client::TlsStream;
 
-use crate::frame;
+use crate::{frame, util::wrap_err};
 
 pub struct WrapTcpReader<T> {
     inner: ReadHalf<T>,
@@ -68,6 +68,46 @@ pub fn wrap_split_tls_w(stream: TlsStream<TcpStream>) -> (Box<dyn frame::RawRead
     let rxa = Box::new(WrapTcpReader { inner: rx });
     let txa = Box::new(WrapTcpWriter { inner: tx });
     (rxa, txa)
+}
+
+#[derive(Clone)]
+pub struct WrapUdpConn {
+    pub inner: Arc<UdpSocket>,
+    pub remote: SocketAddr,
+}
+
+impl WrapUdpConn {
+    pub async fn bind(adrr: String, remote: String) -> tokio::io::Result<WrapUdpConn> {
+        let remote = wrap_err(remote.parse())?;
+        let inner = UdpSocket::bind(adrr).await?;
+        let conn = WrapUdpConn { inner: Arc::new(inner), remote };
+        Ok(conn)
+    }
+
+    pub fn local_addr(&self) -> tokio::io::Result<SocketAddr> {
+        self.inner.local_addr()
+    }
+}
+
+#[async_trait]
+impl frame::RawReader for WrapUdpConn {
+    async fn read(&mut self, buf: &mut [u8]) -> tokio::io::Result<usize> {
+        log::info!("xx---->");
+        let (n, _) = self.inner.recv_from(buf).await?;
+        log::info!("R --> {:?}", &buf[0..n]);
+        Ok(n)
+    }
+}
+
+#[async_trait]
+impl frame::RawWriter for WrapUdpConn {
+    async fn write(&mut self, buf: &[u8]) -> tokio::io::Result<usize> {
+        log::info!("W --> {:?}", &buf);
+        let n = self.inner.send_to(buf, self.remote).await?;
+        log::info!("W --> {} => {}", n, self.remote);
+        Ok(n)
+    }
+    async fn shutdown(&mut self) {}
 }
 
 pub struct WrapQuinnReader {

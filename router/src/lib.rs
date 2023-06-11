@@ -1,4 +1,5 @@
 pub mod frame;
+pub mod gateway;
 pub mod log;
 pub mod proxy;
 pub mod router;
