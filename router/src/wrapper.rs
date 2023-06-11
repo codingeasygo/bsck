@@ -10,26 +10,28 @@ use tokio_rustls::client::TlsStream;
 
 use crate::{frame, util::wrap_err};
 
-pub struct WrapTcpReader<T> {
+pub struct WrapHalfReader<T> {
     inner: ReadHalf<T>,
 }
 
 #[async_trait]
-impl<T> frame::RawReader for WrapTcpReader<T>
+impl<T> frame::RawReader for WrapHalfReader<T>
 where
     T: AsyncRead + Send + Sync,
 {
     async fn read(&mut self, buf: &mut [u8]) -> tokio::io::Result<usize> {
-        self.inner.read(buf).await
+        let n = self.inner.read(buf).await?;
+        log::info!("read {:?}", &buf[0..n]);
+        Ok(n)
     }
 }
 
-pub struct WrapTcpWriter<T> {
+pub struct WrapHalfWriter<T> {
     inner: WriteHalf<T>,
 }
 
 #[async_trait]
-impl<T> frame::RawWriter for WrapTcpWriter<T>
+impl<T> frame::RawWriter for WrapHalfWriter<T>
 where
     T: AsyncWrite + Send + Sync,
 {
@@ -48,25 +50,27 @@ where
 // unsafe impl Send for WrapTcpWriter {}
 // unsafe impl Sync for WrapTcpWriter {}
 
-pub fn wrap_split<T>(stream: T) -> (WrapTcpReader<T>, WrapTcpWriter<T>)
+pub fn wrap_split<T>(stream: T) -> (Box<dyn frame::RawReader + Send + Sync>, Box<dyn frame::RawWriter + Send + Sync>)
 where
-    T: AsyncRead + AsyncWrite + Send + Sync,
+    T: AsyncRead + AsyncWrite + Send + Sync + 'static,
 {
     let (rx, tx) = tokio::io::split(stream);
-    (WrapTcpReader { inner: rx }, WrapTcpWriter { inner: tx })
+    let rxa = Box::new(WrapHalfReader { inner: rx });
+    let txa = Box::new(WrapHalfWriter { inner: tx });
+    (rxa, txa)
 }
 
 pub fn wrap_split_tcp_w(stream: TcpStream) -> (Box<dyn frame::RawReader + Send + Sync>, Box<dyn frame::RawWriter + Send + Sync>) {
     let (rx, tx) = tokio::io::split(stream);
-    let rxa = Box::new(WrapTcpReader { inner: rx });
-    let txa = Box::new(WrapTcpWriter { inner: tx });
+    let rxa = Box::new(WrapHalfReader { inner: rx });
+    let txa = Box::new(WrapHalfWriter { inner: tx });
     (rxa, txa)
 }
 
 pub fn wrap_split_tls_w(stream: TlsStream<TcpStream>) -> (Box<dyn frame::RawReader + Send + Sync>, Box<dyn frame::RawWriter + Send + Sync>) {
     let (rx, tx) = tokio::io::split(stream);
-    let rxa = Box::new(WrapTcpReader { inner: rx });
-    let txa = Box::new(WrapTcpWriter { inner: tx });
+    let rxa = Box::new(WrapHalfReader { inner: rx });
+    let txa = Box::new(WrapHalfWriter { inner: tx });
     (rxa, txa)
 }
 
@@ -92,9 +96,8 @@ impl WrapUdpConn {
 #[async_trait]
 impl frame::RawReader for WrapUdpConn {
     async fn read(&mut self, buf: &mut [u8]) -> tokio::io::Result<usize> {
-        log::info!("xx---->");
         let (n, _) = self.inner.recv_from(buf).await?;
-        log::info!("R --> {:?}", &buf[0..n]);
+        log::info!("R==>{}", n);
         Ok(n)
     }
 }
@@ -102,9 +105,8 @@ impl frame::RawReader for WrapUdpConn {
 #[async_trait]
 impl frame::RawWriter for WrapUdpConn {
     async fn write(&mut self, buf: &[u8]) -> tokio::io::Result<usize> {
-        log::info!("W --> {:?}", &buf);
         let n = self.inner.send_to(buf, self.remote).await?;
-        log::info!("W --> {} => {}", n, self.remote);
+        log::info!("W==>{}", n);
         Ok(n)
     }
     async fn shutdown(&mut self) {}

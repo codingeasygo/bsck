@@ -109,8 +109,10 @@ func runServer() {
 
 	dialer0 := dialer.NewPool("N0")
 	dialer0.Bootstrap(xmap.M{
-		"std":   1,
-		"udpgw": xmap.M{},
+		"std": 1,
+		"udpgw": xmap.M{
+			"dns": "192.168.1.1:53",
+		},
 	})
 	access0 := router.NewNormalAcessHandler("N0")
 	access0.LoginAccess["N1"] = "123"

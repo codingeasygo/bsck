@@ -68,9 +68,11 @@ func (u *UdpGwDialer) Bootstrap(options xmap.M) (err error) {
 		return
 	}
 	u.MaxAlive = maxaLive * time.Millisecond
-	u.DNS, err = net.ResolveUDPAddr("", dns)
-	if err != nil {
-		return
+	if len(dns) > 0 {
+		u.DNS, err = net.ResolveUDPAddr("", dns)
+		if err != nil {
+			return
+		}
 	}
 	u.waiter.Add(1)
 	go u.loopTimeout()
@@ -239,6 +241,7 @@ func (u *UdpGwConn) Write(p []byte) (n int, err error) { //recv
 		err = fmt.Errorf("data error")
 		return
 	}
+	fmt.Printf("--->%v\n", p)
 	flags := uint8(p[0])
 	conid := binary.BigEndian.Uint16(p[1:])
 	if flags&UDPGW_CLIENT_FLAG_KEEPALIVE == UDPGW_CLIENT_FLAG_KEEPALIVE {
@@ -257,6 +260,7 @@ func (u *UdpGwConn) Write(p []byte) (n int, err error) { //recv
 		addrPort = binary.BigEndian.Uint16(p[7:9])
 		data = p[9:]
 	}
+	fmt.Printf("-->%v,%v,%v\n", addrIP, addrPort, u.DNS)
 	u.connLock.RLock()
 	conn := u.connAll[conid]
 	u.connLock.RUnlock()
@@ -277,7 +281,7 @@ func (u *UdpGwConn) Write(p []byte) (n int, err error) { //recv
 		u.connAll[conid] = conn
 		opened := len(u.connAll)
 		u.connLock.Unlock()
-		DebugLog("UdpGwConn(%v) %v/%v udp conn(%v) dial to %v success", u.ID, opened, u.MaxConn, conn.conid, addr)
+		InfoLog("UdpGwConn(%v) %v/%v udp conn(%v) dial to %v success", u.ID, opened, u.MaxConn, conn.conid, addr)
 		u.waiter.Add(1)
 		go u.procRead(conn)
 	}
@@ -299,7 +303,7 @@ func (u *UdpGwConn) procRead(conn *udpGwRawConn) {
 		opened := len(u.connAll)
 		u.connLock.Unlock()
 		conn.raw.Close()
-		DebugLog("UdpGwConn(%v) %v/%v udp conn(%v) to %v is closed by %v", u.ID, opened, u.MaxConn, conn.conid, conn.addr, err)
+		InfoLog("UdpGwConn(%v) %v/%v udp conn(%v) to %v is closed by %v", u.ID, opened, u.MaxConn, conn.conid, conn.addr, err)
 	}()
 	buffer := make([]byte, u.MTU)
 	offset := 0
@@ -352,7 +356,7 @@ func (u *UdpGwConn) limitConn() {
 		}
 	}
 	if oldest != nil {
-		DebugLog("UdpGwConn(%v) closing connection %v by limit %v/%v", u.ID, oldest.addr, len(u.connAll), u.MaxConn)
+		InfoLog("UdpGwConn(%v) closing connection %v by limit %v/%v", u.ID, oldest.addr, len(u.connAll), u.MaxConn)
 		oldest.raw.Close()
 		delete(u.connAll, oldest.conid)
 	}

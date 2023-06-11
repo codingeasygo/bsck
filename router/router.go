@@ -998,9 +998,9 @@ func (r *Router) procConnRead(conn Conn) {
 			break
 		}
 		conn.SetRecvLast(time.Now())
-		if ShowLog > 1 {
-			DebugLog("Router(%v) read one command(%v) from %v", r.Name, frame, conn)
-		}
+		// if ShowLog > 1 {
+		InfoLog("Router(%v) read one command(%v) from %v", r.Name, frame, conn)
+		// }
 		switch frame.Cmd {
 		case CmdLoginChannel:
 			err = r.procLoginChannel(conn, frame)

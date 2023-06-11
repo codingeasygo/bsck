@@ -6,7 +6,7 @@ use std::{
     usize,
 };
 
-use async_trait::async_trait;
+use futures::Future;
 use smoltcp::{
     iface::{Interface, SocketHandle, SocketSet},
     phy::{Device, DeviceCapabilities, Medium, RxToken, TxToken},
@@ -15,15 +15,15 @@ use smoltcp::{
     wire::{IpAddress, IpEndpoint, IpListenEndpoint, Ipv4Address},
 };
 use tokio::{
-    io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
+    io::{AsyncRead, AsyncWrite},
     sync::{
         broadcast,
         mpsc::{self, Receiver, Sender},
-        Mutex, Notify, watch,
+        Mutex,
     },
 };
 
-use crate::{frame, router::Router, util::new_message_err};
+use crate::{frame, router::Router, util::new_message_err, wrapper::wrap_split};
 
 struct UdpGwFlag {
     v: u8,
@@ -84,18 +84,18 @@ impl UdpGwConn {
     }
 
     pub fn load<'a>(&mut self, buf: &'a [u8]) -> Option<(UdpGwFlag, &SocketHandle, &IpEndpoint, &'a [u8])> {
-        let flag = UdpGwFlag::new(buf[0]);
-        let id = u16::from_be_bytes([buf[1], buf[2]]);
+        let flag = UdpGwFlag::new(buf[2]);
+        let id = u16::from_be_bytes([buf[3], buf[4]]);
         let handle = self.handle_all.get(&id)?;
         let remote = self.ep_all.get(&id)?;
         if flag.is_ipv6() {
-            Some((flag, handle, remote, &buf[9..]))
+            Some((flag, handle, remote, &buf[11..]))
         } else {
-            Some((flag, handle, remote, &buf[21..]))
+            Some((flag, handle, remote, &buf[23..]))
         }
     }
 
-    pub fn put(&mut self, buf: &mut [u8], handle: &SocketHandle, local: &IpListenEndpoint, remote: &IpEndpoint)->usize {
+    pub fn put(&mut self, buf: &mut tokio::io::ReadBuf<'_>, handle: &SocketHandle, local: &IpListenEndpoint, remote: &IpEndpoint, data: usize) {
         let id = match self.id_all.get(local) {
             Some(v) => *v,
             None => {
@@ -110,21 +110,22 @@ impl UdpGwConn {
         if local.port == 53 {
             flag.mark_dns();
         }
-        let addr=match local.addr {
+        let addr = match &local.addr {
             Some(addr) => match addr {
-                IpAddress::Ipv4(addr) => addr.as_bytes()
+                IpAddress::Ipv4(addr) => addr.as_bytes(),
                 IpAddress::Ipv6(addr) => {
                     flag.mark_ipv6();
                     addr.as_bytes()
                 }
             },
-            None => &[0,0,0,0],
+            None => &[0, 0, 0, 0],
         };
-        buf[0] = flag.into();
-        buf[1..3].copy_from_slice(&id.to_be_bytes() as &[u8]);
-        buf[3..3 + addr.len()].copy_from_slice(addr);
-        buf[3+ addr.len()..5+ addr.len()].copy_from_slice(&local.port.to_be_bytes() as &[u8]);
-        5+ addr.len()
+        let frame_len = (5 + addr.len() + data) as u16;
+        buf.put_slice(&frame_len.to_le_bytes() as &[u8]);
+        buf.put_slice(&[flag.into()]);
+        buf.put_slice(&id.to_be_bytes() as &[u8]);
+        buf.put_slice(addr);
+        buf.put_slice(&local.port.to_be_bytes() as &[u8]);
     }
 
     pub fn recv_wake(&mut self) {
@@ -161,116 +162,75 @@ impl ConnHandle {
     }
 }
 
-// #[derive(Clone)]
-// pub struct Conn {
-//     gw: Arc<Mutex<GatewayInner>>,
-//     pub handle: ConnHandle,
-// }
-
-// impl Conn {
-//     fn new(gw: Arc<Mutex<GatewayInner>>, handle: ConnHandle) -> Self {
-//         Self { gw, handle }
-//     }
-// }
-
-// impl AsyncRead for Conn {
-//     fn poll_read(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &mut tokio::io::ReadBuf<'_>) -> Poll<std::io::Result<()>> {
-//         cx.waker().wake_by_ref()
-//         self.gw.lock().unwrap().poll_read(&self.handle, cx, buf)
-//     }
-// }
-
-// impl AsyncWrite for Conn {
-//     fn poll_write(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<std::io::Result<usize>> {
-//         self.gw.lock().unwrap().poll_write(&self.handle, cx, &buf)
-//     }
-
-//     fn poll_flush(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<std::io::Result<()>> {
-//         Poll::Ready(Ok(()))
-//     }
-
-//     fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), std::io::Error>> {
-//         self.gw.lock().unwrap().poll_shutdown(&self.handle, cx)
-//     }
-// }
-
 #[derive(Clone)]
 pub struct Conn {
     gw: Arc<Mutex<GatewayInner>>,
-    waker: ConnWaker,
     pub handle: ConnHandle,
 }
 
 impl Conn {
-    fn new(gw: Arc<Mutex<GatewayInner>>,  waker: ConnWaker, handle: ConnHandle) -> Self {
-        Self { gw, waker, handle }
+    fn new(gw: Arc<Mutex<GatewayInner>>, handle: ConnHandle) -> Self {
+        Self { gw, handle }
     }
 }
 
-#[async_trait]
-impl frame::RawReader for Conn {
-    async fn read(&mut self, buf: &mut [u8]) -> tokio::io::Result<usize> {
-        loop {
-            self.waker.recv_wait();
-            let n = self.gw.lock().await.read(&self.handle, &mut buf)?;
-            if n>0{
-                return Ok(n);
-            }
+impl AsyncRead for Conn {
+    fn poll_read(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &mut tokio::io::ReadBuf<'_>) -> Poll<std::io::Result<()>> {
+        let gw = self.gw.lock();
+        match Box::pin(gw).as_mut().poll(cx) {
+            Poll::Ready(mut gw) => gw.poll_read(&self.handle, cx, buf),
+            Poll::Pending => Poll::Pending,
         }
     }
 }
 
-#[async_trait]
-impl frame::RawWriter for Conn {
-    async fn write(&mut self, buf: &[u8]) -> tokio::io::Result<usize> {
-        loop{
-            {
-                let n=self.gw.lock().await.write(&self.handle,  &buf)?;
-                if n>0{
-                    return Ok(n);
-                }
-            }
-            self.waker.send_wait().await;
+impl AsyncWrite for Conn {
+    fn poll_write(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<std::io::Result<usize>> {
+        let gw = self.gw.lock();
+        match Box::pin(gw).as_mut().poll(cx) {
+            Poll::Ready(mut gw) => gw.poll_write(&self.handle, cx, buf),
+            Poll::Pending => Poll::Pending,
         }
     }
-    async fn shutdown(&mut self) {
-        self.gw.lock().await.shutdown(&self.handle);
+
+    fn poll_flush(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        Poll::Ready(Ok(()))
+    }
+
+    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), std::io::Error>> {
+        let gw = self.gw.lock();
+        match Box::pin(gw).as_mut().poll(cx) {
+            Poll::Ready(mut gw) => gw.poll_shutdown(&self.handle, cx),
+            Poll::Pending => Poll::Pending,
+        }
     }
 }
 
-
-#[derive(Clone)]
-struct WakerRecv {
-    recv: Arc<watch::Receiver<u8>>,
-    send: Arc<watch::Receiver<u8>>,
+struct ConnWaker {
+    recv: Option<Waker>,
+    send: Option<Waker>,
 }
 
-impl WakerRecv {
-    pub fn new(    recv: Arc<watch::Receiver<u8>>,send: Arc<watch::Receiver<u8>>) -> Self {
-        Self { recv,send }
+impl ConnWaker {
+    pub fn new() -> Self {
+        Self { recv: None, send: None }
     }
-    pub fn wake_recv(&mut self) {
-        self.recv.notify_one();
-    }
-    pub async fn recv_wait(&mut self) {
-        self.recv.notified().await
+    pub fn recv_wake(&mut self) {
+        match self.recv.take() {
+            Some(w) => w.wake(),
+            None => (),
+        }
     }
     pub fn send_wake(&mut self) {
-        self.send.notify_one();
-    }
-    pub async fn send_wait(&mut self) {
-        self.send.notified().await
+        match self.recv.take() {
+            Some(w) => w.wake(),
+            None => (),
+        }
     }
 }
-
-struct WakerSend {
-    recv: watch::Sender<u8>,
-    send: watch::Sender<u8>,
-}
-
 
 struct ConnInfo {
-    pub waker: WakerSend,
+    pub waker: ConnWaker,
 }
 
 impl ConnInfo {
@@ -381,36 +341,43 @@ impl GatewayInner {
         new_conn_h
     }
 
-    pub fn read(&mut self, handle: &ConnHandle, buf: &mut [u8]) -> tokio::io::Result<usize> {
+    pub fn poll_read(&mut self, handle: &ConnHandle, cx: &mut Context<'_>, buf: &mut tokio::io::ReadBuf<'_>) -> Poll<tokio::io::Result<()>> {
         match handle.proto {
             ConnProto::TCP => match self.conn_set.find_mut(&handle.handle) {
                 Some(v) => match v {
                     Socket::Tcp(v) => {
                         if v.can_recv() {
                             match v.recv(|data| {
-                                let max = buf.len();
+                                let max = buf.capacity();
                                 let n = data.len();
                                 if n > max {
-                                    buf[0..max].copy_from_slice(&data[0..max]);
-                                    (max, max)
+                                    buf.put_slice(&data[0..max]);
+                                    (max, ())
                                 } else {
-                                    buf[0..n].copy_from_slice(&data);
-                                    (n, n)
+                                    buf.put_slice(&data);
+                                    (n, ())
                                 }
                             }) {
-                                Ok(n) => {
+                                Ok(_) => {
                                     self.send_signal();
-                                    Ok(n)
+                                    log::info!("read---->{}", buf.filled().len());
+                                    Poll::Ready(Ok(()))
                                 }
-                                Err(e) => Err(new_message_err(e)),
+                                Err(e) => Poll::Ready(Err(new_message_err(e))),
                             }
                         } else {
-                            Ok(0)
+                            match self.conn_all.get_mut(&handle.handle) {
+                                Some(h) => {
+                                    h.waker.recv = Some(cx.waker().clone());
+                                    Poll::Pending
+                                }
+                                None => Poll::Ready(Err(new_message_err("invalid conn"))),
+                            }
                         }
                     }
-                    _ => Err(new_message_err("not supporeted conn")),
+                    _ => Poll::Ready(Err(new_message_err("not supporeted conn"))),
                 },
-                None => Err(new_message_err("conn is closed")),
+                None => Poll::Ready(Err(new_message_err("conn is closed"))),
             },
             ConnProto::UDPGW => {
                 for (h, v) in self.conn_set.iter_mut() {
@@ -421,20 +388,22 @@ impl GatewayInner {
                         let local = v.endpoint();
                         match v.recv() {
                             Ok((data, ep)) => {
-                                let n=self.udpgw.put(buf, &h, &local, &ep);
-                                buf[n..n+data.len()].copy_from_slice(data);
-                                return Ok(n+data.len());
+                                log::info!("xx-->{:?},{}", data, ep);
+                                self.udpgw.put(buf, &h, &local, &ep, data.len());
+                                buf.put_slice(data);
+                                return Poll::Ready(Ok(()));
                             }
                             Err(_) => v.close(),
                         }
                     }
                 }
-                Ok(0)
+                self.udpgw.waker.recv = Some(cx.waker().clone());
+                Poll::Pending
             }
         }
     }
 
-    pub fn write(&mut self, handle: &ConnHandle, buf: &[u8]) -> tokio::io::Result<usize> {
+    pub fn poll_write(&mut self, handle: &ConnHandle, cx: &mut Context<'_>, buf: &[u8]) -> Poll<tokio::io::Result<usize>> {
         match handle.proto {
             ConnProto::TCP => match self.conn_set.find_mut(&handle.handle) {
                 Some(v) => match v {
@@ -443,17 +412,23 @@ impl GatewayInner {
                             match v.send_slice(buf) {
                                 Ok(n) => {
                                     self.send_signal();
-                                    Ok(n)
+                                    Poll::Ready(Ok(n))
                                 }
-                                Err(e) => Err(new_message_err(e)),
+                                Err(e) => Poll::Ready(Err(new_message_err(e))),
                             }
                         } else {
-                            Ok(0)
+                            match self.conn_all.get_mut(&handle.handle) {
+                                Some(h) => {
+                                    h.waker.send = Some(cx.waker().clone());
+                                    Poll::Pending
+                                }
+                                None => Poll::Ready(Err(new_message_err("invalid conn"))),
+                            }
                         }
                     }
-                    _ => Err(new_message_err("not supporeted conn")),
+                    _ => Poll::Ready(Err(new_message_err("not supporeted conn"))),
                 },
-                None => Err(new_message_err("conn is closed")),
+                None => Poll::Ready(Err(new_message_err("conn is closed"))),
             },
             ConnProto::UDPGW => {
                 match self.udpgw.load(&buf) {
@@ -463,18 +438,33 @@ impl GatewayInner {
                                 if v.can_send() {
                                     _ = v.send_slice(data, remote.clone());
                                     self.send_signal();
-                                    Ok(buf.len())
+                                    Poll::Ready(Ok(buf.len()))
                                 } else {
-                                    Ok(0)
+                                    self.udpgw.waker.send = Some(cx.waker().clone());
+                                    Poll::Pending
                                 }
                             }
-                            _ => Ok(buf.len()), //drop
+                            _ => Poll::Ready(Ok(buf.len())), //drop
                         },
-                        None => Ok(buf.len()), //drop
+                        None => Poll::Ready(Ok(buf.len())), //drop
                     },
-                    None => Ok(buf.len()), //drop
+                    None => Poll::Ready(Ok(buf.len())), //drop
                 }
             }
+        }
+    }
+
+    pub fn poll_shutdown(&mut self, handle: &ConnHandle, _: &mut Context<'_>) -> Poll<tokio::io::Result<()>> {
+        match self.conn_set.find_mut(&handle.handle) {
+            Some(v) => match v {
+                Socket::Tcp(v) => {
+                    v.close();
+                    self.send_signal();
+                    Poll::Ready(Ok(()))
+                }
+                _ => Poll::Ready(Err(new_message_err("not supporeted conn"))),
+            },
+            None => Poll::Ready(Err(new_message_err("conn is closed"))),
         }
     }
 
@@ -554,13 +544,11 @@ impl Device for CacheDevice {
             None
         } else {
             let packet = self.cache.rx_all.remove(0);
-            log::info!("receive--> {:?}", packet);
             Some((CacheRxToken::new(packet), CacheTxToken::new(&mut self.cache)))
         }
     }
 
     fn transmit(&mut self, _timestamp: Instant) -> Option<Self::TxToken<'_>> {
-        log::info!("transmit-->");
         Some(CacheTxToken::new(&mut self.cache))
     }
 
@@ -646,11 +634,10 @@ where
         let mut device = CacheDevice::new(self.mtu);
         {
             let udpgw = Conn::new(self.inner.clone(), ConnHandle::udpgw());
-            let base_reader = RawConn::new(udpgw);
-            let base_writer = base_reader.clone();
+            let (udpgw_reader, udpgw_writer) = wrap_split(udpgw);
             let dial_addr = "tcp://udpgw";
             let dial_uri = self.remote.replace("${HOST}", &dial_addr);
-            self.router.dial_base(Box::new(base_reader), Box::new(base_writer), Arc::new(dial_uri)).await?;
+            self.router.dial_base(udpgw_reader, udpgw_writer, Arc::new(dial_uri)).await?;
         }
         loop {
             match delay.take() {
@@ -666,7 +653,6 @@ where
                     _ = self.stopper.recv() => Ok(0),
                 },
             }?;
-            log::info!("rx size is {}", device.rx_size());
             let mut gw = self.inner.lock().await;
             while device.rx_size() > 0 {
                 let ch_all = gw.poll(&mut device);
@@ -675,14 +661,12 @@ where
                     let dial_addr = format!("tcp://{}", ch.local);
                     let dial_uri = self.remote.replace("${HOST}", &dial_addr);
                     let raw_conn = Conn::new(self.inner.clone(), ch.clone());
-                    let base_reader = RawConn::new(raw_conn);
-                    let base_writer = base_reader.clone();
-                    let result = self.router.dial_base(Box::new(base_reader), Box::new(base_writer), Arc::new(dial_uri)).await;
+                    let (raw_reader, raw_writer) = wrap_split(raw_conn);
+                    let result = self.router.dial_base(raw_reader, raw_writer, Arc::new(dial_uri)).await;
                     if result.is_err() {
-                        _ = gw.close(&ch);
+                        _ = gw.shutdown(&ch);
                     }
                 }
-                log::info!("tx size is {}", device.rx_size());
                 device.write(&mut self.writer).await?;
             }
             delay = gw.delay();

@@ -8,6 +8,7 @@ use hyper::service::Service;
 use hyper::{Request, Response, StatusCode};
 use log::{info, warn};
 use smoltcp::iface::{Config, Interface};
+use smoltcp::wire::{IpAddress, IpCidr};
 use std::os::fd::{AsRawFd, RawFd};
 use std::pin::Pin;
 use std::time::Duration;
@@ -292,6 +293,9 @@ impl Proxy {
             let mut config = Config::new(smoltcp::wire::HardwareAddress::Ip);
             config.random_seed = rand::random();
             let mut iface = Interface::new(config, &mut device);
+            iface.update_ip_addrs(|ip_addrs| {
+                ip_addrs.push(IpCidr::new(IpAddress::v4(10, 1, 0, 2), 24)).unwrap();
+            });
             iface.set_any_ip(true);
             self.gateway.start(self.name.clone(), iface, ln_reader, ln_writer, remote).await;
             Ok(addr)
