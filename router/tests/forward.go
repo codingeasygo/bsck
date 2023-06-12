@@ -145,8 +145,8 @@ func runServer() {
 	proxy0 := router.NewProxy("N0", access0)
 	proxy0.Router.BufferSize = 2 * 1024
 	proxy0.Forward.BufferSize = 2 * 1024
-	proxy0.Cert = "../../certs/server.crt"
-	proxy0.Key = "../../certs/server.key"
+	proxy0.Cert = "certs/server.crt"
+	proxy0.Key = "certs/server.key"
 	proxy0.Heartbeat = time.Second
 
 	access1 := router.NewNormalAcessHandler("N1")
@@ -173,7 +173,7 @@ func runServer() {
 	_, _, err = proxy1.Login(xmap.M{
 		"remote": "quic://127.0.0.1:13100",
 		"token":  "123",
-		"tls_ca": "../../certs/rootCA.crt",
+		"tls_ca": "certs/rootCA.crt",
 	})
 	if err != nil {
 		panic(err)

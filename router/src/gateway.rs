@@ -323,7 +323,7 @@ impl GatewayInner {
         let conn_set = SocketSet::new(vec![]);
         let conn_all = HashMap::new();
         let udpgw_all = UdpGw::new();
-        Self { mtu: 2000, conn_set, conn_all, conn_seq: ConnSeq::new(), udpgw_all, udpgw_conn: None, name, iface, signal }
+        Self { mtu: 2048, conn_set, conn_all, conn_seq: ConnSeq::new(), udpgw_all, udpgw_conn: None, name, iface, signal }
     }
 
     pub fn delay(&mut self) -> Option<Duration> {
@@ -379,6 +379,9 @@ impl GatewayInner {
                                 },
                             }
                         }
+                        if !v.is_open() {
+                            close_conn_h.push(h);
+                        }
                     }
                     None => {
                         new_udpgw = true;
@@ -416,13 +419,13 @@ impl GatewayInner {
                         if v.can_send() {
                             match v.send(|data| {
                                 if data.len() < s.mtu {
-                                    return (0, 0);
+                                    return (0, 1);
                                 }
                                 match c.reader.inner.try_recv() {
                                     Ok(buf) => {
                                         let n = buf.len();
                                         data[0..n].copy_from_slice(&buf);
-                                        (n, 0)
+                                        (n, 1)
                                     }
                                     Err(e) => match e {
                                         mpsc::error::TryRecvError::Empty => (0, 0),
@@ -431,9 +434,9 @@ impl GatewayInner {
                                 }
                             }) {
                                 Ok(code) => {
-                                    if code == 0 {
+                                    if code > 0 {
                                         _ = signal.try_send(1);
-                                    } else {
+                                    } else if code < 0 {
                                         v.close();
                                     }
                                 }
@@ -646,10 +649,10 @@ where
         let mut gw = self.inner.lock().await;
         loop {
             match delay.take() {
-                Some(delay) => tokio::select! {
+                Some(_) => tokio::select! {
                     v = device.read(&mut self.reader) => v,
                     _ = self.signal.recv() => Ok(0),
-                    _ = tokio::time::sleep(tokio::time::Duration::from_micros(delay.micros())) => Ok(0),
+                    _ = tokio::time::sleep(tokio::time::Duration::from_millis(100)) => Ok(0),
                     _ = self.stopper.recv() => Ok(0),
                 },
                 None => tokio::select! {

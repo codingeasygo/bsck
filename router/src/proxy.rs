@@ -196,7 +196,7 @@ impl Proxy {
                 match self.login(option.clone()).await {
                     Ok(_) => (),
                     Err(e) => {
-                        warn!("Proxy({}) keep login fail with {:?}", self.name, e);
+                        warn!("Proxy({}) keep login by {:?} fail with {:?}", self.name, option, e);
                         break;
                     }
                 }
