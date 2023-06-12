@@ -7,7 +7,7 @@ mod tests {
         proxy::Proxy,
         router::{NormalAcessHandler, Router},
         util::JSON,
-        wrapper::{wrap_channel, wrap_split_tcp_w},
+        wrapper::{wrap_channel_w, wrap_split_tcp_w},
     };
     use tokio::net::TcpStream;
 
@@ -28,8 +28,8 @@ mod tests {
         assert!(res.is_ok(), "{:?}", res);
         // tokio::time::sleep(Duration::from_millis(1000000)).await;
         for i in 0..10 {
-            let (rxb, mut txa) = wrap_channel();
-            let (mut rxa, txb) = wrap_channel();
+            let (rxb, mut txa) = wrap_channel_w(3);
+            let (mut rxa, txb) = wrap_channel_w(3);
             let conn = router.dial_base(rxb, txb, dial_uri.clone()).await.unwrap();
             conn.wait().await.unwrap();
             println!("forward is started");

@@ -33,7 +33,6 @@ webpki = { package = "rustls-webpki", version = "0.100.0", features = ["alloc", 
 webpki-roots = "0.23.0"
 smoltcp = { version = "0.9.1", path = "../../smoltcp" }
 rand = "0.8.5"
-tun = "0.5.5"
 
 [dev-dependencies]
 tokio-pipe = "0.2.12"

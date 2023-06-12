@@ -71,6 +71,11 @@ func (t *TCPDialer) Dial(channel Channel, sid uint16, uri string) (raw Conn, err
 				host += ":443"
 			}
 		}
+		if uri == "tcp://10.1.0.2:322" {
+			// host = "127.0.0.1:13200"
+			raw = NewEchoReadWriteCloser()
+			return
+		}
 		raw, err = dialer.Dial("tcp", host)
 	}
 	return

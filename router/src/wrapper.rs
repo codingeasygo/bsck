@@ -21,7 +21,6 @@ where
 {
     async fn read(&mut self, buf: &mut [u8]) -> tokio::io::Result<usize> {
         let n = self.inner.read(buf).await?;
-        log::info!("read {:?}", &buf[0..n]);
         Ok(n)
     }
 }
@@ -50,7 +49,17 @@ where
 // unsafe impl Send for WrapTcpWriter {}
 // unsafe impl Sync for WrapTcpWriter {}
 
-pub fn wrap_split<T>(stream: T) -> (Box<dyn frame::RawReader + Send + Sync>, Box<dyn frame::RawWriter + Send + Sync>)
+pub fn wrap_split<T>(stream: T) -> (WrapHalfReader<T>, WrapHalfWriter<T>)
+where
+    T: AsyncRead + AsyncWrite + Send + Sync + 'static,
+{
+    let (rx, tx) = tokio::io::split(stream);
+    let rxa = WrapHalfReader { inner: rx };
+    let txa = WrapHalfWriter { inner: tx };
+    (rxa, txa)
+}
+
+pub fn wrap_split_w<T>(stream: T) -> (Box<dyn frame::RawReader + Send + Sync + 'static>, Box<dyn frame::RawWriter + Send + Sync + 'static>)
 where
     T: AsyncRead + AsyncWrite + Send + Sync + 'static,
 {
@@ -97,7 +106,7 @@ impl WrapUdpConn {
 impl frame::RawReader for WrapUdpConn {
     async fn read(&mut self, buf: &mut [u8]) -> tokio::io::Result<usize> {
         let (n, _) = self.inner.recv_from(buf).await?;
-        log::info!("R==>{}", n);
+        // println!("R==>{},{:?}", frome, &buf[0..n]);
         Ok(n)
     }
 }
@@ -105,8 +114,8 @@ impl frame::RawReader for WrapUdpConn {
 #[async_trait]
 impl frame::RawWriter for WrapUdpConn {
     async fn write(&mut self, buf: &[u8]) -> tokio::io::Result<usize> {
+        // println!("W==>{},{:?}", self.remote, &buf);
         let n = self.inner.send_to(buf, self.remote).await?;
-        log::info!("W==>{}", n);
         Ok(n)
     }
     async fn shutdown(&mut self) {}
@@ -206,8 +215,15 @@ unsafe impl Sync for WrapChannelReader {}
 unsafe impl Send for WrapChannelWriter {}
 unsafe impl Sync for WrapChannelWriter {}
 
-pub fn wrap_channel() -> (Box<dyn frame::RawReader + Send + Sync>, Box<dyn frame::RawWriter + Send + Sync>) {
-    let (tx, rx) = mpsc::channel::<Vec<u8>>(16);
+pub fn wrap_channel(buffer: usize) -> (WrapChannelReader, WrapChannelWriter) {
+    let (tx, rx) = mpsc::channel::<Vec<u8>>(buffer);
+    let rxa = WrapChannelReader { inner: rx };
+    let txa = WrapChannelWriter { inner: tx };
+    (rxa, txa)
+}
+
+pub fn wrap_channel_w(buffer: usize) -> (Box<dyn frame::RawReader + Send + Sync>, Box<dyn frame::RawWriter + Send + Sync>) {
+    let (tx, rx) = mpsc::channel::<Vec<u8>>(buffer);
     let rxa = Box::new(WrapChannelReader { inner: rx });
     let txa = Box::new(WrapChannelWriter { inner: tx });
     (rxa, txa)

@@ -10,7 +10,6 @@ extern crate tun;
 fn main() {
     let mut config = tun::Configuration::default();
     config.address((10, 1, 0, 1)).netmask((255, 255, 255, 0)).up();
-
     let dev = tun::create(&config).unwrap();
     let (mut dev_reader, mut dev_writer) = dev.split();
 

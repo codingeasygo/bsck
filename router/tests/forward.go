@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"net"
@@ -36,7 +38,12 @@ func main() {
 		case "get":
 			benchGet(os.Args[3])
 		}
-
+	case "dns":
+		runDnsServer()
+	case "speed":
+		testSpeed(os.Args[2])
+	case "tps":
+		testTPS(os.Args[2])
 	}
 }
 
@@ -50,32 +57,45 @@ func runEchoServer(addr string) {
 		if err != nil {
 			panic(err)
 		}
+		fmt.Printf("echo accept from %v\n", conn.RemoteAddr())
 		go io.Copy(conn, conn)
 	}
 }
 
-// func runDumServer(addr string) {
-// 	ln, err := net.Listen("tcp", addr)
-// 	if err != nil {
-// 		panic(err)
-// 	}
-// 	for {
-// 		conn, err := ln.Accept()
-// 		if err != nil {
-// 			panic(err)
-// 		}
-// 		go func(c net.Conn) {
-// 			buf := make([]byte, 1024)
-// 			for {
-// 				n, xerr := c.Read(buf)
-// 				if xerr != nil {
-// 					break
-// 				}
-// 				fmt.Printf("R==>%v\n", buf[:n])
-// 			}
-// 		}(conn)
-// 	}
-// }
+func runDnsServer() {
+	laddr, _ := net.ResolveUDPAddr("udp", "127.0.0.1:53")
+	ln, err := net.ListenUDP("udp", laddr)
+	if err != nil {
+		panic(err)
+	}
+	buf := make([]byte, 2048)
+	connAll := map[string]net.Conn{}
+	for {
+		n, fromAddr, err := ln.ReadFromUDP(buf)
+		if err != nil {
+			break
+		}
+		remote := connAll[fromAddr.String()]
+		if remote == nil {
+			remote, err = net.Dial("udp", "10.1.0.2:53")
+			if err != nil {
+				panic(err)
+			}
+			connAll[fromAddr.String()] = remote
+			go func(r net.Conn, toAddr *net.UDPAddr) {
+				buf := make([]byte, 2048)
+				for {
+					n, err := r.Read(buf)
+					if err != nil {
+						break
+					}
+					ln.WriteToUDP(buf[0:n], toAddr)
+				}
+			}(remote, fromAddr)
+		}
+		remote.Write(buf[0:n])
+	}
+}
 
 func runProxyServer(addr, target string) {
 	ln, err := net.Listen("tcp", addr)
@@ -212,4 +232,116 @@ func benchGet(uri string) {
 		waiter.Wait()
 		time.Sleep(time.Second)
 	}
+}
+
+func speedConn(conn net.Conn, action string) (err error) {
+	buf := make([]byte, 8*1024)
+	for i := uint16(0); i < 4*1024; i++ {
+		binary.BigEndian.PutUint16(buf[2*i:], i)
+	}
+	n := 0
+	seq := uint64(0)
+	lastAll := []int64{}
+	lastTime := time.Now()
+	lastBytes := int64(0)
+	for {
+		if action == "R" {
+			n, err = conn.Read(buf)
+		} else {
+			seq++
+			n, err = conn.Write(buf)
+		}
+		if err != nil {
+			break
+		}
+		lastBytes += int64(n)
+		if time.Since(lastTime) > time.Second {
+			lastAll = append(lastAll, lastBytes)
+			if len(lastAll) > 5 {
+				lastAll = lastAll[1:]
+			}
+			lastBytes = 0
+			lastTime = time.Now()
+			lastTotal := int64(0)
+			for _, v := range lastAll {
+				lastTotal += v
+			}
+			lastAvg := lastTotal / int64(len(lastAll))
+			if lastAvg > 1024*1024*1024 {
+				fmt.Printf("%v %v GB/s\n", action, float64(lastAvg)/1024/1024/1024)
+			} else if lastAvg > 1024*1024 {
+				fmt.Printf("%v %v MB/s\n", action, float64(lastAvg)/1024/1024)
+			} else if lastAvg > 1024 {
+				fmt.Printf("%v %v KB/s\n", action, float64(lastAvg)/1024)
+			} else {
+				fmt.Printf("%v %v B/s\n", action, float64(lastAvg))
+			}
+		}
+	}
+	return
+}
+
+func testSpeed(addr string) {
+	conn, err := net.Dial("tcp", addr)
+	if err != nil {
+		panic(err)
+	}
+	go speedConn(conn, "W")
+	speedConn(conn, "R")
+}
+
+func testTPS(addr string) {
+	conn, err := net.Dial("tcp", addr)
+	if err != nil {
+		panic(err)
+	}
+	mtu := 8 * 1024
+	out := make([]byte, mtu)
+	in := make([]byte, mtu)
+	n := 0
+	seq := uint64(0)
+	action := "T"
+	lastAll := []int64{}
+	lastTime := time.Now()
+	lastBytes := int64(0)
+	for {
+		seq++
+		binary.BigEndian.PutUint64(out, seq)
+		n, err = conn.Write(out)
+		if err != nil {
+			break
+		}
+		err = xio.FullBuffer(conn, in, uint32(len(in)), nil)
+		if err != nil {
+			break
+		}
+		if !bytes.Equal(out, in) {
+			err = fmt.Errorf("%v", "not equal")
+			break
+		}
+		lastBytes += int64(n)
+		if time.Since(lastTime) > time.Second {
+			lastAll = append(lastAll, lastBytes)
+			if len(lastAll) > 5 {
+				lastAll = lastAll[1:]
+			}
+			lastBytes = 0
+			lastTime = time.Now()
+			lastTotal := int64(0)
+			for _, v := range lastAll {
+				lastTotal += v
+			}
+			lastAvg := lastTotal / int64(len(lastAll))
+			if lastAvg > 1024*1024*1024 {
+				fmt.Printf("%v %v GB/s\n", action, float64(lastAvg)/1024/1024/1024)
+			} else if lastAvg > 1024*1024 {
+				fmt.Printf("%v %v MB/s\n", action, float64(lastAvg)/1024/1024)
+			} else if lastAvg > 1024 {
+				fmt.Printf("%v %v KB/s\n", action, float64(lastAvg)/1024)
+			} else {
+				fmt.Printf("%v %v B/s\n", action, float64(lastAvg))
+			}
+		}
+	}
+	fmt.Println("err-->", err)
 }

@@ -2,14 +2,14 @@
 mod tests {
 
     use log::info;
-    use router::{log::init_simple_log, wrapper::wrap_channel};
+    use router::{log::init_simple_log, wrapper::wrap_channel_w};
 
     #[tokio::test]
     async fn test_wrap_channel() {
         init_simple_log(0).unwrap();
         info!("{}", "test_wrap_channel");
         let mut handles = vec![];
-        let (mut rx, mut tx) = wrap_channel();
+        let (mut rx, mut tx) = wrap_channel_w(3);
         handles.push(tokio::spawn(async move {
             for _ in 0..10 {
                 _ = tx.write(String::from("abc").as_bytes()).await;

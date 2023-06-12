@@ -10,6 +10,10 @@ json = "0.12.4"
 router = { version = "0.1.0", path = "../router" }
 serde_json = "1.0.96"
 tokio = "1.28.1"
+smoltcp = { version = "0.9.1", path = "../../smoltcp" }
+tun = { version = "0.5.5", features = ["async"] }
+async-trait = "0.1.68"
+log = "0.4.19"
 
 
 [profile.dev]

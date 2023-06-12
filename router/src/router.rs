@@ -500,7 +500,10 @@ impl Conn {
             // let start_time = now();
             // info!("{} task is  start {}", conn.to_string(), start_time);
             let err = match task {
-                Ok(mut t) => t.call(job).await,
+                Ok(mut t) => {
+                    _ = t.call(job).await; //ignore task write error
+                    Ok(())
+                }
                 Err(e) => Err(e),
             };
             // let used_time = now() - start_time;

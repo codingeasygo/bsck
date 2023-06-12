@@ -241,7 +241,6 @@ func (u *UdpGwConn) Write(p []byte) (n int, err error) { //recv
 		err = fmt.Errorf("data error")
 		return
 	}
-	fmt.Printf("--->%v\n", p)
 	flags := uint8(p[0])
 	conid := binary.BigEndian.Uint16(p[1:])
 	if flags&UDPGW_CLIENT_FLAG_KEEPALIVE == UDPGW_CLIENT_FLAG_KEEPALIVE {
@@ -260,7 +259,6 @@ func (u *UdpGwConn) Write(p []byte) (n int, err error) { //recv
 		addrPort = binary.BigEndian.Uint16(p[7:9])
 		data = p[9:]
 	}
-	fmt.Printf("-->%v,%v,%v\n", addrIP, addrPort, u.DNS)
 	u.connLock.RLock()
 	conn := u.connAll[conid]
 	u.connLock.RUnlock()

@@ -1,12 +1,6 @@
-use std::{
-    collections::HashMap,
-    pin::Pin,
-    sync::Arc,
-    task::{Context, Poll, Waker},
-    usize,
-};
+use std::{collections::HashMap, io::ErrorKind, sync::Arc, usize};
 
-use futures::Future;
+use async_trait::async_trait;
 use smoltcp::{
     iface::{Interface, SocketHandle, SocketSet},
     phy::{Device, DeviceCapabilities, Medium, RxToken, TxToken},
@@ -14,16 +8,13 @@ use smoltcp::{
     time::{Duration, Instant},
     wire::{IpAddress, IpEndpoint, IpListenEndpoint, Ipv4Address},
 };
-use tokio::{
-    io::{AsyncRead, AsyncWrite},
-    sync::{
-        broadcast,
-        mpsc::{self, Receiver, Sender},
-        Mutex,
-    },
+use tokio::sync::{
+    broadcast,
+    mpsc::{self, Receiver, Sender},
+    Mutex,
 };
 
-use crate::{frame, router::Router, util::new_message_err, wrapper::wrap_split};
+use crate::{frame, router::Router, util::ConnSeq};
 
 struct UdpGwFlag {
     v: u8,
@@ -65,17 +56,28 @@ impl Into<u8> for UdpGwFlag {
     }
 }
 
-struct UdpGwConn {
-    ep_all: HashMap<u16, IpEndpoint>,
-    id_all: HashMap<IpListenEndpoint, u16>,
-    handle_all: HashMap<u16, SocketHandle>,
-    id_seq: u16,
-    waker: ConnWaker,
+#[derive(Clone, PartialEq, Eq, Hash)]
+struct UdpGwEndpoint {
+    local: IpListenEndpoint,
+    remote: IpEndpoint,
 }
 
-impl UdpGwConn {
+impl UdpGwEndpoint {
+    pub fn new(local: IpListenEndpoint, remote: IpEndpoint) -> Self {
+        Self { local, remote }
+    }
+}
+
+struct UdpGw {
+    ep_all: HashMap<u16, UdpGwEndpoint>,
+    id_all: HashMap<UdpGwEndpoint, u16>,
+    handle_all: HashMap<u16, SocketHandle>,
+    id_seq: u16,
+}
+
+impl UdpGw {
     pub fn new() -> Self {
-        Self { ep_all: HashMap::new(), id_all: HashMap::new(), handle_all: HashMap::new(), id_seq: 0, waker: ConnWaker::new() }
+        Self { ep_all: HashMap::new(), id_all: HashMap::new(), handle_all: HashMap::new(), id_seq: 0 }
     }
 
     pub fn new_cid(&mut self) -> u16 {
@@ -83,25 +85,26 @@ impl UdpGwConn {
         self.id_seq
     }
 
-    pub fn load<'a>(&mut self, buf: &'a [u8]) -> Option<(UdpGwFlag, &SocketHandle, &IpEndpoint, &'a [u8])> {
+    pub fn parse_frame<'a>(&mut self, buf: &'a [u8]) -> Option<(UdpGwFlag, &SocketHandle, &UdpGwEndpoint, &'a [u8])> {
         let flag = UdpGwFlag::new(buf[2]);
         let id = u16::from_be_bytes([buf[3], buf[4]]);
         let handle = self.handle_all.get(&id)?;
-        let remote = self.ep_all.get(&id)?;
+        let ep = self.ep_all.get(&id)?;
         if flag.is_ipv6() {
-            Some((flag, handle, remote, &buf[11..]))
+            Some((flag, handle, ep, &buf[23..]))
         } else {
-            Some((flag, handle, remote, &buf[23..]))
+            Some((flag, handle, ep, &buf[11..]))
         }
     }
 
-    pub fn put(&mut self, buf: &mut tokio::io::ReadBuf<'_>, handle: &SocketHandle, local: &IpListenEndpoint, remote: &IpEndpoint, data: usize) {
-        let id = match self.id_all.get(local) {
+    pub fn create_frame(&mut self, handle: &SocketHandle, local: &IpListenEndpoint, remote: &IpEndpoint, data: &[u8]) -> Vec<u8> {
+        let ep = UdpGwEndpoint::new(local.clone(), remote.clone());
+        let id = match self.id_all.get(&ep) {
             Some(v) => *v,
             None => {
                 let new_id = self.new_cid();
-                self.ep_all.insert(new_id, remote.clone());
-                self.id_all.insert(local.clone(), new_id);
+                self.ep_all.insert(new_id, ep.clone());
+                self.id_all.insert(ep, new_id);
                 self.handle_all.insert(new_id, handle.clone());
                 new_id
             }
@@ -120,19 +123,16 @@ impl UdpGwConn {
             },
             None => &[0, 0, 0, 0],
         };
-        let frame_len = (5 + addr.len() + data) as u16;
-        buf.put_slice(&frame_len.to_le_bytes() as &[u8]);
-        buf.put_slice(&[flag.into()]);
-        buf.put_slice(&id.to_be_bytes() as &[u8]);
-        buf.put_slice(addr);
-        buf.put_slice(&local.port.to_be_bytes() as &[u8]);
-    }
-
-    pub fn recv_wake(&mut self) {
-        self.waker.recv_wake();
-    }
-    pub fn send_wake(&mut self) {
-        self.waker.send_wake();
+        let addr_len = addr.len();
+        let frame_len = (5 + addr_len + data.len()) as u16;
+        let mut buf = vec![0u8; (frame_len + 2) as usize];
+        buf[0..2].copy_from_slice(&frame_len.to_le_bytes() as &[u8]);
+        buf[2..3].copy_from_slice(&[flag.into()]);
+        buf[3..5].copy_from_slice(&id.to_be_bytes() as &[u8]);
+        buf[5..5 + addr_len].copy_from_slice(addr);
+        buf[5 + addr_len..7 + addr_len].copy_from_slice(&local.port.to_be_bytes() as &[u8]);
+        buf[7 + addr_len..].copy_from_slice(&data);
+        buf
     }
 }
 
@@ -163,93 +163,156 @@ impl ConnHandle {
 }
 
 #[derive(Clone)]
+pub struct ConnMeta {
+    pub id: u16,
+    pub handle: SocketHandle,
+    pub proto: ConnProto,
+    pub local: IpEndpoint,
+    pub remote: IpEndpoint,
+}
+
+impl ConnMeta {
+    pub fn new(id: u16, handle: SocketHandle, proto: ConnProto, local: IpEndpoint, remote: IpEndpoint) -> Self {
+        Self { id, handle, proto, local, remote }
+    }
+
+    pub fn udpgw() -> Self {
+        let local = IpEndpoint::new(IpAddress::v4(0, 0, 0, 0), 0);
+        let remote = IpEndpoint::new(IpAddress::v4(0, 0, 0, 0), 0);
+        ConnMeta { id: 0, handle: SocketHandle::default(), proto: ConnProto::UDPGW, local, remote }
+    }
+
+    pub fn get_handle(&self) -> ConnHandle {
+        ConnHandle::new(self.proto.clone(), self.handle.clone(), self.local.clone(), self.remote.clone())
+    }
+
+    pub fn dial_uri(&self) -> String {
+        match self.proto {
+            ConnProto::TCP => format!("tcp://{}", self.local),
+            ConnProto::UDPGW => format!("tcp://udpgw"),
+        }
+    }
+
+    pub fn to_string(&self) -> String {
+        match self.proto {
+            ConnProto::TCP => format!("TCP({},{}<=>{})", self.id, self.local, self.remote),
+            ConnProto::UDPGW => format!("UDPGW({})", self.id),
+        }
+    }
+}
+
+pub struct ConnReader {
+    pub meta: Arc<ConnMeta>,
+    pub inner: Receiver<Vec<u8>>,
+}
+
+impl ConnReader {
+    pub fn new(meta: Arc<ConnMeta>, inner: Receiver<Vec<u8>>) -> Self {
+        Self { meta, inner }
+    }
+
+    pub fn get_handle(&self) -> ConnHandle {
+        self.meta.get_handle()
+    }
+}
+
+#[async_trait]
+impl frame::RawReader for ConnReader {
+    async fn read(&mut self, buf: &mut [u8]) -> tokio::io::Result<usize> {
+        match self.inner.recv().await {
+            Some(data) => {
+                let n = data.len();
+                if n < 1 {
+                    Err(std::io::Error::new(ErrorKind::UnexpectedEof, "EOF"))
+                } else {
+                    buf[..n].copy_from_slice(&data);
+                    Ok(n)
+                }
+            }
+            None => Err(std::io::Error::new(ErrorKind::Other, "closed")),
+        }
+    }
+}
+
+pub struct ConnWriter {
+    pub meta: Arc<ConnMeta>,
+    pub signal: Sender<u8>,
+    pub inner: Sender<Vec<u8>>,
+}
+
+impl ConnWriter {
+    pub fn new(meta: Arc<ConnMeta>, signal: Sender<u8>, inner: Sender<Vec<u8>>) -> Self {
+        Self { meta, signal, inner }
+    }
+
+    pub fn get_handle(&self) -> ConnHandle {
+        self.meta.get_handle()
+    }
+}
+
+#[async_trait]
+impl frame::RawWriter for ConnWriter {
+    async fn write(&mut self, buf: &[u8]) -> tokio::io::Result<usize> {
+        match self.inner.send(Vec::from(buf)).await {
+            Ok(_) => {
+                _ = self.signal.try_send(1);
+                Ok(buf.len())
+            }
+            Err(e) => Err(std::io::Error::new(ErrorKind::Other, e)),
+        }
+    }
+    async fn shutdown(&mut self) {
+        _ = self.inner.send(Vec::from([])).await;
+    }
+}
+
 pub struct Conn {
-    gw: Arc<Mutex<GatewayInner>>,
-    pub handle: ConnHandle,
+    pub meta: Arc<ConnMeta>,
+    pub reader: ConnReader,
+    pub writer: ConnWriter,
 }
 
 impl Conn {
-    fn new(gw: Arc<Mutex<GatewayInner>>, handle: ConnHandle) -> Self {
-        Self { gw, handle }
-    }
-}
-
-impl AsyncRead for Conn {
-    fn poll_read(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &mut tokio::io::ReadBuf<'_>) -> Poll<std::io::Result<()>> {
-        let gw = self.gw.lock();
-        match Box::pin(gw).as_mut().poll(cx) {
-            Poll::Ready(mut gw) => gw.poll_read(&self.handle, cx, buf),
-            Poll::Pending => Poll::Pending,
-        }
-    }
-}
-
-impl AsyncWrite for Conn {
-    fn poll_write(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<std::io::Result<usize>> {
-        let gw = self.gw.lock();
-        match Box::pin(gw).as_mut().poll(cx) {
-            Poll::Ready(mut gw) => gw.poll_write(&self.handle, cx, buf),
-            Poll::Pending => Poll::Pending,
-        }
+    pub fn new(meta: Arc<ConnMeta>, reader: ConnReader, writer: ConnWriter) -> Self {
+        Self { meta, reader, writer }
     }
 
-    fn poll_flush(self: Pin<&mut Self>, _: &mut Context<'_>) -> Poll<std::io::Result<()>> {
-        Poll::Ready(Ok(()))
+    pub fn pipe(meta: Arc<ConnMeta>, signal: Sender<u8>, buffer: usize) -> (Conn, Conn) {
+        let (txa, rxb) = mpsc::channel::<Vec<u8>>(buffer);
+        let (txb, rxa) = mpsc::channel::<Vec<u8>>(buffer);
+        let ra = ConnReader::new(meta.clone(), rxa);
+        let rb = ConnReader::new(meta.clone(), rxb);
+        let wa = ConnWriter::new(meta.clone(), signal.clone(), txa);
+        let wb = ConnWriter::new(meta.clone(), signal, txb);
+        let a = Self::new(meta.clone(), ra, wa);
+        let b = Self::new(meta.clone(), rb, wb);
+        (a, b)
     }
 
-    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), std::io::Error>> {
-        let gw = self.gw.lock();
-        match Box::pin(gw).as_mut().poll(cx) {
-            Poll::Ready(mut gw) => gw.poll_shutdown(&self.handle, cx),
-            Poll::Pending => Poll::Pending,
-        }
-    }
-}
-
-struct ConnWaker {
-    recv: Option<Waker>,
-    send: Option<Waker>,
-}
-
-impl ConnWaker {
-    pub fn new() -> Self {
-        Self { recv: None, send: None }
-    }
-    pub fn recv_wake(&mut self) {
-        match self.recv.take() {
-            Some(w) => w.wake(),
-            None => (),
-        }
-    }
-    pub fn send_wake(&mut self) {
-        match self.recv.take() {
-            Some(w) => w.wake(),
-            None => (),
-        }
-    }
-}
-
-struct ConnInfo {
-    pub waker: ConnWaker,
-}
-
-impl ConnInfo {
-    pub fn new(_: ConnHandle) -> Self {
-        Self { waker: ConnWaker::new() }
+    pub fn get_handle(&self) -> ConnHandle {
+        self.meta.get_handle()
     }
 
-    pub fn recv_wake(&mut self) {
-        self.waker.recv_wake();
+    pub fn dial_uri(&self) -> String {
+        self.meta.dial_uri()
     }
-    pub fn send_wake(&mut self) {
-        self.waker.send_wake();
+
+    pub fn split(self) -> (ConnReader, ConnWriter) {
+        (self.reader, self.writer)
+    }
+
+    pub fn to_string(&self) -> String {
+        self.meta.to_string()
     }
 }
 
 struct GatewayInner {
+    mtu: usize,
     conn_set: SocketSet<'static>,
-    conn_all: HashMap<SocketHandle, ConnInfo>,
-    udpgw: UdpGwConn,
+    conn_all: HashMap<SocketHandle, Conn>,
+    conn_seq: ConnSeq,
+    udpgw_all: UdpGw,
+    udpgw_conn: Option<Conn>,
     pub name: Arc<String>,
     pub iface: Interface,
     pub signal: Sender<u8>,
@@ -259,227 +322,175 @@ impl GatewayInner {
     pub fn new(name: Arc<String>, iface: Interface, signal: Sender<u8>) -> Self {
         let conn_set = SocketSet::new(vec![]);
         let conn_all = HashMap::new();
-        let udpgw = UdpGwConn::new();
-        Self { conn_set, conn_all, udpgw, name, iface, signal }
-    }
-
-    fn send_signal(&self) {
-        _ = self.signal.try_send(1);
+        let udpgw_all = UdpGw::new();
+        Self { mtu: 2000, conn_set, conn_all, conn_seq: ConnSeq::new(), udpgw_all, udpgw_conn: None, name, iface, signal }
     }
 
     pub fn delay(&mut self) -> Option<Duration> {
         self.iface.poll_delay(Instant::now(), &self.conn_set)
     }
 
-    pub fn poll<D>(&mut self, device: &mut D) -> Vec<ConnHandle>
+    pub fn poll<D>(&mut self, device: &mut D) -> Vec<Conn>
     where
         D: Device + ?Sized,
     {
-        self.iface.poll(Instant::now(), device, &mut self.conn_set);
+        let s = &mut *self;
+        let iface = &mut s.iface;
+        let conn_set = &mut s.conn_set;
+        let conn_all = &mut s.conn_all;
+        let conn_seq = &mut s.conn_seq;
+        let udpgw = &mut s.udpgw_all;
+        let signal = &mut s.signal;
         let mut new_conn_h = Vec::new();
+        let mut new_udpgw = false;
         let mut close_conn_h = Vec::new();
-        for (h, v) in self.conn_set.iter_mut() {
+        iface.poll(Instant::now(), device, conn_set);
+        for (h, v) in conn_set.iter_mut() {
             match v {
-                Socket::Udp(v) => {
-                    if v.can_recv() {
-                        self.udpgw.recv_wake();
-                    }
-                    if v.can_send() {
-                        self.udpgw.send_wake();
-                    }
-                    if !v.is_open() {
-                        close_conn_h.push(h);
-                    }
-                }
-                Socket::Tcp(v) => {
-                    if v.is_open() && !self.conn_all.contains_key(&h) {
-                        if let Some(remote) = v.remote_endpoint() {
-                            if let Some(local) = v.local_endpoint() {
-                                new_conn_h.push(ConnHandle::new(ConnProto::TCP, h.clone(), local, remote));
+                Socket::Udp(v) => match &mut s.udpgw_conn {
+                    Some(c) => {
+                        let local = v.endpoint();
+                        if v.can_recv() {
+                            match v.recv() {
+                                Ok((data, ep)) => {
+                                    let buf = udpgw.create_frame(&h, &local, &ep, &data);
+                                    _ = c.writer.inner.try_send(buf);
+                                }
+                                Err(_) => {
+                                    v.close();
+                                    close_conn_h.push(h)
+                                }
+                            }
+                        }
+                        if v.can_send() {
+                            match c.reader.inner.try_recv() {
+                                Ok(buf) => match udpgw.parse_frame(&buf) {
+                                    Some((_, _, ep, data)) => {
+                                        _ = v.send_slice(&data, ep.remote);
+                                    }
+                                    None => (), //drop
+                                },
+                                Err(e) => match e {
+                                    mpsc::error::TryRecvError::Empty => (),
+                                    mpsc::error::TryRecvError::Disconnected => {
+                                        v.close();
+                                        close_conn_h.push(h);
+                                    }
+                                },
                             }
                         }
                     }
-                    if v.can_recv() {
-                        match self.conn_all.get_mut(&h) {
-                            Some(c) => c.recv_wake(),
-                            None => (),
-                        }
+                    None => {
+                        new_udpgw = true;
                     }
-                    if v.can_send() {
-                        match self.conn_all.get_mut(&h) {
-                            Some(c) => c.send_wake(),
-                            None => (),
-                        }
-                    }
-                    if !v.is_open() {
-                        close_conn_h.push(h);
-                    }
-                }
-                _ => (),
-            }
-        }
-        for c in &new_conn_h {
-            self.conn_all.insert(c.handle, ConnInfo::new(c.clone()));
-        }
-        for h in close_conn_h {
-            let c = self.conn_all.remove(&h);
-            let v = self.conn_set.remove(h);
-            match v {
-                Socket::Udp(v) => {
-                    log::info!("Gateway({}) udp conn {:?} is closed", self.name, v.endpoint())
-                }
-                Socket::Tcp(v) => {
-                    if let Some(mut c) = c {
-                        c.recv_wake();
-                        c.send_wake();
-                    }
-                    log::info!("Gateway({}) tcp conn {:?}<=>{:?} is closed", self.name, v.local_endpoint(), v.remote_endpoint());
-                }
-                _ => (),
-            }
-        }
-        new_conn_h
-    }
-
-    pub fn poll_read(&mut self, handle: &ConnHandle, cx: &mut Context<'_>, buf: &mut tokio::io::ReadBuf<'_>) -> Poll<tokio::io::Result<()>> {
-        match handle.proto {
-            ConnProto::TCP => match self.conn_set.find_mut(&handle.handle) {
-                Some(v) => match v {
-                    Socket::Tcp(v) => {
+                },
+                Socket::Tcp(v) => match conn_all.get_mut(&h) {
+                    Some(c) => {
                         if v.can_recv() {
                             match v.recv(|data| {
-                                let max = buf.capacity();
-                                let n = data.len();
-                                if n > max {
-                                    buf.put_slice(&data[0..max]);
-                                    (max, ())
-                                } else {
-                                    buf.put_slice(&data);
-                                    (n, ())
+                                let mut n = data.len();
+                                if n > s.mtu {
+                                    n = s.mtu;
+                                }
+                                let buf = Vec::from(&data[0..n]);
+                                match c.writer.inner.try_send(buf) {
+                                    Ok(_) => (n, 0),
+                                    Err(e) => match e {
+                                        mpsc::error::TrySendError::Full(_) => (0, 0),
+                                        mpsc::error::TrySendError::Closed(_) => (0, -1),
+                                    },
                                 }
                             }) {
-                                Ok(_) => {
-                                    self.send_signal();
-                                    log::info!("read---->{}", buf.filled().len());
-                                    Poll::Ready(Ok(()))
+                                Ok(code) => {
+                                    if code == 0 {
+                                        _ = signal.try_send(1);
+                                    } else {
+                                        v.close();
+                                    }
                                 }
-                                Err(e) => Poll::Ready(Err(new_message_err(e))),
-                            }
-                        } else {
-                            match self.conn_all.get_mut(&handle.handle) {
-                                Some(h) => {
-                                    h.waker.recv = Some(cx.waker().clone());
-                                    Poll::Pending
+                                Err(_) => {
+                                    v.close();
                                 }
-                                None => Poll::Ready(Err(new_message_err("invalid conn"))),
                             }
                         }
-                    }
-                    _ => Poll::Ready(Err(new_message_err("not supporeted conn"))),
-                },
-                None => Poll::Ready(Err(new_message_err("conn is closed"))),
-            },
-            ConnProto::UDPGW => {
-                for (h, v) in self.conn_set.iter_mut() {
-                    if let Socket::Udp(v) = v {
-                        if !v.can_recv() {
-                            continue;
-                        }
-                        let local = v.endpoint();
-                        match v.recv() {
-                            Ok((data, ep)) => {
-                                log::info!("xx-->{:?},{}", data, ep);
-                                self.udpgw.put(buf, &h, &local, &ep, data.len());
-                                buf.put_slice(data);
-                                return Poll::Ready(Ok(()));
-                            }
-                            Err(_) => v.close(),
-                        }
-                    }
-                }
-                self.udpgw.waker.recv = Some(cx.waker().clone());
-                Poll::Pending
-            }
-        }
-    }
-
-    pub fn poll_write(&mut self, handle: &ConnHandle, cx: &mut Context<'_>, buf: &[u8]) -> Poll<tokio::io::Result<usize>> {
-        match handle.proto {
-            ConnProto::TCP => match self.conn_set.find_mut(&handle.handle) {
-                Some(v) => match v {
-                    Socket::Tcp(v) => {
                         if v.can_send() {
-                            match v.send_slice(buf) {
-                                Ok(n) => {
-                                    self.send_signal();
-                                    Poll::Ready(Ok(n))
+                            match v.send(|data| {
+                                if data.len() < s.mtu {
+                                    return (0, 0);
                                 }
-                                Err(e) => Poll::Ready(Err(new_message_err(e))),
-                            }
-                        } else {
-                            match self.conn_all.get_mut(&handle.handle) {
-                                Some(h) => {
-                                    h.waker.send = Some(cx.waker().clone());
-                                    Poll::Pending
+                                match c.reader.inner.try_recv() {
+                                    Ok(buf) => {
+                                        let n = buf.len();
+                                        data[0..n].copy_from_slice(&buf);
+                                        (n, 0)
+                                    }
+                                    Err(e) => match e {
+                                        mpsc::error::TryRecvError::Empty => (0, 0),
+                                        mpsc::error::TryRecvError::Disconnected => (0, -1),
+                                    },
                                 }
-                                None => Poll::Ready(Err(new_message_err("invalid conn"))),
+                            }) {
+                                Ok(code) => {
+                                    if code == 0 {
+                                        _ = signal.try_send(1);
+                                    } else {
+                                        v.close();
+                                    }
+                                }
+                                Err(_) => {
+                                    v.close();
+                                }
                             }
                         }
+                        if !v.is_open() {
+                            _ = c.writer.inner.try_send(Vec::new());
+                            close_conn_h.push(h);
+                        }
                     }
-                    _ => Poll::Ready(Err(new_message_err("not supporeted conn"))),
+                    None => {
+                        if v.is_open() {
+                            new_conn_h.push(h);
+                        } else {
+                            close_conn_h.push(h);
+                        }
+                    }
                 },
-                None => Poll::Ready(Err(new_message_err("conn is closed"))),
-            },
-            ConnProto::UDPGW => {
-                match self.udpgw.load(&buf) {
-                    Some((_, handle, remote, data)) => match self.conn_set.find_mut(handle) {
-                        Some(v) => match v {
-                            Socket::Udp(v) => {
-                                if v.can_send() {
-                                    _ = v.send_slice(data, remote.clone());
-                                    self.send_signal();
-                                    Poll::Ready(Ok(buf.len()))
-                                } else {
-                                    self.udpgw.waker.send = Some(cx.waker().clone());
-                                    Poll::Pending
-                                }
-                            }
-                            _ => Poll::Ready(Ok(buf.len())), //drop
-                        },
-                        None => Poll::Ready(Ok(buf.len())), //drop
-                    },
-                    None => Poll::Ready(Ok(buf.len())), //drop
-                }
+                _ => (),
             }
         }
-    }
-
-    pub fn poll_shutdown(&mut self, handle: &ConnHandle, _: &mut Context<'_>) -> Poll<tokio::io::Result<()>> {
-        match self.conn_set.find_mut(&handle.handle) {
-            Some(v) => match v {
-                Socket::Tcp(v) => {
-                    v.close();
-                    self.send_signal();
-                    Poll::Ready(Ok(()))
-                }
-                _ => Poll::Ready(Err(new_message_err("not supporeted conn"))),
-            },
-            None => Poll::Ready(Err(new_message_err("conn is closed"))),
+        for ch in close_conn_h {
+            match conn_all.remove(&ch) {
+                Some(conn) => log::info!("Gateway({}) {} conn is closed", s.name, conn.to_string()),
+                None => (),
+            };
+            conn_set.remove(ch);
         }
-    }
-
-    pub fn shutdown(&mut self, handle: &ConnHandle) -> tokio::io::Result<()> {
-        match self.conn_set.find_mut(&handle.handle) {
-            Some(v) => match v {
-                Socket::Tcp(v) => {
-                    v.close();
-                    self.send_signal();
-                    Ok(())
-                }
-                _ => Err(new_message_err("not supporeted conn")),
-            },
-            None => Err(new_message_err("conn is closed")),
+        let mut new_conn = Vec::new();
+        if new_udpgw {
+            let meta = ConnMeta::udpgw();
+            let (a, b) = Conn::pipe(Arc::new(meta), signal.clone(), 256);
+            log::info!("Gateway({}) {} conn is starting", s.name, a.to_string());
+            s.udpgw_conn = Some(a);
+            new_conn.push(b);
+            _ = signal.try_send(1);
         }
+        let mut add_tcp_conn = |ch| {
+            let c = conn_set.find_mut(&ch)?;
+            if let Socket::Tcp(c) = c {
+                let remote = c.remote_endpoint()?;
+                let local = c.local_endpoint()?;
+                let meta = ConnMeta::new(conn_seq.new_cid(), ch.clone(), ConnProto::TCP, local, remote);
+                let (a, b) = Conn::pipe(Arc::new(meta), signal.clone(), 8);
+                log::info!("Gateway({}) {} conn is starting", s.name, a.to_string());
+                conn_all.insert(ch, a);
+                new_conn.push(b);
+            }
+            Some(1)
+        };
+        for ch in new_conn_h {
+            add_tcp_conn(ch);
+        }
+        new_conn
     }
 }
 
@@ -632,13 +643,7 @@ where
     pub async fn run(&mut self) -> tokio::io::Result<()> {
         let mut delay: Option<Duration> = None;
         let mut device = CacheDevice::new(self.mtu);
-        {
-            let udpgw = Conn::new(self.inner.clone(), ConnHandle::udpgw());
-            let (udpgw_reader, udpgw_writer) = wrap_split(udpgw);
-            let dial_addr = "tcp://udpgw";
-            let dial_uri = self.remote.replace("${HOST}", &dial_addr);
-            self.router.dial_base(udpgw_reader, udpgw_writer, Arc::new(dial_uri)).await?;
-        }
+        let mut gw = self.inner.lock().await;
         loop {
             match delay.take() {
                 Some(delay) => tokio::select! {
@@ -653,23 +658,21 @@ where
                     _ = self.stopper.recv() => Ok(0),
                 },
             }?;
-            let mut gw = self.inner.lock().await;
-            while device.rx_size() > 0 {
-                let ch_all = gw.poll(&mut device);
-                for ch in ch_all {
-                    log::info!("Gateway({}) start forward conn {}<=>{} to {}", self.name, ch.local, ch.remote, self.remote);
-                    let dial_addr = format!("tcp://{}", ch.local);
-                    let dial_uri = self.remote.replace("${HOST}", &dial_addr);
-                    let raw_conn = Conn::new(self.inner.clone(), ch.clone());
-                    let (raw_reader, raw_writer) = wrap_split(raw_conn);
-                    let result = self.router.dial_base(raw_reader, raw_writer, Arc::new(dial_uri)).await;
-                    if result.is_err() {
-                        _ = gw.shutdown(&ch);
-                    }
+            loop {
+                let conn_all = gw.poll(&mut device);
+                for conn in conn_all {
+                    log::info!("Gateway({}) start forward conn {} to {}", self.name, conn.to_string(), self.remote);
+                    let dial_uri = self.remote.replace("${HOST}", &conn.dial_uri());
+                    let (conn_reader, conn_writer) = conn.split();
+                    _ = self.router.dial_base(Box::new(conn_reader), Box::new(conn_writer), Arc::new(dial_uri)).await;
                 }
                 device.write(&mut self.writer).await?;
+
+                if device.rx_size() < 1 {
+                    delay = gw.delay();
+                    break;
+                }
             }
-            delay = gw.delay();
         }
     }
 }

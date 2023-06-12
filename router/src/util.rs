@@ -322,3 +322,18 @@ impl CertType {
         }
     }
 }
+
+pub struct ConnSeq {
+    pub seq: u16,
+}
+
+impl ConnSeq {
+    pub fn new() -> Self {
+        Self { seq: 0 }
+    }
+
+    pub fn new_cid(&mut self) -> u16 {
+        self.seq = (self.seq as u32 + 1) as u16;
+        self.seq
+    }
+}

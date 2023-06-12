@@ -313,6 +313,20 @@ impl Proxy {
         }
     }
 
+    pub async fn start_gateway<R, W>(&mut self, ip: IpCidr, reader: R, writer: W, remote: Arc<String>)
+    where
+        R: frame::RawReader + Send + Sync + 'static,
+        W: frame::RawWriter + Send + Sync + 'static,
+    {
+        let mut device = CacheDevice::new(1600);
+        let mut config = Config::new(smoltcp::wire::HardwareAddress::Ip);
+        config.random_seed = rand::random();
+        let mut iface = Interface::new(config, &mut device);
+        iface.update_ip_addrs(|ip_addrs| ip_addrs.push(ip).unwrap());
+        iface.set_any_ip(true);
+        self.gateway.start(self.name.clone(), iface, reader, writer, remote).await;
+    }
+
     async fn loop_tcp_accpet(name: Arc<String>, key: Arc<String>, waiter: Arc<wg::AsyncWaitGroup>, ln: TcpListener, state: Arc<Mutex<ServerState>>, router: Arc<Router>, remote: Arc<String>) -> tokio::io::Result<()> {
         waiter.add(1);
         info!("Proxy({}) {} forward tcp {:?}->{} loop is starting", name, key, ln.local_addr().unwrap(), &remote);
@@ -420,14 +434,6 @@ impl Proxy {
         info!("Proxy({}) {} web server {} loop is stopped by {:?}", name, key, ln.local_addr().unwrap(), err);
         waiter.done();
         Ok(())
-    }
-
-    pub async fn start_gateway<R, W>(&mut self, iface: Interface, reader: R, writer: W, remote: Arc<String>)
-    where
-        R: frame::RawReader + Send + Sync + 'static,
-        W: frame::RawWriter + Send + Sync + 'static,
-    {
-        self.gateway.start(self.name.clone(), iface, reader, writer, remote).await;
     }
 
     pub async fn wait(&self) {
