@@ -766,7 +766,6 @@ dependencies = [
  "hex",
  "http-body-util",
  "hyper",
- "json",
  "libc",
  "log",
  "pem",

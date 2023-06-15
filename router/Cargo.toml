@@ -13,7 +13,6 @@ futures = "0.3.28"
 hex = "0.4.3"
 http-body-util = "0.1.0-rc.2"
 hyper = { version = "1.0.0-rc.3", features = ["full"] }
-json = "0.12.4"
 libc = "0.2.144"
 log = "0.4.17"
 pem = "2.0.1"

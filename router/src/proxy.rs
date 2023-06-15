@@ -7,6 +7,7 @@ use hyper::server::conn::http1;
 use hyper::service::Service;
 use hyper::{Request, Response, StatusCode};
 use log::{info, warn};
+use serde_json::json;
 use smoltcp::iface::{Config, Interface};
 use smoltcp::wire::{IpAddress, IpCidr};
 use std::os::fd::{AsRawFd, RawFd};
@@ -114,6 +115,7 @@ impl Proxy {
         if channel {
             self.router.close_all().await;
             let channels = json_option_obj(&config, "channels")?;
+            self.channels.clear();
             for name in channels.keys() {
                 let channel = json_must_obj(&channels, name)?;
                 self.channels.insert(name.clone(), channel);
@@ -455,9 +457,18 @@ impl Proxy {
         self.waiter.wait().await;
     }
 
-    pub async fn display(&self) -> json::JsonValue {
-        // self.router.lock().await.display().await
-        json::object! {}
+    pub async fn display(&self) -> JSON {
+        let mut info = JSON::new();
+        info.insert("name".to_string(), json!(self.name.to_string()));
+        info.insert("dir".to_string(), json!(self.dir.to_string()));
+        let router = self.router.display().await;
+        info.insert("router".to_string(), json!(router));
+        let mut channels = JSON::new();
+        for (k, v) in &self.channels {
+            channels.insert(k.to_string(), json!((**v).clone()));
+        }
+        info.insert("channels".to_string(), json!(router));
+        info
     }
 }
 
@@ -468,8 +479,10 @@ struct ProxyWebHandler {
 impl ProxyWebHandler {
     async fn display(router: Arc<Router>) -> Result<Response<Full<Bytes>>, hyper::Error> {
         let display = router.display().await;
-        let data = json::stringify(display);
-        Self::make_response(StatusCode::OK, data)
+        match serde_json::to_string(&display) {
+            Ok(v) => Self::make_response(StatusCode::OK, v),
+            Err(e) => Self::make_response(StatusCode::SERVICE_UNAVAILABLE, format!(r#"{{"code":-1,"message":"{}"}}"#, e.to_string())),
+        }
     }
 
     async fn backtrace(_: Arc<Router>) -> Result<Response<Full<Bytes>>, hyper::Error> {

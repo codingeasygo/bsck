@@ -1,11 +1,16 @@
-use std::{collections::HashMap, io::ErrorKind, sync::Arc, usize};
+use std::{
+    collections::{HashMap, HashSet},
+    io::ErrorKind,
+    sync::Arc,
+    usize,
+};
 
 use async_trait::async_trait;
 use smoltcp::{
     iface::{Interface, SocketHandle, SocketSet},
     phy::{Device, DeviceCapabilities, Medium, RxToken, TxToken},
     socket::Socket,
-    time::{Duration, Instant},
+    time::Instant,
     wire::{IpAddress, IpEndpoint, IpListenEndpoint, Ipv4Address},
 };
 use tokio::sync::{
@@ -14,7 +19,11 @@ use tokio::sync::{
     Mutex,
 };
 
-use crate::{frame, router::Router, util::ConnSeq};
+use crate::{
+    frame::{self},
+    router::Router,
+    util::ConnSeq,
+};
 
 struct UdpGwFlag {
     v: u8,
@@ -237,12 +246,13 @@ impl frame::RawReader for ConnReader {
 pub struct ConnWriter {
     pub meta: Arc<ConnMeta>,
     pub signal: Sender<u8>,
+    pub closer: Sender<u16>,
     pub inner: Sender<Vec<u8>>,
 }
 
 impl ConnWriter {
-    pub fn new(meta: Arc<ConnMeta>, signal: Sender<u8>, inner: Sender<Vec<u8>>) -> Self {
-        Self { meta, signal, inner }
+    pub fn new(meta: Arc<ConnMeta>, signal: Sender<u8>, closer: Sender<u16>, inner: Sender<Vec<u8>>) -> Self {
+        Self { meta, signal, closer, inner }
     }
 
     pub fn get_handle(&self) -> ConnHandle {
@@ -263,6 +273,8 @@ impl frame::RawWriter for ConnWriter {
     }
     async fn shutdown(&mut self) {
         _ = self.inner.send(Vec::from([])).await;
+        _ = self.closer.send(self.meta.id).await;
+        _ = self.signal.try_send(1);
     }
 }
 
@@ -277,13 +289,13 @@ impl Conn {
         Self { meta, reader, writer }
     }
 
-    pub fn pipe(meta: Arc<ConnMeta>, signal: Sender<u8>, buffer: usize) -> (Conn, Conn) {
+    pub fn pipe(meta: Arc<ConnMeta>, signal: Sender<u8>, closer: Sender<u16>, buffer: usize) -> (Conn, Conn) {
         let (txa, rxb) = mpsc::channel::<Vec<u8>>(buffer);
         let (txb, rxa) = mpsc::channel::<Vec<u8>>(buffer);
         let ra = ConnReader::new(meta.clone(), rxa);
         let rb = ConnReader::new(meta.clone(), rxb);
-        let wa = ConnWriter::new(meta.clone(), signal.clone(), txa);
-        let wb = ConnWriter::new(meta.clone(), signal, txb);
+        let wa = ConnWriter::new(meta.clone(), signal.clone(), closer.clone(), txa);
+        let wb = ConnWriter::new(meta.clone(), signal, closer, txb);
         let a = Self::new(meta.clone(), ra, wa);
         let b = Self::new(meta.clone(), rb, wb);
         (a, b)
@@ -301,6 +313,10 @@ impl Conn {
         (self.reader, self.writer)
     }
 
+    pub fn is_closed(&self) -> bool {
+        self.writer.inner.is_closed()
+    }
+
     pub fn to_string(&self) -> String {
         self.meta.to_string()
     }
@@ -311,11 +327,13 @@ struct GatewayInner {
     conn_set: SocketSet<'static>,
     conn_all: HashMap<SocketHandle, Conn>,
     conn_seq: ConnSeq,
+    conn_closer: Receiver<u16>,
     udpgw_all: UdpGw,
     udpgw_conn: Option<Conn>,
     pub name: Arc<String>,
     pub iface: Interface,
     pub signal: Sender<u8>,
+    pub closer: Sender<u16>,
 }
 
 impl GatewayInner {
@@ -323,12 +341,13 @@ impl GatewayInner {
         let conn_set = SocketSet::new(vec![]);
         let conn_all = HashMap::new();
         let udpgw_all = UdpGw::new();
-        Self { mtu: 2048, conn_set, conn_all, conn_seq: ConnSeq::new(), udpgw_all, udpgw_conn: None, name, iface, signal }
+        let (closer, conn_closer) = mpsc::channel(512);
+        Self { mtu: 2000, conn_set, conn_all, conn_seq: ConnSeq::new(), conn_closer, udpgw_all, udpgw_conn: None, name, iface, signal, closer }
     }
 
-    pub fn delay(&mut self) -> Option<Duration> {
-        self.iface.poll_delay(Instant::now(), &self.conn_set)
-    }
+    // pub fn delay(&mut self) -> Option<Duration> {
+    //     self.iface.poll_delay(Instant::now(), &self.conn_set)
+    // }
 
     pub fn poll<D>(&mut self, device: &mut D) -> Vec<Conn>
     where
@@ -339,12 +358,73 @@ impl GatewayInner {
         let conn_set = &mut s.conn_set;
         let conn_all = &mut s.conn_all;
         let conn_seq = &mut s.conn_seq;
+        let conn_closer = &mut s.conn_closer;
         let udpgw = &mut s.udpgw_all;
         let signal = &mut s.signal;
-        let mut new_conn_h = Vec::new();
+        let closer = &mut s.closer;
+        let mut new_conn_h = HashSet::new();
         let mut new_udpgw = false;
-        let mut close_conn_h = Vec::new();
+        let mut close_conn_h = HashSet::new();
+
+        //poll udpgw
+        if let Some(c) = &mut s.udpgw_conn {
+            match c.reader.inner.try_recv() {
+                Ok(buf) => {
+                    if buf.is_empty() {
+                        c.reader.inner.close();
+                        s.udpgw_conn = None;
+                        log::warn!("Gateway({}) UDPGW is closed", s.name);
+                    } else {
+                        match udpgw.parse_frame(&buf) {
+                            Some((_, h, ep, data)) => {
+                                match conn_set.find_mut(&h) {
+                                    Some(v) => {
+                                        if let Socket::Udp(v) = v {
+                                            if v.can_send() {
+                                                _ = v.send_slice(&data, ep.remote);
+                                            }
+                                        }
+                                    }
+                                    None => (), //drop
+                                }
+                            }
+                            None => (), //drop
+                        }
+                    }
+                }
+                Err(e) => match e {
+                    mpsc::error::TryRecvError::Empty => (),
+                    mpsc::error::TryRecvError::Disconnected => {
+                        s.udpgw_conn = None;
+                        // close all udp
+                        for (h, v) in conn_set.iter_mut() {
+                            if let Socket::Udp(v) = v {
+                                v.close();
+                                close_conn_h.insert(h);
+                            }
+                        }
+                        log::warn!("Gateway({}) UDPGW is closed", s.name);
+                    }
+                },
+            };
+        }
+
+        //poll netstack
         iface.poll(Instant::now(), device, conn_set);
+
+        //poll tcp closer
+        let mut closed_id_all = HashSet::new();
+        loop {
+            match conn_closer.try_recv() {
+                Ok(v) => closed_id_all.insert(v),
+                Err(_) => break,
+            };
+        }
+        if closed_id_all.len() > 0 {
+            log::info!("Gateway({}) receive {} conn is closed by {:?}", s.name, closed_id_all.len(), closed_id_all);
+        }
+
+        //forward data
         for (h, v) in conn_set.iter_mut() {
             match v {
                 Socket::Udp(v) => match &mut s.udpgw_conn {
@@ -358,7 +438,7 @@ impl GatewayInner {
                                 }
                                 Err(_) => {
                                     v.close();
-                                    close_conn_h.push(h)
+                                    close_conn_h.insert(h);
                                 }
                             }
                         }
@@ -374,13 +454,13 @@ impl GatewayInner {
                                     mpsc::error::TryRecvError::Empty => (),
                                     mpsc::error::TryRecvError::Disconnected => {
                                         v.close();
-                                        close_conn_h.push(h);
+                                        close_conn_h.insert(h);
                                     }
                                 },
                             }
                         }
                         if !v.is_open() {
-                            close_conn_h.push(h);
+                            close_conn_h.insert(h);
                         }
                     }
                     None => {
@@ -418,7 +498,8 @@ impl GatewayInner {
                         }
                         if v.can_send() {
                             match v.send(|data| {
-                                if data.len() < s.mtu {
+                                // send buffer size must be greater to mtu
+                                if data.len() < s.mtu + 128 {
                                     return (0, 1);
                                 }
                                 match c.reader.inner.try_recv() {
@@ -445,22 +526,29 @@ impl GatewayInner {
                                 }
                             }
                         }
-                        if !v.is_open() {
+                        if !v.is_open() || c.is_closed() || closed_id_all.contains(&c.meta.id) {
                             _ = c.writer.inner.try_send(Vec::new());
-                            close_conn_h.push(h);
+                            close_conn_h.insert(h);
+                            log::info!("Gateway({}) {} conn is closed by gw close it done", s.name, c.to_string());
                         }
                     }
                     None => {
-                        if v.is_open() {
-                            new_conn_h.push(h);
+                        if v.local_endpoint().is_none() && v.remote_endpoint().is_none() {
+                            close_conn_h.insert(h);
+                        } else if v.is_open() {
+                            log::info!("Gateway({}) {:?}<=>{:?} conn will forward to remote", s.name, v.local_endpoint(), v.remote_endpoint());
+                            new_conn_h.insert(h);
                         } else {
-                            close_conn_h.push(h);
+                            log::info!("Gateway({}) {:?}<=>{:?} conn will close by handle is not found", s.name, v.local_endpoint(), v.remote_endpoint());
+                            close_conn_h.insert(h);
                         }
                     }
                 },
                 _ => (),
             }
         }
+
+        //close socket
         for ch in close_conn_h {
             match conn_all.remove(&ch) {
                 Some(conn) => log::info!("Gateway({}) {} conn is closed", s.name, conn.to_string()),
@@ -468,10 +556,12 @@ impl GatewayInner {
             };
             conn_set.remove(ch);
         }
+
+        //new conn
         let mut new_conn = Vec::new();
         if new_udpgw {
             let meta = ConnMeta::udpgw();
-            let (a, b) = Conn::pipe(Arc::new(meta), signal.clone(), 256);
+            let (a, b) = Conn::pipe(Arc::new(meta), signal.clone(), closer.clone(), 256);
             log::info!("Gateway({}) {} conn is starting", s.name, a.to_string());
             s.udpgw_conn = Some(a);
             new_conn.push(b);
@@ -483,7 +573,7 @@ impl GatewayInner {
                 let remote = c.remote_endpoint()?;
                 let local = c.local_endpoint()?;
                 let meta = ConnMeta::new(conn_seq.new_cid(), ch.clone(), ConnProto::TCP, local, remote);
-                let (a, b) = Conn::pipe(Arc::new(meta), signal.clone(), 8);
+                let (a, b) = Conn::pipe(Arc::new(meta), signal.clone(), closer.clone(), 8);
                 log::info!("Gateway({}) {} conn is starting", s.name, a.to_string());
                 conn_all.insert(ch, a);
                 new_conn.push(b);
@@ -644,35 +734,32 @@ where
     }
 
     pub async fn run(&mut self) -> tokio::io::Result<()> {
-        let mut delay: Option<Duration> = None;
         let mut device = CacheDevice::new(self.mtu);
         let mut gw = self.inner.lock().await;
         loop {
-            match delay.take() {
-                Some(_) => tokio::select! {
-                    v = device.read(&mut self.reader) => v,
-                    _ = self.signal.recv() => Ok(0),
-                    _ = tokio::time::sleep(tokio::time::Duration::from_millis(100)) => Ok(0),
-                    _ = self.stopper.recv() => Ok(0),
-                },
-                None => tokio::select! {
-                    v = device.read(&mut self.reader) => v,
-                    _ = self.signal.recv() => Ok(0),
-                    _ = self.stopper.recv() => Ok(0),
-                },
-            }?;
+            let res = tokio::select! {
+                v = device.read(&mut self.reader) => v,
+                _ = self.signal.recv() => Ok(0),
+                _ = tokio::time::sleep(tokio::time::Duration::from_millis(100)) => Ok(0),
+                _ = self.stopper.recv() => Ok(0),
+            };
+            if let Err(e) = res {
+                return Err(e);
+            }
             loop {
                 let conn_all = gw.poll(&mut device);
                 for conn in conn_all {
                     log::info!("Gateway({}) start forward conn {} to {}", self.name, conn.to_string(), self.remote);
-                    let dial_uri = self.remote.replace("${HOST}", &conn.dial_uri());
+                    let dial_uri = Arc::new(self.remote.replace("${HOST}", &conn.dial_uri()));
                     let (conn_reader, conn_writer) = conn.split();
-                    _ = self.router.dial_base(Box::new(conn_reader), Box::new(conn_writer), Arc::new(dial_uri)).await;
+                    let res = self.router.dial_base(Box::new(conn_reader), Box::new(conn_writer), dial_uri.clone()).await;
+                    if let Err(e) = res {
+                        log::info!("Gateway({}) forward conn by {} fail with {}", self.name, dial_uri, e);
+                    }
                 }
                 device.write(&mut self.writer).await?;
 
                 if device.rx_size() < 1 {
-                    delay = gw.delay();
                     break;
                 }
             }

@@ -1,9 +1,8 @@
-use std::sync::Arc;
-
 use async_trait::async_trait;
 use router::{frame, log::init_simple_log, proxy::Proxy, router::NormalAcessHandler, util::JSON};
 use serde_json::json;
 use smoltcp::wire::{IpAddress, IpCidr};
+use std::sync::Arc;
 use tokio::{
     io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadHalf, WriteHalf},
     sync::mpsc,
@@ -16,10 +15,10 @@ async fn main() {
     let mut options = JSON::new();
     options.insert(String::from("name"), serde_json::Value::String(String::from("NX")));
     options.insert(String::from("token"), serde_json::Value::String(String::from("123")));
-    options.insert(String::from("remote"), serde_json::Value::String(String::from("tcp://127.0.0.1:13100")));
+    options.insert(String::from("remote"), serde_json::Value::String(String::from("tcp://192.168.1.7:13100")));
     options.insert(String::from("domain"), serde_json::Value::String(String::from("test.loc")));
     options.insert(String::from("tls_ca"), json!("certs/rootCA.crt"));
-    options.insert(String::from("keep"), json!(1));
+    options.insert(String::from("keep"), json!(10));
     let options = Arc::new(options);
     let socks_dial_uri = Arc::new(String::from("N0->${HOST}"));
     let gw_dial_uri = Arc::new(String::from("N0->${HOST}"));
@@ -37,7 +36,7 @@ async fn main() {
 
     //
     let mut config = tun::Configuration::default();
-    config.address((10, 1, 0, 1)).netmask((255, 255, 255, 0)).up();
+    config.address((10, 1, 0, 3)).netmask((255, 255, 255, 0)).destination((10, 1, 0, 1)).up();
     let dev = tun::create_as_async(&config).unwrap();
     let (dev_reader, dev_writer) = tokio::io::split(dev);
     let dev_reader = TunReader::new(dev_reader);

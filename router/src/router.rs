@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use log::{debug, info, warn};
+use serde_json::json;
 use std::{
     collections::{HashMap, HashSet},
     io::ErrorKind,
@@ -381,6 +382,7 @@ impl ConnSeq {
                 return Ok(self.sid_seq);
             }
         }
+        log::warn!("ConnSeq alloc conn id fail by too many connect seq:{},all:{:?}", self.sid_seq, self.sid_all);
         Err(new_message_err("too many connect"))
     }
 
@@ -680,17 +682,24 @@ impl Table {
         conn_all
     }
 
+    pub fn len(&self) -> usize {
+        self.item_all.len()
+    }
+
     pub fn clear(&mut self) {
         self.item_all.clear();
         self.key_all.clear();
     }
 
-    pub async fn display(&self) -> Vec<String> {
-        let mut info = Vec::new();
+    pub fn display(&self) -> JSON {
+        let mut table = JSON::new();
+        let mut item_all = Vec::new();
         for item in self.item_all.values() {
-            info.push(item.to_string())
+            item_all.push(item.to_string())
         }
-        info
+        table.insert("count".to_string(), json!(item_all.len()));
+        table.insert("items".to_string(), json!(item_all));
+        table
     }
 }
 
@@ -792,6 +801,18 @@ impl Channel {
 
     pub fn len(&self) -> usize {
         self.conn_all.len()
+    }
+
+    pub fn display(&self) -> JSON {
+        let mut info = JSON::new();
+        info.insert("name".to_string(), json!(self.name.to_string()));
+        info.insert("bond".to_string(), json!(self.conn_all.len()));
+        let mut used = JSON::new();
+        for (k, v) in &self.conn_all {
+            used.insert(format!("{}", k), json!(v));
+        }
+        info.insert("used".to_string(), json!(used));
+        info
     }
 }
 
@@ -954,9 +975,18 @@ impl Router_ {
 
     fn remove_table(&mut self, conn: &u16, sid: &ConnID) -> Option<(Arc<Conn>, ConnID)> {
         let item = self.table.remove(conn, sid)?;
+        self.free_conn_id_by_table(&item);
         let (next_id, _, next_sid) = item.next(conn)?;
         let next = self.conn_all.get(&next_id)?;
         Some((Arc::new(next.clone()), next_sid))
+    }
+
+    fn remove_all_next_table(&mut self, conn: &u16) -> Vec<TableItem> {
+        let item_all = self.table.remove_all_next(&conn);
+        for item in &item_all {
+            self.free_conn_id_by_table(&item);
+        }
+        item_all
     }
 
     pub fn alloc_conn_id(&mut self, conn: &u16) -> tokio::io::Result<u8> {
@@ -975,6 +1005,15 @@ impl Router_ {
         match self.cseq_all.get_mut(conn) {
             Some(seq) => seq.free_conn_id(lid),
             None => (),
+        }
+    }
+
+    pub fn free_conn_id_by_table(&mut self, item: &TableItem) {
+        if item.from_type == ConnType::Channel {
+            self.free_conn_id(&item.from_conn, &item.from_sid.lid);
+        }
+        if item.next_type == ConnType::Channel {
+            self.free_conn_id(&item.next_conn, &item.next_sid.lid);
         }
     }
 
@@ -1111,22 +1150,17 @@ impl Router_ {
 
     pub async fn close_conn(&mut self, conn_id: &u16) -> Task {
         let mut task = Task::new();
-        for item in self.table.remove_all_next(conn_id) {
+        for item in self.remove_all_next_table(conn_id) {
             match item.next(conn_id) {
-                Some((next_id, next_type, next_sid)) => {
-                    if next_type == ConnType::Channel {
-                        self.free_conn_id(&next_id, &next_sid.lid);
-                    }
-                    match self.conn_all.get_mut(&next_id) {
-                        Some(next) => match next_type {
-                            ConnType::Channel => task.more(TaskItem::message(Arc::new(next.clone()), &next_sid, &Cmd::ConnClosed, CONN_CLOSED.as_bytes())),
-                            ConnType::Raw => {
-                                task.more(TaskItem::shutdown(Arc::new(next.clone()), Some(CONN_CLOSED.to_string())));
-                            }
-                        },
-                        None => (),
-                    }
-                }
+                Some((next_id, next_type, next_sid)) => match self.conn_all.get_mut(&next_id) {
+                    Some(next) => match next_type {
+                        ConnType::Channel => task.more(TaskItem::message(Arc::new(next.clone()), &next_sid, &Cmd::ConnClosed, CONN_CLOSED.as_bytes())),
+                        ConnType::Raw => {
+                            task.more(TaskItem::shutdown(Arc::new(next.clone()), Some(CONN_CLOSED.to_string())));
+                        }
+                    },
+                    None => (),
+                },
                 None => (),
             }
         }
@@ -1215,16 +1249,16 @@ impl Router_ {
         Ok(Task::message(channel, &channel_sid, &Cmd::DialConn, format!("{}|{}", parts[0], parts[1]).as_bytes()))
     }
 
-    pub async fn display(&self) -> json::JsonValue {
-        // let mut channels = HashMap::new();
-        // for v in self.channels.values() {
-        //     channels.insert(v.name.clone(), v.display().await);
-        // }
-        json::object! {
-            "name": self.name.to_string(),
-            "table": self.table.display().await,
-            // "channels": channels,
+    pub fn display(&self) -> JSON {
+        let mut info = JSON::new();
+        info.insert("name".to_string(), json!(self.name.to_string()));
+        let mut channels = HashMap::new();
+        for v in self.channels.values() {
+            channels.insert(v.name.to_string(), json!(v.display()));
         }
+        info.insert("channels".to_string(), json!(channels));
+        info.insert("table".to_string(), json!(self.table.display()));
+        info
     }
 }
 
@@ -1432,8 +1466,8 @@ impl Router {
         _ = self.router.lock().await.shutdown().await.call(&self.job).await;
     }
 
-    pub async fn display(&self) -> json::JsonValue {
-        self.router.lock().await.display().await
+    pub async fn display(&self) -> JSON {
+        self.router.lock().await.display()
     }
 }
 
