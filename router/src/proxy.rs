@@ -10,6 +10,7 @@ use log::{info, warn};
 use serde_json::json;
 use smoltcp::iface::{Config, Interface};
 use smoltcp::wire::{IpAddress, IpCidr};
+use std::net::{IpAddr, Ipv4Addr};
 use std::os::fd::{AsRawFd, RawFd};
 use std::pin::Pin;
 use std::time::Duration;
@@ -20,12 +21,13 @@ use tokio::{
     net::{TcpListener, TcpStream},
     sync::Mutex,
 };
+use tokio_fd::AsyncFd;
 use tokio_rustls::TlsConnector;
 
 use crate::frame;
 use crate::gateway::{CacheDevice, Gateway};
-use crate::util::{json_must_obj, json_must_str, json_option_i64, json_option_obj, json_option_str, load_tls_config, wrap_err, JSON};
-use crate::wrapper::{wrap_quinn_w, WrapUdpConn};
+use crate::util::{display_option, json_must_obj, json_must_str, json_option_i64, json_option_obj, json_option_str, load_tls_config, wrap_err, JSON};
+use crate::wrapper::{wrap_quinn_w, wrap_tun, WrapUdpConn};
 use crate::{
     router::{Handler, Router},
     util::new_message_err,
@@ -198,7 +200,7 @@ impl Proxy {
                 match self.login(option.clone()).await {
                     Ok(_) => (),
                     Err(e) => {
-                        warn!("Proxy({}) keep login by {:?} fail with {:?}", self.name, option, e);
+                        warn!("Proxy({}) keep login by {:?} fail with {:?}", self.name, display_option(option), e);
                         break;
                     }
                 }
@@ -270,7 +272,7 @@ impl Proxy {
 
     pub async fn start_forward(&mut self, key: Arc<String>, loc: &String, remote: Arc<String>) -> tokio::io::Result<SocketAddr> {
         let name = self.name.clone();
-        info!("Proxy({}) {} start forward by{}=>{}", name, key, loc, remote);
+        info!("Proxy({}) {} start forward by {}=>{}", name, key, loc, remote);
         let router = self.router.clone();
         if loc.starts_with("socks://") {
             let domain: &str = loc.trim_start_matches("socks://");
@@ -301,6 +303,13 @@ impl Proxy {
             iface.set_any_ip(true);
             self.gateway.start(self.name.clone(), iface, ln_reader, ln_writer, remote).await;
             Ok(addr)
+        } else if loc.starts_with("tun://") {
+            let parts: Vec<_> = loc.trim_start_matches("tun://").splitn(2, ">").collect();
+            let gw = parts[0].to_string();
+            let fd = wrap_err(parts[1].parse::<i32>())?;
+            info!("Proxy({}) {} start listen tun {}<=>{}", name, key, gw, fd);
+            self.start_gateway_fd(gw, fd, remote).await?;
+            Ok(SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 0))
         } else {
             let domain: &str = loc.trim_start_matches("tcp://");
             let ln = TcpListener::bind(&domain).await?;
@@ -327,6 +336,21 @@ impl Proxy {
         iface.update_ip_addrs(|ip_addrs| ip_addrs.push(ip).unwrap());
         iface.set_any_ip(true);
         self.gateway.start(self.name.clone(), iface, reader, writer, remote).await;
+    }
+
+    pub async fn start_gateway_fd(&mut self, gw: String, fd: i32, remote: Arc<String>) -> tokio::io::Result<()> {
+        let cidr = wrap_err(cidr_utils::cidr::Ipv4Cidr::from_str(gw))?;
+        let ipcidr: IpCidr = IpCidr::new(cidr.get_mask_as_ipv4_addr().into(), cidr.get_mask() as u8);
+        let tun = AsyncFd::try_from(fd)?;
+        let (tun_reader, tun_writer) = wrap_tun(tun);
+        let mut device = CacheDevice::new(1600);
+        let mut config = Config::new(smoltcp::wire::HardwareAddress::Ip);
+        config.random_seed = rand::random();
+        let mut iface = Interface::new(config, &mut device);
+        iface.update_ip_addrs(|ip_addrs| ip_addrs.push(ipcidr).unwrap());
+        iface.set_any_ip(true);
+        self.gateway.start(self.name.clone(), iface, tun_reader, tun_writer, remote).await;
+        Ok(())
     }
 
     async fn loop_tcp_accpet(name: Arc<String>, key: Arc<String>, waiter: Arc<wg::AsyncWaitGroup>, ln: TcpListener, state: Arc<Mutex<ServerState>>, router: Arc<Router>, remote: Arc<String>) -> tokio::io::Result<()> {
@@ -451,10 +475,14 @@ impl Proxy {
             server.stop().await;
         }
         self.gateway.stop().await;
-        self.router.shutdown().await;
         self.gateway.wait().await;
+        info!("Proxy({}) gateway is stopped", self.name);
+        self.router.shutdown().await;
+        self.router.wait().await;
+        info!("Proxy({}) router is stopped", self.name);
         self.waiter.done();
         self.waiter.wait().await;
+        info!("Proxy({}) is stopped", self.name);
     }
 
     pub async fn display(&self) -> JSON {

@@ -21,7 +21,7 @@ async fn main() {
     options.insert(String::from("keep"), json!(10));
     let options = Arc::new(options);
     let socks_dial_uri = Arc::new(String::from("N0->${HOST}"));
-    let gw_dial_uri = Arc::new(String::from("N0->${HOST}"));
+    let gw_dial_uri = Arc::new(String::from("N*->${HOST}"));
     let tcp_dial_uri = Arc::new(String::from("N0->tcp://127.0.0.1:13200"));
     let socks_addr = String::from("socks://127.0.0.1:1107");
     let tcp_addr = String::from("tcp://127.0.0.1:13300");

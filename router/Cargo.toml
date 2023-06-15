@@ -32,6 +32,8 @@ webpki = { package = "rustls-webpki", version = "0.100.0", features = ["alloc", 
 webpki-roots = "0.23.0"
 rand = "0.8.5"
 smoltcp = { git = "https://github.com/codingeasygo/smoltcp", version = "0.9.1" }
+tokio-fd = "0.3.0"
+cidr-utils = "0.5.10"
 regex = "1.8.4"
 
 [dev-dependencies]

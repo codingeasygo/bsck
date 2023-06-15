@@ -536,7 +536,7 @@ impl GatewayInner {
                         if v.local_endpoint().is_none() && v.remote_endpoint().is_none() {
                             close_conn_h.insert(h);
                         } else if v.is_open() {
-                            log::info!("Gateway({}) {:?}<=>{:?} conn will forward to remote", s.name, v.local_endpoint(), v.remote_endpoint());
+                            // log::info!("Gateway({}) {:?}<=>{:?} conn will forward to remote", s.name, v.local_endpoint(), v.remote_endpoint());
                             new_conn_h.insert(h);
                         } else {
                             log::info!("Gateway({}) {:?}<=>{:?} conn will close by handle is not found", s.name, v.local_endpoint(), v.remote_endpoint());
