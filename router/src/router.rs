@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use log::{debug, info, warn};
+use regex::Regex;
 use serde_json::json;
 use std::{
     collections::{HashMap, HashSet},
@@ -756,11 +757,12 @@ impl Job {
 pub struct Channel {
     pub name: Arc<String>,
     pub conn_all: HashMap<u16, u32>,
+    pub used: u32,
 }
 
 impl Channel {
     pub fn new(name: Arc<String>) -> Self {
-        Self { name, conn_all: HashMap::new() }
+        Self { name, conn_all: HashMap::new(), used: 0 }
     }
 
     pub fn add(&mut self, conn: u16) {
@@ -788,6 +790,7 @@ impl Channel {
         }
         let conn = conn?;
         self.conn_all.insert(conn, ((min as u64) + 1) as u32);
+        self.used = ((self.used as u64) + 1) as u32;
         Some(conn.clone())
     }
 
@@ -921,7 +924,26 @@ impl Router_ {
     }
 
     pub fn select_channel(&mut self, name: &String) -> Option<Arc<Conn>> {
-        let channel = self.channels.get_mut(name)?;
+        let channel = match Regex::new(name) {
+            Ok(m) => {
+                let mut min = None;
+                let mut used: u32 = u32::max_value();
+                for (n, c) in &mut self.channels {
+                    if !m.is_match(n) {
+                        continue;
+                    }
+                    if c.used < used {
+                        used = c.used;
+                        min = Some(c);
+                    }
+                }
+                min
+            }
+            Err(e) => {
+                log::info!("Router({}) parse regex by {} fail with {}", self.name, name, e);
+                None
+            }
+        }?;
         let conn_id = channel.select()?;
         let conn = self.conn_all.get(&conn_id)?;
         Some(Arc::new(conn.clone()))
