@@ -22,7 +22,7 @@ use tokio::sync::{
 use crate::{
     frame::{self},
     router::Router,
-    util::ConnSeq,
+    util::{new_message_err, ConnSeq},
 };
 
 struct UdpGwFlag {
@@ -741,7 +741,7 @@ where
                 v = device.read(&mut self.reader) => v,
                 _ = self.signal.recv() => Ok(0),
                 _ = tokio::time::sleep(tokio::time::Duration::from_millis(100)) => Ok(0),
-                _ = self.stopper.recv() => Ok(0),
+                _ = self.stopper.recv() => return Err(new_message_err("stopped")),
             };
             if let Err(e) = res {
                 return Err(e);
