@@ -327,3 +327,40 @@ where
     let tun_writer = TunWriter::new(tun_writer);
     (tun_reader, tun_writer)
 }
+
+pub struct BoxReader {
+    inner: Box<dyn frame::RawReader + Sync + Send>,
+}
+
+impl BoxReader {
+    pub fn new(inner: Box<dyn frame::RawReader + Sync + Send>) -> Self {
+        Self { inner }
+    }
+}
+
+#[async_trait]
+impl frame::RawReader for BoxReader {
+    async fn read(&mut self, buf: &mut [u8]) -> tokio::io::Result<usize> {
+        self.inner.read(buf).await
+    }
+}
+
+pub struct BoxWriter {
+    inner: Box<dyn frame::RawWriter + Sync + Send>,
+}
+
+impl BoxWriter {
+    pub fn new(inner: Box<dyn frame::RawWriter + Sync + Send>) -> Self {
+        Self { inner }
+    }
+}
+
+#[async_trait]
+impl frame::RawWriter for BoxWriter {
+    async fn write(&mut self, buf: &[u8]) -> tokio::io::Result<usize> {
+        self.inner.write(buf).await
+    }
+    async fn shutdown(&mut self) {
+        self.inner.shutdown().await
+    }
+}

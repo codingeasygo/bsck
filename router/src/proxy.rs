@@ -27,7 +27,7 @@ use tokio_rustls::TlsConnector;
 use crate::frame;
 use crate::gateway::{CacheDevice, Gateway};
 use crate::util::{display_option, json_must_obj, json_must_str, json_option_i64, json_option_obj, json_option_str, load_tls_config, wrap_err, JSON};
-use crate::wrapper::{wrap_quinn_w, wrap_tun, WrapUdpConn};
+use crate::wrapper::{wrap_quinn_w, wrap_tun, BoxReader, BoxWriter, WrapUdpConn};
 use crate::{
     router::{Handler, Router},
     util::new_message_err,
@@ -62,6 +62,7 @@ impl ServerState {
 
 #[async_trait]
 pub trait Preparer {
+    async fn prepare_tun(&self, key: &String) -> tokio::io::Result<(BoxReader, BoxWriter)>;
     async fn prepare_fd(&self, fd: RawFd) -> tokio::io::Result<()>;
 }
 
@@ -75,6 +76,9 @@ impl SkipPreparer {
 
 #[async_trait]
 impl Preparer for SkipPreparer {
+    async fn prepare_tun(&self, _: &String) -> tokio::io::Result<(BoxReader, BoxWriter)> {
+        Err(new_message_err("not supported"))
+    }
     async fn prepare_fd(&self, _: RawFd) -> tokio::io::Result<()> {
         Ok(())
     }
@@ -306,9 +310,16 @@ impl Proxy {
         } else if loc.starts_with("tun://") {
             let parts: Vec<_> = loc.trim_start_matches("tun://").splitn(2, ">").collect();
             let gw = parts[0].to_string();
-            let fd = wrap_err(parts[1].parse::<i32>())?;
-            info!("Proxy({}) {} start listen tun {}<=>{}", name, key, gw, fd);
-            self.start_gateway_fd(gw, fd, remote).await?;
+            match parts[1].parse::<i32>() {
+                Ok(fd) => {
+                    info!("Proxy({}) {} start listen tun {}<=>{}", name, key, gw, fd);
+                    self.start_gateway_fd(gw, fd, remote).await?;
+                }
+                Err(_) => {
+                    let (reader, writer) = self.preparer.prepare_tun(&parts[1].to_string()).await?;
+                    self.start_gateway(gw, reader, writer, remote).await?;
+                }
+            }
             Ok(SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 0))
         } else {
             let domain: &str = loc.trim_start_matches("tcp://");

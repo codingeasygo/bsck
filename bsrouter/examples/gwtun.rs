@@ -1,7 +1,6 @@
 use async_trait::async_trait;
 use router::{frame, log::init_simple_log, proxy::Proxy, router::NormalAcessHandler, util::JSON};
 use serde_json::json;
-use smoltcp::wire::{IpAddress, IpCidr};
 use std::sync::Arc;
 use tokio::{
     io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadHalf, WriteHalf},
@@ -41,7 +40,7 @@ async fn main() {
     let (dev_reader, dev_writer) = tokio::io::split(dev);
     let dev_reader = TunReader::new(dev_reader);
     let dev_writer = TunWriter::new(dev_writer);
-    proxy.start_gateway(IpCidr::new(IpAddress::v4(10, 1, 0, 2), 24), dev_reader, dev_writer, gw_dial_uri).await;
+    proxy.start_gateway("10.1.0.2/24".to_string(), dev_reader, dev_writer, gw_dial_uri).await.unwrap();
     //
     let (stopper, receive) = mpsc::channel(8);
     proxy.run(receive).await;
