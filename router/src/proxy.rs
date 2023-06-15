@@ -324,18 +324,21 @@ impl Proxy {
         }
     }
 
-    pub async fn start_gateway<R, W>(&mut self, ip: IpCidr, reader: R, writer: W, remote: Arc<String>)
+    pub async fn start_gateway<R, W>(&mut self, gw: String, reader: R, writer: W, remote: Arc<String>) -> tokio::io::Result<()>
     where
         R: frame::RawReader + Send + Sync + 'static,
         W: frame::RawWriter + Send + Sync + 'static,
     {
+        let cidr = wrap_err(cidr_utils::cidr::Ipv4Cidr::from_str(gw))?;
+        let ipcidr: IpCidr = IpCidr::new(cidr.get_mask_as_ipv4_addr().into(), cidr.get_mask() as u8);
         let mut device = CacheDevice::new(1600);
         let mut config = Config::new(smoltcp::wire::HardwareAddress::Ip);
         config.random_seed = rand::random();
         let mut iface = Interface::new(config, &mut device);
-        iface.update_ip_addrs(|ip_addrs| ip_addrs.push(ip).unwrap());
+        iface.update_ip_addrs(|ip_addrs| ip_addrs.push(ipcidr).unwrap());
         iface.set_any_ip(true);
         self.gateway.start(self.name.clone(), iface, reader, writer, remote).await;
+        Ok(())
     }
 
     pub async fn start_gateway_fd(&mut self, gw: String, fd: i32, remote: Arc<String>) -> tokio::io::Result<()> {
