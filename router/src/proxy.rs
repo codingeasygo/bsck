@@ -148,15 +148,15 @@ impl Proxy {
         Ok(())
     }
 
-    pub async fn run(&mut self, receiver: Receiver<u8>) {
+    pub async fn run(&mut self, stopper: Receiver<u8>) {
         let mut interval = tokio::time::interval(Duration::from_millis(self.interval));
-        let mut receiver = receiver;
+        let mut stopper = stopper;
         loop {
             tokio::select! {
                 _= interval.tick() => {
                     _=self.keep().await;
                 }
-                _= receiver.recv() =>break,
+                _= stopper.recv() =>break,
             }
         }
     }
