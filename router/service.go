@@ -20,7 +20,6 @@ import (
 	"regexp"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/codingeasygo/bsck/dialer"
 	"github.com/codingeasygo/util/proxy"
@@ -88,14 +87,13 @@ type Config struct {
 		SOCKS string `json:"socks"`
 		WS    string `json:"ws"`
 	} `json:"console"`
-	Web       Web               `json:"web"`
-	Log       int               `json:"log"`
-	Forwards  map[string]string `json:"forwards"`
-	Channels  []xmap.M          `json:"channels"`
-	Dialer    xmap.M            `json:"dialer"`
-	Reconnect int64             `json:"reconnect"`
-	RDPDir    string            `json:"rdp_dir"`
-	VNCDir    string            `json:"vnc_dir"`
+	Web      Web               `json:"web"`
+	Log      int               `json:"log"`
+	Forwards map[string]string `json:"forwards"`
+	Channels map[string]xmap.M `json:"channels"`
+	Dialer   xmap.M            `json:"dialer"`
+	RDPDir   string            `json:"rdp_dir"`
+	VNCDir   string            `json:"vnc_dir"`
 }
 
 // ReadConfig will read configure from file
@@ -540,9 +538,6 @@ func (s *Service) Start() (err error) {
 		s.Config.Key = filepath.Join(filepath.Dir(s.ConfigPath), s.Config.Key)
 	}
 	s.Node.Cert, s.Node.Key = s.Config.Cert, s.Config.Key
-	if s.Config.Reconnect > 0 {
-		s.Node.ReconnectDelay = time.Duration(s.Config.Reconnect) * time.Millisecond
-	}
 	s.Webs["state"] = http.HandlerFunc(s.Node.Router.StateH)
 	s.Dialer = dialer.NewPool(s.Config.Name)
 	s.Dialer.Webs = s.Webs
@@ -607,7 +602,8 @@ func (s *Service) Start() (err error) {
 		s.OnReady()
 	}
 	if len(s.Config.Channels) > 0 {
-		go s.Node.LoginChannel(true, s.Config.Channels...)
+		s.Node.Channels = s.Config.Channels
+		s.Node.Start()
 	}
 	return
 }

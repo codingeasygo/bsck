@@ -373,6 +373,12 @@ func (b *BondConn) ListConn() (connList []Conn) {
 	return
 }
 
+func (b *BondConn) Len() int {
+	b.connLock.RLock()
+	defer b.connLock.RUnlock()
+	return len(b.connAll)
+}
+
 func (b *BondConn) Close() (err error) {
 	b.connLock.RLock()
 	defer b.connLock.RUnlock()
@@ -837,6 +843,15 @@ func (r *Router) SelectChannel(name string) (target Conn, err error) {
 	}
 	if target == nil {
 		err = NewRouterError(ErrorChannelNotFound, "channel %v is not found", name)
+	}
+	return
+}
+
+// CountChannel will return channel connection count
+func (r *Router) CountChannel(name string) (n int) {
+	channel := r.findChannel(name, false)
+	if channel != nil {
+		n = channel.Len()
 	}
 	return
 }

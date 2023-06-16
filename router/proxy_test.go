@@ -33,6 +33,31 @@ func newBaseProxy() (proxy0, proxy1 *Proxy, err error) {
 	return
 }
 
+func newKeepProxy() (proxy0, proxy1 *Proxy, err error) {
+	access0 := NewNormalAcessHandler("N0")
+	access0.LoginAccess["N1"] = "123"
+	access0.LoginAccess["N2"] = "123"
+	access0.DialAccess = append(access0.DialAccess, []string{".*", ".*"})
+	proxy0 = NewProxy("N0", access0)
+
+	access1 := NewNormalAcessHandler("N1")
+	access1.LoginAccess["N2"] = "123"
+	access1.DialAccess = append(access1.DialAccess, []string{".*", ".*"})
+	proxy1 = NewProxy("N1", access1)
+	proxy1.KeepDelay = 30 * time.Millisecond
+	err = proxy0.Listen("127.0.0.1:15023")
+	if err != nil {
+		return
+	}
+	proxy1.Channels["N0"] = xmap.M{
+		"local":  "127.0.0.1:0",
+		"remote": "127.0.0.1:15023",
+		"token":  "123",
+	}
+	proxy1.Start()
+	return
+}
+
 func newTlsProxy() (proxy0, proxy1 *Proxy, err error) {
 	access0 := NewNormalAcessHandler("N0")
 	access0.LoginAccess["N1"] = "123"
@@ -215,7 +240,7 @@ func TestProxy(t *testing.T) {
 	}
 	tester := xdebug.CaseTester{
 		0: 1,
-		7: 1,
+		8: 1,
 	}
 	if tester.Run() && testProxy(newBaseProxy()) != nil {
 		return
@@ -238,13 +263,13 @@ func TestProxy(t *testing.T) {
 	if tester.Run() && testProxy(newQuicProxy()) != nil {
 		return
 	}
-	if tester.Run() { //reconnect
-		proxy0, proxy1, err := newBaseProxy()
+	if tester.Run() { //keep
+		proxy0, proxy1, err := newKeepProxy()
 		if err != nil {
 			t.Error(err)
 			return
 		}
-		proxy1.ReconnectDelay = 10 * time.Millisecond
+		time.Sleep(10 * time.Millisecond)
 		channel, err := proxy1.SelectChannel("N0")
 		if err != nil {
 			t.Error(err)
@@ -257,16 +282,12 @@ func TestProxy(t *testing.T) {
 			t.Error(err)
 			return
 		}
-
-		proxy0, proxy1, err = newBaseProxy()
-		if err != nil {
-			t.Error(err)
-			return
-		}
-		proxy1.ReconnectDelay = 10 * time.Millisecond
+		//
 		proxy0.Stop()
 		time.Sleep(50 * time.Millisecond)
 		proxy1.Stop()
+		proxy1.Router = nil
+		proxy1.procKeep()
 	}
 	if tester.Run() { //error
 		access0 := NewNormalAcessHandler("N0")

@@ -503,8 +503,8 @@ func TestReverseWeb(t *testing.T) {
 	slaver := NewService()
 	slaver.Config = &Config{
 		Name: "slaver",
-		Channels: []xmap.M{
-			{
+		Channels: map[string]xmap.M{
+			"master": {
 				"enable": 1,
 				"index":  1,
 				"remote": ":12663",
@@ -587,8 +587,8 @@ func TestSlaverHandler(t *testing.T) {
 	slaver := NewService()
 	slaver.Config = &Config{
 		Name: "slaver",
-		Channels: []xmap.M{
-			{
+		Channels: map[string]xmap.M{
+			"maseter": {
 				"enable": 1,
 				"index":  1,
 				"remote": ":12663",

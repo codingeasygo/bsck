@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/codingeasygo/util/proxy"
+	"github.com/codingeasygo/util/xdebug"
 	"github.com/codingeasygo/util/xmap"
 	"github.com/codingeasygo/util/xnet"
 	"github.com/quic-go/quic-go"
@@ -31,12 +32,13 @@ type Proxy struct {
 	*Router        //the router
 	*proxy.Forward //the forward
 	Name           string
-	ReconnectDelay time.Duration //reconnect delay
-	Dir            string        //the work dir
-	Cert           string        //the tls cert
-	Key            string        //the tls key
-	CA             string        //the tls ca
-	Insecure       bool          //the tls use insecure
+	KeepDelay      time.Duration     //keep login delay
+	Channels       map[string]xmap.M //the all keep channels
+	Dir            string            //the work dir
+	Cert           string            //the tls cert
+	Key            string            //the tls key
+	CA             string            //the tls ca
+	Insecure       bool              //the tls use insecure
 	Handler        Handler
 	master         net.Listener
 	stopping       bool
@@ -47,13 +49,14 @@ type Proxy struct {
 // NewProxy will return new Proxy by name
 func NewProxy(name string, handler Handler) (px *Proxy) {
 	px = &Proxy{
-		Router:         NewRouter(name, nil),
-		Forward:        proxy.NewForward(name),
-		Name:           name,
-		Handler:        handler,
-		ReconnectDelay: 3 * time.Second,
-		exiter:         make(chan int, 10),
-		waiter:         sync.WaitGroup{},
+		Router:    NewRouter(name, nil),
+		Forward:   proxy.NewForward(name),
+		Name:      name,
+		Handler:   handler,
+		KeepDelay: 3 * time.Second,
+		Channels:  map[string]xmap.M{},
+		exiter:    make(chan int, 10),
+		waiter:    sync.WaitGroup{},
 	}
 	px.Router.Handler = px
 	px.Forward.Dialer = px
@@ -163,10 +166,16 @@ func (p *Proxy) AcceptWsConn(conn *websocket.Conn) {
 	p.Router.Accept(NewInfoRWC(conn, conn.RemoteAddr().String()), true)
 }
 
+func (p *Proxy) Start() {
+	p.waiter.Add(1)
+	go p.loopKeep()
+}
+
 // Stop will stop all
 func (p *Proxy) Stop() (err error) {
 	InfoLog("Proxy(%v) is closing", p.Name)
 	p.stopping = true
+	p.exiter <- 1
 	p.exiter <- 1
 	if p.master != nil {
 		err = p.master.Close()
@@ -181,20 +190,28 @@ func (p *Proxy) Stop() (err error) {
 	return
 }
 
-func (p *Proxy) runReconnect(args xmap.M) {
-	ticker := time.NewTicker(p.ReconnectDelay)
+func (p *Proxy) loopKeep() {
+	defer p.waiter.Done()
+	p.procKeep()
+	ticker := time.NewTicker(p.KeepDelay)
 	running := true
 	for running {
-		_, _, err := p.Login(args)
-		running = err != nil //stop
-		if running {
-			select {
-			case <-ticker.C:
-			case <-p.exiter:
-				running = false
-			}
+		select {
+		case <-ticker.C:
+			p.procKeep()
+		case <-p.exiter:
+			running = false
 		}
 	}
+}
+
+func (p *Proxy) procKeep() {
+	defer func() {
+		if perr := recover(); perr != nil {
+			ErrorLog("Proxy(%v) proc keep is panic with %v, callstack is \n%v", p.Name, perr, xdebug.CallStack())
+		}
+	}()
+	p.Keep()
 }
 
 // DialRawConn will dial raw connection
@@ -232,16 +249,10 @@ func (p *Proxy) OnConnClose(conn Conn) (err error) {
 	if p.stopping {
 		return
 	}
-	context := conn.Context()
 	if p.Handler != nil {
 		err = p.Handler.OnConnClose(conn)
 	}
-	if err == nil && context.IntDef(-1, "login_conn") == 1 {
-		go p.runReconnect(context.Map("option"))
-		InfoLog("Proxy(%v) the channel(%v) is closed, will reconnect it", p.Name, conn)
-	} else {
-		InfoLog("Proxy(%v) the channel(%v) is closed by %v, remove it", p.Name, conn, err)
-	}
+	InfoLog("Proxy(%v) the channel(%v) is closed by %v, remove it", p.Name, conn, err)
 	return nil
 }
 
@@ -288,22 +299,15 @@ func (p *Proxy) loadTlsConfig(tlsCert, tlsKey, tlsCA, tlsVerify string) (config 
 	return
 }
 
-// LoginChannel will login all channel by options.
-func (p *Proxy) LoginChannel(reconnect bool, channels ...xmap.M) (err error) {
-	for _, channel := range channels {
-		if channel.Int("enable") < 1 {
+// Keep will keep channel connection
+func (p *Proxy) Keep() (err error) {
+	for name, channel := range p.Channels {
+		connected := p.CountChannel(name)
+		keep := channel.IntDef(1, "keep")
+		if connected >= keep {
 			continue
 		}
 		_, _, err = p.Login(channel)
-		if err == nil {
-			continue
-		}
-		WarnLog("Proxy(%v) login to %v fail with %v", p.Name, channel.StrDef("", "remote"), err)
-		if reconnect {
-			go p.runReconnect(channel)
-		} else {
-			return
-		}
 	}
 	return
 }
