@@ -257,7 +257,7 @@ where
     T: AsyncRead + Send + Sync,
 {
     async fn read(&mut self, buf: &mut [u8]) -> tokio::io::Result<usize> {
-        #[cfg(any(target_os = "linux", target_os = "android"))]
+        #[cfg(any(target_os = "linux", target_os = "android", target_os = "ios"))]
         {
             let n = self.inner.read(buf).await?;
             Ok(n)
@@ -299,7 +299,7 @@ where
     T: AsyncWrite + Send + Sync,
 {
     async fn write(&mut self, buf: &[u8]) -> tokio::io::Result<usize> {
-        #[cfg(any(target_os = "linux", target_os = "android"))]
+        #[cfg(any(target_os = "linux", target_os = "android", target_os = "ios"))]
         {
             self.inner.write_all(&buf).await?;
             Ok(buf.len())
@@ -329,11 +329,11 @@ where
 }
 
 pub struct BoxReader {
-    inner: Box<dyn frame::RawReader + Sync + Send>,
+    inner: Box<dyn frame::RawReader + Sync + Send + 'static>,
 }
 
 impl BoxReader {
-    pub fn new(inner: Box<dyn frame::RawReader + Sync + Send>) -> Self {
+    pub fn new(inner: Box<dyn frame::RawReader + Sync + Send + 'static>) -> Self {
         Self { inner }
     }
 }
@@ -346,11 +346,11 @@ impl frame::RawReader for BoxReader {
 }
 
 pub struct BoxWriter {
-    inner: Box<dyn frame::RawWriter + Sync + Send>,
+    inner: Box<dyn frame::RawWriter + Sync + Send + 'static>,
 }
 
 impl BoxWriter {
-    pub fn new(inner: Box<dyn frame::RawWriter + Sync + Send>) -> Self {
+    pub fn new(inner: Box<dyn frame::RawWriter + Sync + Send + 'static>) -> Self {
         Self { inner }
     }
 }
