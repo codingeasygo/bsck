@@ -6,12 +6,13 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -24,52 +25,6 @@ import (
 	"github.com/quic-go/quic-go"
 	"golang.org/x/net/websocket"
 )
-
-type quicConn struct {
-	quic.Connection
-	quic.Stream
-}
-
-type quicListener struct {
-	*quic.Listener
-}
-
-func quicListen(addr string, tls *tls.Config) (ln net.Listener, err error) {
-	quicConf := &quic.Config{EnableDatagrams: true}
-	quicConf.KeepAlivePeriod = time.Second
-	base, err := quic.ListenAddr(addr, tls, quicConf)
-	if err != nil {
-		return
-	}
-	ln = &quicListener{Listener: base}
-	return
-}
-
-func quicDial(addr string, tls *tls.Config) (conn net.Conn, err error) {
-	quicConf := &quic.Config{EnableDatagrams: true}
-	quicConf.KeepAlivePeriod = time.Second
-	base, err := quic.DialAddr(context.Background(), addr, tls, quicConf)
-	if err != nil {
-		return
-	}
-	stream, err := base.OpenStream()
-	if err != nil {
-		return
-	}
-	return &quicConn{Connection: base, Stream: stream}, nil
-}
-
-func (q *quicListener) Accept() (net.Conn, error) {
-	conn, err := q.Listener.Accept(context.Background())
-	if err != nil {
-		return nil, err
-	}
-	stream, err := conn.AcceptStream(context.Background())
-	if err != nil {
-		return nil, err
-	}
-	return &quicConn{Connection: conn, Stream: stream}, nil
-}
 
 // Proxy is an implementation of proxy router
 type Proxy struct {
@@ -112,7 +67,7 @@ func (p *Proxy) listenConfig() (config *tls.Config, err error) {
 	}
 	InfoLog("Proxy(%v) load x509 cert:%v,key:%v", p.Name, p.Cert, p.Key)
 	var cert tls.Certificate
-	cert, err = tls.LoadX509KeyPair(p.Cert, p.Key)
+	cert, err = LoadX509KeyPair(p.Dir, p.Cert, p.Key)
 	if err != nil {
 		ErrorLog("Proxy(%v) load cert fail with %v", p.Name, err)
 		return
@@ -301,20 +256,11 @@ func (p *Proxy) loadTlsConfig(tlsCert, tlsKey, tlsCA, tlsVerify string) (config 
 		err = fmt.Errorf("at least one of tls_ca/tls_cert is required")
 		return
 	}
-	if len(tlsCert) > 0 && !filepath.IsAbs(tlsCert) {
-		tlsCert = filepath.Join(p.Dir, tlsCert)
-	}
-	if len(tlsKey) > 0 && !filepath.IsAbs(tlsKey) {
-		tlsKey = filepath.Join(p.Dir, tlsKey)
-	}
-	if len(tlsCA) > 0 && !filepath.IsAbs(tlsCA) {
-		tlsCA = filepath.Join(p.Dir, tlsCA)
-	}
 	config = &tls.Config{InsecureSkipVerify: p.Insecure}
 	config.Rand = rand.Reader
 	if len(tlsCert) > 0 {
 		var cert tls.Certificate
-		cert, err = tls.LoadX509KeyPair(tlsCert, tlsKey)
+		cert, err = LoadX509KeyPair(p.Dir, tlsCert, tlsKey)
 		if err != nil {
 			ErrorLog("Proxy(%v) load cert fail with %v", p.Name, err)
 			return
@@ -323,7 +269,7 @@ func (p *Proxy) loadTlsConfig(tlsCert, tlsKey, tlsCA, tlsVerify string) (config 
 	}
 	if len(tlsCA) > 0 {
 		var certPEM []byte
-		certPEM, err = ioutil.ReadFile(tlsCA)
+		certPEM, err = LoadPEMBlock(p.Dir, tlsCA)
 		if err != nil {
 			ErrorLog("Proxy(%v) load ca fail with %v", p.Name, err)
 			return
@@ -389,7 +335,7 @@ func (p *Proxy) Login(option xmap.M) (channel Conn, result xmap.M, err error) {
 		var config *tls.Config
 		switch remoteURI.Scheme {
 		case "ws", "wss":
-			InfoLog("Proxy(%v) start dial to %v by cert:%v,key:%v,ca:%v,verify:%v", p.Name, remote, tlsCert, tlsKey, tlsCA, tlsVerify)
+			InfoLog("Proxy(%v) start dial to %v by cert:%v,key:%v,ca:%v,verify:%v", p.Name, remote, TlsConfigShow(tlsCert), TlsConfigShow(tlsKey), TlsConfigShow(tlsCA), tlsVerify)
 			dialer := xnet.NewWebsocketDialer()
 			if remoteURI.Scheme == "wss" {
 				dialer.TlsConfig, err = p.loadTlsConfig(tlsCert, tlsKey, tlsCA, tlsVerify)
@@ -404,7 +350,7 @@ func (p *Proxy) Login(option xmap.M) (channel Conn, result xmap.M, err error) {
 				conn = rawConn.(net.Conn)
 			}
 		case "tls":
-			InfoLog("Proxy(%v) start dial to %v by cert:%v,key:%v,ca:%v,verify:%v", p.Name, remote, tlsCert, tlsKey, tlsCA, tlsVerify)
+			InfoLog("Proxy(%v) start dial to %v by cert:%v,key:%v,ca:%v,verify:%v", p.Name, remote, TlsConfigShow(tlsCert), TlsConfigShow(tlsKey), TlsConfigShow(tlsCA), tlsVerify)
 			config, err = p.loadTlsConfig(tlsCert, tlsKey, tlsCA, tlsVerify)
 			if err != nil {
 				ErrorLog("Proxy(%v) load tls config fail with %v", p.Name, err)
@@ -473,4 +419,91 @@ func EncodeWebURI(format string, args ...interface{}) string {
 		having = strings.Trim(having, "()")
 		return "base64-" + base64.RawURLEncoding.EncodeToString([]byte(having))
 	})
+}
+
+type quicConn struct {
+	quic.Connection
+	quic.Stream
+}
+
+type quicListener struct {
+	*quic.Listener
+}
+
+func quicListen(addr string, tls *tls.Config) (ln net.Listener, err error) {
+	quicConf := &quic.Config{EnableDatagrams: true}
+	quicConf.KeepAlivePeriod = time.Second
+	base, err := quic.ListenAddr(addr, tls, quicConf)
+	if err != nil {
+		return
+	}
+	ln = &quicListener{Listener: base}
+	return
+}
+
+func quicDial(addr string, tls *tls.Config) (conn net.Conn, err error) {
+	quicConf := &quic.Config{EnableDatagrams: true}
+	quicConf.KeepAlivePeriod = time.Second
+	base, err := quic.DialAddr(context.Background(), addr, tls, quicConf)
+	if err != nil {
+		return
+	}
+	stream, err := base.OpenStream()
+	if err != nil {
+		return
+	}
+	return &quicConn{Connection: base, Stream: stream}, nil
+}
+
+func (q *quicListener) Accept() (net.Conn, error) {
+	conn, err := q.Listener.Accept(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	stream, err := conn.AcceptStream(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	return &quicConn{Connection: conn, Stream: stream}, nil
+}
+
+func TlsConfigShow(from string) (info string) {
+	if strings.HasPrefix(from, "-----BEGIN") {
+		info = strings.SplitN(from, "\n", 2)[0]
+	} else if strings.HasPrefix(from, "0x") {
+		if len(from) > 32 {
+			info = from[0:32]
+		} else {
+			info = from
+		}
+	} else {
+		info = from
+	}
+	return
+}
+
+func LoadPEMBlock(dir, from string) (block []byte, err error) {
+	if strings.HasPrefix(from, "-----BEGIN") {
+		block = []byte(from)
+	} else if strings.HasPrefix(from, "0x") {
+		block, err = hex.DecodeString(strings.TrimPrefix(from, "0x"))
+	} else {
+		if !filepath.IsAbs(from) {
+			from = filepath.Join(dir, from)
+		}
+		block, err = os.ReadFile(from)
+	}
+	return
+}
+
+func LoadX509KeyPair(dir, cert, key string) (tls.Certificate, error) {
+	certPEMBlock, err := LoadPEMBlock(dir, cert)
+	if err != nil {
+		return tls.Certificate{}, err
+	}
+	keyPEMBlock, err := LoadPEMBlock(dir, key)
+	if err != nil {
+		return tls.Certificate{}, err
+	}
+	return tls.X509KeyPair(certPEMBlock, keyPEMBlock)
 }
