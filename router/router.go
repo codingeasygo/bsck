@@ -61,6 +61,8 @@ const (
 	CmdPingConn RouterCmd = 20
 	//CmdPingBack is the command of ping return from node
 	CmdPingBack RouterCmd = 21
+	//CmdNotify is the command of notify to node
+	CmdNotify RouterCmd = 30
 	//CmdDial is the command of tcp dial by router
 	CmdDialConn RouterCmd = 100
 	//CmdDialBack is the command of tcp dial back from master/slaver
@@ -83,6 +85,8 @@ func (c RouterCmd) String() string {
 		return "PingConn"
 	case CmdPingBack:
 		return "PingBack"
+	case CmdNotify:
+		return "Notify"
 	case CmdDialConn:
 		return "DialConn"
 	case CmdDialBack:
@@ -697,6 +701,8 @@ type Handler interface {
 	OnConnClose(raw Conn) error
 	//OnConnJoin is event on channel join
 	OnConnJoin(channel Conn, option interface{}, result xmap.M)
+	//OnConnNotify is event on channel receive notify
+	OnConnNotify(channel Conn, message []byte)
 }
 
 // Router is an implementation of the router control
@@ -1034,6 +1040,8 @@ func (r *Router) procConnRead(conn Conn) {
 			err = r.procPingConn(conn, frame)
 		case CmdPingBack:
 			err = r.procPingBack(conn, frame)
+		case CmdNotify:
+			err = r.procNotify(conn, frame)
 		case CmdDialConn:
 			err = r.procDialConn(conn, frame)
 		case CmdDialBack:
@@ -1124,6 +1132,11 @@ func (r *Router) procPingBack(channel Conn, frame *RouterFrame) (err error) {
 	order := channel.GetByteOrder()
 	startTime := xtime.TimeUnix(int64(order.Uint64(frame.Data)))
 	channel.SetPing(time.Since(startTime), time.Now())
+	return
+}
+
+func (r *Router) procNotify(channel Conn, frame *RouterFrame) (err error) {
+	r.Handler.OnConnNotify(channel, frame.Data)
 	return
 }
 
@@ -1427,6 +1440,15 @@ func (r *Router) DialConn(raw io.ReadWriteCloser, uri string) (sid ConnID, conn 
 	return
 }
 
+func (r *Router) Notify(name string, message []byte) (err error) {
+	channel, err := r.SelectChannel(name)
+	if err == nil {
+		frame := NewRouterFrameByMessage(r.Header, nil, ZeroConnID, CmdNotify, message)
+		err = channel.WriteRouterFrame(frame)
+	}
+	return
+}
+
 func (r *Router) Start() (err error) {
 	r.waiter.Add(1)
 	go r.procPingLoop()
@@ -1588,6 +1610,7 @@ type NormalAcessHandler struct {
 	ConnDialer  ConnDialer
 	RawDialer   RawDialer
 	NetDialer   xnet.Dialer
+	OnNotify    func([]byte)
 	lock        sync.RWMutex
 }
 
@@ -1715,4 +1738,11 @@ func (n *NormalAcessHandler) OnConnClose(conn Conn) (err error) {
 
 // OnConnJoin is proxy handler when channel join
 func (n *NormalAcessHandler) OnConnJoin(channel Conn, option interface{}, result xmap.M) {
+}
+
+// OnConnNotify is proxy handler when channel notify
+func (n *NormalAcessHandler) OnConnNotify(channel Conn, message []byte) {
+	if n.OnNotify != nil {
+		n.OnNotify(message)
+	}
 }

@@ -252,8 +252,8 @@ func newMultiNode() (nodeList []*Router, nameList []string, err error) {
 
 func TestRouter(t *testing.T) {
 	tester := xdebug.CaseTester{
-		0:  1,
-		10: 1,
+		0:  0,
+		13: 1,
 	}
 	if tester.Run() { //base dial
 		node0, node1, err := newBaseNode()
@@ -704,6 +704,27 @@ func TestRouter(t *testing.T) {
 		node1.Start()
 		node0.procPingAll()
 		time.Sleep(2 * time.Millisecond)
+		node0.Stop()
+		node1.Stop()
+	}
+	if tester.Run() { //ping
+		node0, node1, err := newBaseNode()
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		waiter := make(chan []byte, 1)
+		node0.Handler.(*NormalAcessHandler).OnNotify = func(m []byte) {
+			data := make([]byte, len(m))
+			copy(data, m)
+			waiter <- data
+		}
+		node1.Notify("N0", []byte("abc"))
+		recv := <-waiter
+		if string(recv) != "abc" {
+			t.Error("error")
+			return
+		}
 		node0.Stop()
 		node1.Stop()
 	}

@@ -262,6 +262,12 @@ func (p *Proxy) OnConnJoin(channel Conn, option interface{}, result xmap.M) {
 	}
 }
 
+func (p *Proxy) OnConnNotify(channel Conn, message []byte) {
+	if p.Handler != nil {
+		p.Handler.OnConnNotify(channel, message)
+	}
+}
+
 func (p *Proxy) loadTlsConfig(tlsCert, tlsKey, tlsCA, tlsVerify string) (config *tls.Config, err error) {
 	if len(tlsCA) < 1 && len(tlsCert) < 1 && (len(tlsVerify) < 1 || tlsVerify == "1") {
 		err = fmt.Errorf("at least one of tls_ca/tls_cert is required")
