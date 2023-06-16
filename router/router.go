@@ -259,6 +259,8 @@ type Conn interface {
 	Type() ConnType
 	//conn context getter
 	Context() xmap.M
+	//conn traffic bytes
+	TrafficBytes() (read, write uint64)
 	//alloc conn id, if can't alloc more id returing zero
 	AllocConnID() byte
 	//free conn id
@@ -428,6 +430,8 @@ type RouterConn struct {
 	connSeq               uint8
 	connAll               map[byte]bool
 	connLck               sync.RWMutex
+	readBytes             uint64
+	writeBytes            uint64
 	failed                error
 	waiter                *sync.Cond
 }
@@ -484,6 +488,11 @@ func (r *RouterConn) Context() xmap.M {
 	return r.context
 }
 
+func (r *RouterConn) TrafficBytes() (read, write uint64) {
+	read, write = r.readBytes, r.writeBytes
+	return
+}
+
 // alloc conn id, if can't alloc more id returing zero
 func (r *RouterConn) AllocConnID() (connID byte) {
 	r.connLck.Lock()
@@ -518,6 +527,7 @@ func (r *RouterConn) UsedConnID() (used int) {
 func (r *RouterConn) ReadRouterFrame() (frame *RouterFrame, err error) {
 	buffer, err := r.ReadWriteCloser.ReadFrame()
 	if err == nil {
+		r.readBytes += uint64(len(buffer))
 		frame = ParseRemoteRouterFrame(r.ReadWriteCloser, buffer)
 	}
 	return
@@ -525,6 +535,7 @@ func (r *RouterConn) ReadRouterFrame() (frame *RouterFrame, err error) {
 
 // write router frame
 func (r *RouterConn) WriteRouterFrame(frame *RouterFrame) (err error) {
+	r.writeBytes += uint64(len(frame.Buffer))
 	_, err = r.ReadWriteCloser.WriteFrame(frame.Buffer)
 	return
 }
