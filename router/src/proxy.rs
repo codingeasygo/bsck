@@ -109,10 +109,11 @@ impl Proxy {
         Self { name, dir, router, handler, preparer, channels: HashMap::new(), interval: 3000, gateway, listener: HashMap::new(), waiter }
     }
 
-    pub async fn bootstrap(handler: Arc<dyn Handler + Send + Sync>, config: Arc<JSON>) -> tokio::io::Result<Self> {
+    pub async fn bootstrap(handler: Arc<dyn Handler + Send + Sync>, preparer: Arc<dyn Preparer + Send + Sync>, config: Arc<JSON>) -> tokio::io::Result<Self> {
         let name = Arc::new(json_must_str(&config, "name")?.to_string());
         let mut proxy = Self::new(name, handler);
         proxy.dir = Arc::new(json_option_str(&config, "dir").unwrap_or(&String::from(".")).to_string());
+        proxy.preparer = preparer;
         proxy.reset(config, true, true, true).await?;
         Ok(proxy)
     }
@@ -316,6 +317,7 @@ impl Proxy {
                     self.start_gateway_fd(gw, fd, remote).await?;
                 }
                 Err(_) => {
+                    info!("Proxy({}) {} start bind tun {}<=>{}", name, key, gw, parts[1]);
                     let (reader, writer) = self.preparer.prepare_tun(&parts[1].to_string()).await?;
                     self.start_gateway(gw, reader, writer, remote).await?;
                 }
