@@ -323,12 +323,14 @@ func (p *Proxy) loadClientConfig(tlsCert, tlsKey, tlsCA, tlsVerify string) (conf
 // Keep will keep channel connection
 func (p *Proxy) Keep() (err error) {
 	for name, channel := range p.Channels {
-		connected := p.CountChannel(name)
-		keep := channel.IntDef(1, "keep")
-		if connected >= keep {
-			continue
+		for {
+			connected := p.CountChannel(name)
+			keep := channel.IntDef(1, "keep")
+			if connected >= keep {
+				break
+			}
+			p.Login(channel)
 		}
-		_, _, err = p.Login(channel)
 	}
 	return
 }
