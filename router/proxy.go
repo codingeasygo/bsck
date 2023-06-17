@@ -68,11 +68,10 @@ func (p *Proxy) loadServerConfig(tlsCert, tlsKey string) (config *tls.Config, er
 		err = fmt.Errorf("tls_cert/tls_key is required")
 		return
 	}
-	InfoLog("Proxy(%v) load x509 cert:%v,key:%v", p.Name, tlsCert, tlsKey)
 	var cert tls.Certificate
 	cert, err = LoadX509KeyPair(p.Dir, tlsCert, tlsKey)
 	if err != nil {
-		ErrorLog("Proxy(%v) load cert fail with %v", p.Name, err)
+		ErrorLog("Proxy(%v) load cert fail with %v by cert:%v,key:%v", p.Name, err, TlsConfigShow(tlsCert), TlsConfigShow(tlsKey))
 		return
 	}
 	config = &tls.Config{InsecureSkipVerify: p.Insecure}
@@ -156,7 +155,7 @@ func (p *Proxy) Listen(addr, tlsCert, tlsKey string) (err error) {
 			p.listenerLck.Unlock()
 		}()
 	}
-	InfoLog("Proxy(%v) listen %v master on %v", p.Name, addrNetwork, addrListen)
+	InfoLog("Proxy(%v) listen %v master on %v by addr:%v,cert:%v,key:%v", p.Name, addrNetwork, ln.Addr(), addr, TlsConfigShow(tlsCert), TlsConfigShow(tlsKey))
 	return
 }
 
