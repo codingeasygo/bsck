@@ -145,8 +145,6 @@ func runServer() {
 	proxy0 := router.NewProxy("N0", access0)
 	proxy0.Router.BufferSize = 2 * 1024
 	proxy0.Forward.BufferSize = 2 * 1024
-	proxy0.Cert = "certs/server.crt"
-	proxy0.Key = "certs/server.key"
 	proxy0.Heartbeat = time.Second
 
 	access1 := router.NewNormalAcessHandler("N1")
@@ -156,11 +154,11 @@ func runServer() {
 	proxy1.Router.BufferSize = 2 * 1024
 	proxy1.Forward.BufferSize = 2 * 1024
 	proxy1.Heartbeat = time.Second
-	err := proxy0.Listen("tcp://:13100")
+	err := proxy0.Listen("tcp://:13100", "certs/server.crt", "certs/server.key")
 	if err != nil {
 		panic(err)
 	}
-	err = proxy0.Listen("quic://:13100")
+	err = proxy0.Listen("quic://:13100", "certs/server.crt", "certs/server.key")
 	if err != nil {
 		panic(err)
 	}

@@ -252,7 +252,7 @@ func newMultiNode() (nodeList []*Router, nameList []string, err error) {
 
 func TestRouter(t *testing.T) {
 	tester := xdebug.CaseTester{
-		0:  0,
+		0:  1,
 		13: 1,
 	}
 	if tester.Run() { //base dial

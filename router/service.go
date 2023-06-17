@@ -537,7 +537,6 @@ func (s *Service) Start() (err error) {
 	if len(s.Config.Key) > 0 && !filepath.IsAbs(s.Config.Key) {
 		s.Config.Key = filepath.Join(filepath.Dir(s.ConfigPath), s.Config.Key)
 	}
-	s.Node.Cert, s.Node.Key = s.Config.Cert, s.Config.Key
 	s.Webs["state"] = http.HandlerFunc(s.Node.Router.StateH)
 	s.Dialer = dialer.NewPool(s.Config.Name)
 	s.Dialer.Webs = s.Webs
@@ -548,7 +547,7 @@ func (s *Service) Start() (err error) {
 	// s.Socks.Dialer = s.SocksDialer
 	s.Forward.Dialer = s.SyncDialAll
 	if len(s.Config.Listen) > 0 {
-		err = s.Node.Listen(s.Config.Listen)
+		err = s.Node.Listen(s.Config.Listen, s.Config.Cert, s.Config.Key)
 		if err != nil {
 			ErrorLog("Server(%v) node listen on %v fail with %v", s.Name, s.Config.Listen, err)
 			return

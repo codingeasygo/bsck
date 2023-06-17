@@ -21,7 +21,7 @@ func newBaseProxy() (proxy0, proxy1 *Proxy, err error) {
 	access1.LoginAccess["N2"] = "123"
 	access1.DialAccess = append(access1.DialAccess, []string{".*", ".*"})
 	proxy1 = NewProxy("N1", access1)
-	err = proxy0.Listen("127.0.0.1:15023")
+	err = proxy0.Listen("127.0.0.1:15023", "", "")
 	if err != nil {
 		return
 	}
@@ -45,7 +45,7 @@ func newKeepProxy() (proxy0, proxy1 *Proxy, err error) {
 	access1.DialAccess = append(access1.DialAccess, []string{".*", ".*"})
 	proxy1 = NewProxy("N1", access1)
 	proxy1.KeepDelay = 30 * time.Millisecond
-	err = proxy0.Listen("127.0.0.1:15023")
+	err = proxy0.Listen("127.0.0.1:15023", "", "")
 	if err != nil {
 		return
 	}
@@ -64,15 +64,12 @@ func newTlsProxy() (proxy0, proxy1 *Proxy, err error) {
 	access0.LoginAccess["N2"] = "123"
 	access0.DialAccess = append(access0.DialAccess, []string{".*", ".*"})
 	proxy0 = NewProxy("N0", access0)
-	proxy0.CA = "../certs/rootCA.crt"
-	proxy0.Cert = "../certs/server.crt"
-	proxy0.Key = "../certs/server.key"
 
 	access1 := NewNormalAcessHandler("N1")
 	access1.LoginAccess["N2"] = "123"
 	access1.DialAccess = append(access1.DialAccess, []string{".*", ".*"})
 	proxy1 = NewProxy("N1", access1)
-	err = proxy0.Listen("tls://127.0.0.1:15023")
+	err = proxy0.Listen("tls://127.0.0.1:15023", "../certs/server.crt", "../certs/server.key")
 	if err != nil {
 		return
 	}
@@ -91,15 +88,12 @@ func newTlsVerifyProxy() (proxy0, proxy1 *Proxy, err error) {
 	access0.LoginAccess["N2"] = "123"
 	access0.DialAccess = append(access0.DialAccess, []string{".*", ".*"})
 	proxy0 = NewProxy("N0", access0)
-	proxy0.CA = "../certs/rootCA.crt"
-	proxy0.Cert = "../certs/server.crt"
-	proxy0.Key = "../certs/server.key"
 
 	access1 := NewNormalAcessHandler("N1")
 	access1.LoginAccess["N2"] = "123"
 	access1.DialAccess = append(access1.DialAccess, []string{".*", ".*"})
 	proxy1 = NewProxy("N1", access1)
-	err = proxy0.Listen("tls://127.0.0.1:15023")
+	err = proxy0.Listen("tls://127.0.0.1:15023", "../certs/server.crt", "../certs/server.key")
 	if err != nil {
 		return
 	}
@@ -125,7 +119,7 @@ func newWsProxy() (proxy0, proxy1 *Proxy, err error) {
 	access1.LoginAccess["N2"] = "123"
 	access1.DialAccess = append(access1.DialAccess, []string{".*", ".*"})
 	proxy1 = NewProxy("N1", access1)
-	err = proxy0.Listen("ws://127.0.0.1:15023")
+	err = proxy0.Listen("ws://127.0.0.1:15023", "", "")
 	if err != nil {
 		return
 	}
@@ -142,15 +136,12 @@ func newWssProxy() (proxy0, proxy1 *Proxy, err error) {
 	access0.LoginAccess["N2"] = "123"
 	access0.DialAccess = append(access0.DialAccess, []string{".*", ".*"})
 	proxy0 = NewProxy("N0", access0)
-	proxy0.CA = "../certs/rootCA.crt"
-	proxy0.Cert = "../certs/server.crt"
-	proxy0.Key = "../certs/server.key"
 
 	access1 := NewNormalAcessHandler("N1")
 	access1.LoginAccess["N2"] = "123"
 	access1.DialAccess = append(access1.DialAccess, []string{".*", ".*"})
 	proxy1 = NewProxy("N1", access1)
-	err = proxy0.Listen("wss://127.0.0.1:15023")
+	err = proxy0.Listen("wss://127.0.0.1:15023", "../certs/server.crt", "../certs/server.key")
 	if err != nil {
 		return
 	}
@@ -168,15 +159,12 @@ func newWssVerifyProxy() (proxy0, proxy1 *Proxy, err error) {
 	access0.LoginAccess["N2"] = "123"
 	access0.DialAccess = append(access0.DialAccess, []string{".*", ".*"})
 	proxy0 = NewProxy("N0", access0)
-	proxy0.CA = "../certs/rootCA.crt"
-	proxy0.Cert = "../certs/server.crt"
-	proxy0.Key = "../certs/server.key"
 
 	access1 := NewNormalAcessHandler("N1")
 	access1.LoginAccess["N2"] = "123"
 	access1.DialAccess = append(access1.DialAccess, []string{".*", ".*"})
 	proxy1 = NewProxy("N1", access1)
-	err = proxy0.Listen("wss://127.0.0.1:15023")
+	err = proxy0.Listen("wss://127.0.0.1:15023", "../certs/server.crt", "../certs/server.key")
 	if err != nil {
 		return
 	}
@@ -194,15 +182,12 @@ func newQuicProxy() (proxy0, proxy1 *Proxy, err error) {
 	access0.LoginAccess["N2"] = "123"
 	access0.DialAccess = append(access0.DialAccess, []string{".*", ".*"})
 	proxy0 = NewProxy("N0", access0)
-	proxy0.CA = "../certs/rootCA.crt"
-	proxy0.Cert = "../certs/server.crt"
-	proxy0.Key = "../certs/server.key"
 
 	access1 := NewNormalAcessHandler("N1")
 	access1.LoginAccess["N2"] = "123"
 	access1.DialAccess = append(access1.DialAccess, []string{".*", ".*"})
 	proxy1 = NewProxy("N1", access1)
-	err = proxy0.Listen("quic://127.0.0.1:15023")
+	err = proxy0.Listen("quic://127.0.0.1:15023", "../certs/server.crt", "../certs/server.key")
 	if err != nil {
 		return
 	}
@@ -295,17 +280,12 @@ func TestProxy(t *testing.T) {
 		access0.LoginAccess["N2"] = "123"
 		access0.DialAccess = append(access0.DialAccess, []string{".*", ".*"})
 		proxy0 := NewProxy("N0", access0)
-		proxy0.Cert = "../certs/server.crt"
-		proxy0.Key = "xxx.key"
-		err := proxy0.Listen("tls://:0")
+		err := proxy0.Listen("tls://:0", "../certs/server.crt", "xxx.key")
 		if err == nil {
 			t.Error(err)
 			return
 		}
-		proxy0.CA = "../certs/rootCA.crt"
-		proxy0.Cert = "../certs/server.crt"
-		proxy0.Key = "../certs/server.key"
-		err = proxy0.Listen("127.0.0.1:x")
+		err = proxy0.Listen("tls://:0", "../certs/server.crt", "")
 		if err == nil {
 			t.Error(err)
 			return
