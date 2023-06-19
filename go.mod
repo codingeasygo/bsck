@@ -3,7 +3,7 @@ module github.com/codingeasygo/bsck
 go 1.14
 
 require (
-	github.com/codingeasygo/util v0.0.0-20230615044604-e64d794d9b92
+	github.com/codingeasygo/util v0.0.0-20230619063754-075776a02681
 	github.com/codingeasygo/web v0.0.0-20230604050114-a4be98831e65
 	github.com/quic-go/quic-go v0.35.1
 	golang.org/x/crypto v0.4.0

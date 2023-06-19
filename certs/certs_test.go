@@ -1,12 +1,12 @@
 package main
 
 import (
+	"bytes"
+	"compress/gzip"
+	"encoding/hex"
 	"fmt"
-	"io/ioutil"
-	"os"
 	"testing"
 
-	"github.com/codingeasygo/util/converter"
 	"github.com/codingeasygo/util/xmap"
 )
 
@@ -32,22 +32,32 @@ FhDCyiSnoCen2cSB0QQvDhaz8AP0p0ID1lZ7NaNQ4NOH8j5TURCYbljQ/86RFLyG
 `
 
 func TestPem2Hex(t *testing.T) {
-	config := xmap.M{
-		"name": "NX",
-		"forwards": xmap.M{
-			"tun~socks://127.0.0.1:0": "N0->${HOST}",
-		},
-		"channels": xmap.M{
-			"N0": xmap.M{
-				"name":   "NX",
-				"remote": "tls://192.168.1.100:13100",
-				"domain": "test.loc",
-				"token":  "123",
-				"tls_ca": CA,
-			},
-		},
-	}
-	ioutil.WriteFile("config.json", []byte(converter.JSON(config)), os.ModePerm)
+	buf := bytes.NewBuffer(nil)
+	writer, _ := gzip.NewWriterLevel(buf, gzip.BestCompression)
+	writer.Write([]byte(CA))
+	writer.Close()
+	buf2 := hex.EncodeToString([]byte(CA))
+	buf3 := hex.EncodeToString(buf.Bytes())
+	fmt.Printf("--->%v\n", len(CA))
+	fmt.Printf("--->%v\n", buf.Len())
+	fmt.Printf("--->%v\n", len(buf2))
+	fmt.Printf("--->%v\n", len(buf3))
+	// config := xmap.M{
+	// 	"name": "NX",
+	// 	"forwards": xmap.M{
+	// 		"tun~socks://127.0.0.1:0": "N0->${HOST}",
+	// 	},
+	// 	"channels": xmap.M{
+	// 		"N0": xmap.M{
+	// 			"name":   "NX",
+	// 			"remote": "tls://192.168.1.100:13100",
+	// 			"domain": "test.loc",
+	// 			"token":  "123",
+	// 			"tls_ca": CA,
+	// 		},
+	// 	},
+	// }
+	// ioutil.WriteFile("config.json", []byte(converter.JSON(config)), os.ModePerm)
 }
 
 func TestXXX(t *testing.T) {
