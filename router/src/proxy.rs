@@ -92,6 +92,7 @@ pub struct Proxy {
     pub handler: Arc<dyn Handler + Send + Sync>,
     pub preparer: Arc<dyn Preparer + Send + Sync>,
     pub channels: HashMap<String, Arc<JSON>>,
+    pub keep_max: usize,
     pub interval: u64,
     pub gateway: Gateway,
     listener: HashMap<String, Arc<Mutex<ServerState>>>,
@@ -106,7 +107,7 @@ impl Proxy {
         let preparer = Arc::new(SkipPreparer::new());
         let gateway = Gateway::new(router.clone());
         waiter.add(1);
-        Self { name, dir, router, handler, preparer, channels: HashMap::new(), interval: 3000, gateway, listener: HashMap::new(), waiter }
+        Self { name, dir, router, handler, preparer, channels: HashMap::new(), keep_max: 10, interval: 3000, gateway, listener: HashMap::new(), waiter }
     }
 
     pub async fn bootstrap(handler: Arc<dyn Handler + Send + Sync>, preparer: Arc<dyn Preparer + Send + Sync>, config: Arc<JSON>) -> tokio::io::Result<Self> {
@@ -124,6 +125,13 @@ impl Proxy {
             let channels = json_option_obj(&config, "channels")?;
             self.channels.clear();
             for name in channels.keys() {
+                if name == "keep_max" {
+                    match json_option_i64(&channels, &name) {
+                        Some(v) => self.keep_max = v as usize,
+                        None => (),
+                    };
+                    continue;
+                }
                 let channel = json_must_obj(&channels, name)?;
                 self.channels.insert(name.clone(), channel);
             }
@@ -181,23 +189,36 @@ impl Proxy {
     }
 
     pub async fn keep(&mut self) -> tokio::io::Result<()> {
-        let connected = self.router.list_channel_count().await;
+        let connected_all = self.router.list_channel_count().await;
+        let mut connected = 0;
+        for (_, c) in &connected_all {
+            connected += c;
+        }
         let mut to_login = Vec::new();
         let mut to_conn = Vec::new();
+        let mut per_max = 0;
+        if self.keep_max > connected {
+            let keep_max = self.keep_max - connected;
+            per_max = keep_max / self.channels.len();
+        }
         for (name, option) in &self.channels {
             let keep = match json_option_i64(option, "keep") {
                 Some(v) => v as usize,
                 None => 1,
             };
-            let count = match connected.get(name) {
+            let count = match connected_all.get(name) {
                 Some(c) => c.clone(),
                 None => 0,
             };
-            if count >= keep {
+            if count >= keep && count >= per_max {
                 continue;
             }
             to_login.push(option.clone());
-            to_conn.push(keep - count);
+            if per_max - count > keep - count {
+                to_conn.push(per_max - count);
+            } else {
+                to_conn.push(keep - count);
+            }
         }
         for i in 0..to_login.len() {
             let option = &to_login[i];
