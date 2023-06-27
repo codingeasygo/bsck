@@ -222,8 +222,8 @@ impl Proxy {
         }
         for i in 0..to_login.len() {
             let option = &to_login[i];
-            for _ in 0..to_conn[i] {
-                match self.login(option.clone()).await {
+            for j in 0..to_conn[i] {
+                match self.login(option.clone(), j).await {
                     Ok(_) => (),
                     Err(e) => {
                         warn!("Proxy({}) keep login by {:?} fail with {:?}", self.name, display_option(option), e);
@@ -235,56 +235,54 @@ impl Proxy {
         Ok(())
     }
 
-    pub async fn login(&mut self, option: Arc<JSON>) -> tokio::io::Result<()> {
-        let remote_all = json_must_str(&option, "remote")?;
-        for remote in remote_all.split(",") {
-            let remote = remote.to_string();
-            if remote.starts_with("tcp://") {
-                let conn = TcpSocket::new_v4()?;
-                conn.bind("0.0.0.0:0".parse().unwrap())?;
-                let fd = conn.as_raw_fd();
-                self.preparer.prepare_fd(fd).await?;
+    pub async fn login(&mut self, option: Arc<JSON>, remote_offset: usize) -> tokio::io::Result<()> {
+        let remote_all = json_must_str(&option, "remote")?.split(",").collect::<Vec<&str>>();
+        let remote = remote_all[remote_offset % remote_all.len()].to_string();
+        if remote.starts_with("tcp://") {
+            let conn = TcpSocket::new_v4()?;
+            conn.bind("0.0.0.0:0".parse().unwrap())?;
+            let fd = conn.as_raw_fd();
+            self.preparer.prepare_fd(fd).await?;
 
-                let domain = remote.trim_start_matches("tcp://");
-                let addr = wrap_err(domain.parse())?;
-                let stream = conn.connect(addr).await?;
-                let (rx, tx) = wrap_split_tcp_w(stream);
-                self.router.join_base(rx, tx, option.clone()).await?;
-            } else if remote.starts_with("tls://") {
-                let conn = TcpSocket::new_v4()?;
-                conn.bind("0.0.0.0:0".parse().unwrap())?;
-                let fd = conn.as_raw_fd();
-                self.preparer.prepare_fd(fd).await?;
+            let domain = remote.trim_start_matches("tcp://");
+            let addr = wrap_err(domain.parse())?;
+            let stream = conn.connect(addr).await?;
+            let (rx, tx) = wrap_split_tcp_w(stream);
+            self.router.join_base(rx, tx, option.clone()).await?;
+        } else if remote.starts_with("tls://") {
+            let conn = TcpSocket::new_v4()?;
+            conn.bind("0.0.0.0:0".parse().unwrap())?;
+            let fd = conn.as_raw_fd();
+            self.preparer.prepare_fd(fd).await?;
 
-                let addr = remote.trim_start_matches("tls://").to_string();
-                let domain = json_option_str(&option, "domain").unwrap_or(&addr);
-                let addr_conn = wrap_err(addr.parse())?;
-                let tls = load_tls_config(self.dir.clone(), &option)?;
-                let connector = TlsConnector::from(tls);
-                let stream = conn.connect(addr_conn).await?;
-                let server_name = rustls::ServerName::try_from(domain.as_str()).map_err(|_| new_message_err("invalid domain"))?;
-                let stream = connector.connect(server_name, stream).await?;
-                let (rx, tx) = wrap_split_tls_w(stream);
-                self.router.join_base(rx, tx, option.clone()).await?;
-            } else if remote.starts_with("quic://") {
-                let conn = std::net::UdpSocket::bind("0.0.0.0:0")?;
-                let fd = conn.as_raw_fd();
-                self.preparer.prepare_fd(fd).await?;
+            let addr = remote.trim_start_matches("tls://").to_string();
+            let domain = json_option_str(&option, "domain").unwrap_or(&addr);
+            let addr_conn = wrap_err(addr.parse())?;
+            let tls = load_tls_config(self.dir.clone(), &option)?;
+            let connector = TlsConnector::from(tls);
+            let stream = conn.connect(addr_conn).await?;
+            let server_name = rustls::ServerName::try_from(domain.as_str()).map_err(|_| new_message_err("invalid domain"))?;
+            let stream = connector.connect(server_name, stream).await?;
+            let (rx, tx) = wrap_split_tls_w(stream);
+            self.router.join_base(rx, tx, option.clone()).await?;
+        } else if remote.starts_with("quic://") {
+            let conn = std::net::UdpSocket::bind("0.0.0.0:0")?;
+            let fd = conn.as_raw_fd();
+            self.preparer.prepare_fd(fd).await?;
 
-                let addr = remote.trim_start_matches("quic://").to_string();
-                let domain: &String = json_option_str(&option, "domain").unwrap_or(&addr);
-                let addr_conn = wrap_err(addr.parse())?;
-                let runtime = quinn::default_runtime().ok_or_else(|| new_message_err("no async runtime found"))?;
-                let mut endpoint = quinn::Endpoint::new(quinn::EndpointConfig::default(), None, conn, runtime)?;
-                let tls = load_tls_config(self.dir.clone(), &option)?;
-                endpoint.set_default_client_config(quinn::ClientConfig::new(tls));
-                let conn = wrap_err(endpoint.connect(addr_conn, domain))?.await?;
-                let (send, recv) = conn.open_bi().await?;
-                let (rx, tx) = wrap_quinn_w(send, recv);
-                self.router.join_base(rx, tx, option.clone()).await?;
-            } else {
-                return Err(new_message_err(format!("not supporeted {}", remote)));
-            }
+            let addr = remote.trim_start_matches("quic://").to_string();
+            let domain: &String = json_option_str(&option, "domain").unwrap_or(&addr);
+            let addr_conn = wrap_err(addr.parse())?;
+            let runtime = quinn::default_runtime().ok_or_else(|| new_message_err("no async runtime found"))?;
+            let mut endpoint = quinn::Endpoint::new(quinn::EndpointConfig::default(), None, conn, runtime)?;
+            let tls = load_tls_config(self.dir.clone(), &option)?;
+            endpoint.set_default_client_config(quinn::ClientConfig::new(tls));
+            let conn = wrap_err(endpoint.connect(addr_conn, domain))?.await?;
+            let (send, recv) = conn.open_bi().await?;
+            let (rx, tx) = wrap_quinn_w(send, recv);
+            self.router.join_base(rx, tx, option.clone()).await?;
+        } else {
+            return Err(new_message_err(format!("not supporeted {}", remote)));
         }
         Ok(())
     }
