@@ -142,17 +142,13 @@ func runServer() {
 		raw, err = dialer0.Dial(channel, id, uri)
 		return
 	})
-	proxy0 := router.NewProxy("N0", access0)
-	proxy0.Router.BufferSize = 2 * 1024
-	proxy0.Forward.BufferSize = 2 * 1024
+	proxy0 := router.NewProxy("N0", 2*1024, access0)
 	proxy0.Heartbeat = time.Second
 
 	access1 := router.NewNormalAcessHandler("N1")
 	access1.LoginAccess["NX"] = "123"
 	access1.DialAccess = append(access1.DialAccess, []string{".*", ".*"})
-	proxy1 := router.NewProxy("N1", access1)
-	proxy1.Router.BufferSize = 2 * 1024
-	proxy1.Forward.BufferSize = 2 * 1024
+	proxy1 := router.NewProxy("N1", 2*1024, access1)
 	proxy1.Heartbeat = time.Second
 	err := proxy0.Listen("tcp://:13100", "certs/server.crt", "certs/server.key")
 	if err != nil {

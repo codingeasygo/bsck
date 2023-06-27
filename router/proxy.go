@@ -45,7 +45,7 @@ type Proxy struct {
 }
 
 // NewProxy will return new Proxy by name
-func NewProxy(name string, handler Handler) (px *Proxy) {
+func NewProxy(name string, bufferSize int, handler Handler) (px *Proxy) {
 	px = &Proxy{
 		Router:      NewRouter(name, nil),
 		Forward:     proxy.NewForward(name),
@@ -59,7 +59,9 @@ func NewProxy(name string, handler Handler) (px *Proxy) {
 		waiter:      sync.WaitGroup{},
 	}
 	px.Router.Handler = px
+	px.Router.BufferSize = bufferSize
 	px.Forward.Dialer = px
+	px.Forward.BufferSize = bufferSize
 	return
 }
 

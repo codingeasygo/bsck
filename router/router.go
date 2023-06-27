@@ -27,6 +27,8 @@ const (
 	ConnOK = "OK"
 )
 
+const DefaultBufferSize = 4 * 1024
+
 type RouterErrorType int
 
 const (
@@ -733,7 +735,7 @@ func NewRouter(name string, handler Handler) (router *Router) {
 		channelLck:    sync.RWMutex{},
 		tableAll:      map[string]*RouterItem{},
 		tableLck:      sync.RWMutex{},
-		BufferSize:    4 * 1024,
+		BufferSize:    DefaultBufferSize,
 		MaxConnection: 4096,
 		Heartbeat:     5 * time.Second,
 		Timeout:       15 * time.Second,

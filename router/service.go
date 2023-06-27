@@ -527,10 +527,8 @@ func (s *Service) Start() (err error) {
 		handler.ConnDialer = DialRawConnF(s.DialRawConn)
 		s.Handler = handler
 	}
-	s.Node = NewProxy(s.Config.Name, s.Handler)
+	s.Node = NewProxy(s.Config.Name, s.BufferSize, s.Handler)
 	s.Node.Dir = s.Config.Dir
-	s.Node.Router.BufferSize = s.BufferSize
-	s.Node.Forward.BufferSize = s.BufferSize
 	if len(s.Config.Cert) > 0 && !filepath.IsAbs(s.Config.Cert) {
 		s.Config.Cert = filepath.Join(filepath.Dir(s.ConfigPath), s.Config.Cert)
 	}
