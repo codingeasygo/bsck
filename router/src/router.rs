@@ -1350,7 +1350,9 @@ impl Router {
     }
 
     async fn join_call(&self, conn: Conn, option: Arc<JSON>) -> tokio::io::Result<Task> {
-        let login_option = serde_json::to_string(option.as_ref())?;
+        let mut login_option = (*option).clone();
+        login_option.insert("name".to_string(), json!((*self.name).clone()));
+        let login_option = serde_json::to_string(&login_option)?;
         let mut conn = conn;
         conn.write_message(&ConnID::zero(), &Cmd::LoginChannel, login_option.as_bytes()).await?;
         let message = conn.read_str().await?;
