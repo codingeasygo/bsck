@@ -253,7 +253,7 @@ func newMultiNode() (nodeList []*Router, nameList []string, err error) {
 func TestRouter(t *testing.T) {
 	tester := xdebug.CaseTester{
 		0:  1,
-		13: 1,
+		14: 1,
 	}
 	if tester.Run() { //base dial
 		node0, node1, err := newBaseNode()
@@ -725,6 +725,24 @@ func TestRouter(t *testing.T) {
 			t.Error("error")
 			return
 		}
+		node0.Stop()
+		node1.Stop()
+	}
+	if tester.Run() { //ping
+		node0, node1, err := newBaseNode()
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		channelA10, channelB10, _ := xio.CreatePipedConn()
+		node0.Accept(channelA10, false)
+		node2 := NewRouter("NX", NewNormalAcessHandler("NX"))
+		err = node2.PingConn(channelB10)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		channelB10.Close()
 		node0.Stop()
 		node1.Stop()
 	}

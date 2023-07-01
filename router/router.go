@@ -1366,6 +1366,19 @@ func (r *Router) JoinConn(conn, args interface{}) (channel Conn, result xmap.M, 
 	return
 }
 
+// PingConn will ping channel
+func (r *Router) PingConn(conn interface{}) (err error) {
+	channel := r.NewConn(conn, 0, ConnTypeChannel)
+	order := r.Header.GetByteOrder()
+	offset := r.Header.GetDataOffset()
+	buffer := make([]byte, offset+11)
+	startTime := xtime.TimeNow()
+	order.PutUint64(buffer[offset+3:], uint64(startTime))
+	writeMessage(channel, buffer, ConnID{}, CmdPingConn, buffer[offset+3:])
+	_, err = channel.ReadRouterFrame()
+	return
+}
+
 // Dial to remote by uri and bind channel to raw connection. return the session id
 func (r *Router) Dial(raw io.ReadWriteCloser, uri string) (sid ConnID, connID uint16, err error) {
 	sid, conn, err := r.DialConn(raw, uri)

@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/codingeasygo/util/converter"
 	"github.com/codingeasygo/util/xdebug"
 	"github.com/codingeasygo/util/xio"
 	"github.com/codingeasygo/util/xmap"
@@ -246,6 +247,21 @@ func TestProxy(t *testing.T) {
 		return
 	}
 	if tester.Run() && testProxy(newQuicProxy()) != nil {
+		return
+	}
+	if tester.Run() {
+		proxy0, proxy1, _ := newBaseProxy()
+		proxy2 := NewProxy("NX", DefaultBufferSize, NewNormalAcessHandler("NX"))
+		speed, err := proxy2.Ping(xmap.M{
+			"remote": "127.0.0.1:15023",
+		})
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		fmt.Printf("speed-->%v\n", converter.JSON(speed))
+		proxy0.Stop()
+		proxy1.Stop()
 		return
 	}
 	if tester.Run() { //keep
