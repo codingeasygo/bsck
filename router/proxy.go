@@ -376,6 +376,7 @@ func (p *Proxy) dialConn(remote, tlsCert, tlsKey, tlsCA, tlsHost, tlsVerify stri
 		InfoLog("Router(%v) start dial to %v", p.Name, remote)
 		conn, err = net.Dial("tcp", remoteURI.Host)
 	case "quic":
+		InfoLog("Proxy(%v) start dial to %v by cert:%v,key:%v,ca:%v,verify:%v", p.Name, remote, TlsConfigShow(tlsCert), TlsConfigShow(tlsKey), TlsConfigShow(tlsCA), tlsVerify)
 		config, err = p.loadClientConfig(tlsCert, tlsKey, tlsCA, tlsVerify)
 		if err != nil {
 			ErrorLog("Proxy(%v) load tls config fail with %v", p.Name, err)
@@ -452,17 +453,23 @@ func (p *Proxy) Ping(option xmap.M) (speed xmap.M, err error) {
 		if xerr == nil {
 			xerr = p.PingConn(NewInfoRWC(conn, conn.RemoteAddr().String()))
 		}
-		result := xmap.M{
-			"speed": time.Since(begin).Milliseconds(),
+		used := time.Since(begin)
+		if xerr == nil {
+			InfoLog("Proxy(%v) ping to %v success with %v", p.Name, remote, used)
+		} else {
+			WarnLog("Proxy(%v) ping to %v fail with %v,%v", p.Name, remote, used, xerr)
 		}
+		result := xmap.M{}
 		if xerr == nil {
 			result["code"] = 0
+			result["speed"] = used.Milliseconds()
 		} else {
 			result["code"] = -1
+			result["speed"] = used.Milliseconds()
 			result["error"] = xerr.Error()
 		}
 		speed[remote] = result
-		if conn != nil {
+		if xerr == nil && conn != nil {
 			conn.Close()
 		}
 	}
