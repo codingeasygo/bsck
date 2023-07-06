@@ -426,7 +426,9 @@ impl GatewayInner {
         }
 
         //forward data
+        let mut conn_size = 0;
         for (h, v) in conn_set.iter_mut() {
+            conn_size += 1;
             match v {
                 Socket::Tcp(v) => match conn_all.get_mut(&h) {
                     Some(c) => {
@@ -521,6 +523,9 @@ impl GatewayInner {
         }
 
         //close socket
+        if close_conn_h.len() > 0 {
+            log::info!("Gateway({}) {}/{} conn will close", s.name, close_conn_h.len(), conn_size);
+        }
         for ch in close_conn_h {
             match conn_all.remove(&ch) {
                 Some(conn) => log::info!("Gateway({}) {} conn is closed", s.name, conn.to_string()),
