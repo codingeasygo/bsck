@@ -322,7 +322,7 @@ impl Proxy {
             config.random_seed = rand::random();
             let mut iface = Interface::new(config, &mut device);
             iface.update_ip_addrs(|ip_addrs| {
-                ip_addrs.push(IpCidr::new(IpAddress::v4(10, 1, 0, 2), 24)).unwrap();
+                ip_addrs.push(IpCidr::new(IpAddress::v4(10, 7, 3, 1), 24)).unwrap();
             });
             iface.set_any_ip(true);
             self.gateway.start(self.name.clone(), iface, ln_reader, ln_writer, remote).await;
