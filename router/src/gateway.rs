@@ -1,6 +1,7 @@
 use std::{
     collections::{HashMap, HashSet},
     io::ErrorKind,
+    net::SocketAddr,
     sync::Arc,
     usize,
 };
@@ -9,9 +10,9 @@ use async_trait::async_trait;
 use smoltcp::{
     iface::{Interface, SocketHandle, SocketSet},
     phy::{Device, DeviceCapabilities, Medium, RxToken, TxToken},
-    socket::Socket,
+    socket::{tcp::State, Socket},
     time::Instant,
-    wire::{IpAddress, IpEndpoint, IpListenEndpoint, Ipv4Address},
+    wire::{IpAddress, IpEndpoint, Ipv4Address},
 };
 use tokio::sync::{
     broadcast,
@@ -67,12 +68,12 @@ impl Into<u8> for UdpGwFlag {
 
 #[derive(Clone, PartialEq, Eq, Hash)]
 struct UdpGwEndpoint {
-    local: IpListenEndpoint,
-    remote: IpEndpoint,
+    local: SocketAddr,
+    remote: SocketAddr,
 }
 
 impl UdpGwEndpoint {
-    pub fn new(local: IpListenEndpoint, remote: IpEndpoint) -> Self {
+    pub fn new(local: SocketAddr, remote: SocketAddr) -> Self {
         Self { local, remote }
     }
 }
@@ -80,13 +81,12 @@ impl UdpGwEndpoint {
 struct UdpGw {
     ep_all: HashMap<u16, UdpGwEndpoint>,
     id_all: HashMap<UdpGwEndpoint, u16>,
-    handle_all: HashMap<u16, SocketHandle>,
     id_seq: u16,
 }
 
 impl UdpGw {
     pub fn new() -> Self {
-        Self { ep_all: HashMap::new(), id_all: HashMap::new(), handle_all: HashMap::new(), id_seq: 0 }
+        Self { ep_all: HashMap::new(), id_all: HashMap::new(), id_seq: 0 }
     }
 
     pub fn new_cid(&mut self) -> u16 {
@@ -94,19 +94,18 @@ impl UdpGw {
         self.id_seq
     }
 
-    pub fn parse_frame<'a>(&mut self, buf: &'a [u8]) -> Option<(UdpGwFlag, &SocketHandle, &UdpGwEndpoint, &'a [u8])> {
+    pub fn parse_frame<'a>(&mut self, buf: &'a [u8]) -> Option<(UdpGwFlag, &UdpGwEndpoint, &'a [u8])> {
         let flag = UdpGwFlag::new(buf[2]);
         let id = u16::from_be_bytes([buf[3], buf[4]]);
-        let handle = self.handle_all.get(&id)?;
         let ep = self.ep_all.get(&id)?;
         if flag.is_ipv6() {
-            Some((flag, handle, ep, &buf[23..]))
+            Some((flag, ep, &buf[23..]))
         } else {
-            Some((flag, handle, ep, &buf[11..]))
+            Some((flag, ep, &buf[11..]))
         }
     }
 
-    pub fn create_frame(&mut self, handle: &SocketHandle, local: &IpListenEndpoint, remote: &IpEndpoint, data: &[u8]) -> Vec<u8> {
+    pub fn create_frame(&mut self, local: &SocketAddr, remote: &SocketAddr, data: &[u8]) -> Vec<u8> {
         let ep = UdpGwEndpoint::new(local.clone(), remote.clone());
         let id = match self.id_all.get(&ep) {
             Some(v) => *v,
@@ -114,23 +113,19 @@ impl UdpGw {
                 let new_id = self.new_cid();
                 self.ep_all.insert(new_id, ep.clone());
                 self.id_all.insert(ep, new_id);
-                self.handle_all.insert(new_id, handle.clone());
                 new_id
             }
         };
         let mut flag = UdpGwFlag::new(0);
-        if local.port == 53 {
+        if local.port() == 53 {
             flag.mark_dns();
         }
-        let addr = match &local.addr {
-            Some(addr) => match addr {
-                IpAddress::Ipv4(addr) => addr.as_bytes(),
-                IpAddress::Ipv6(addr) => {
-                    flag.mark_ipv6();
-                    addr.as_bytes()
-                }
-            },
-            None => &[0, 0, 0, 0],
+        let addr = match &local {
+            SocketAddr::V4(addr) => addr.ip().octets().to_vec(),
+            SocketAddr::V6(addr) => {
+                flag.mark_ipv6();
+                addr.ip().octets().to_vec()
+            }
         };
         let addr_len = addr.len();
         let frame_len = (5 + addr_len + data.len()) as u16;
@@ -138,8 +133,8 @@ impl UdpGw {
         buf[0..2].copy_from_slice(&frame_len.to_le_bytes() as &[u8]);
         buf[2..3].copy_from_slice(&[flag.into()]);
         buf[3..5].copy_from_slice(&id.to_be_bytes() as &[u8]);
-        buf[5..5 + addr_len].copy_from_slice(addr);
-        buf[5 + addr_len..7 + addr_len].copy_from_slice(&local.port.to_be_bytes() as &[u8]);
+        buf[5..5 + addr_len].copy_from_slice(&addr);
+        buf[5 + addr_len..7 + addr_len].copy_from_slice(&local.port().to_be_bytes() as &[u8]);
         buf[7 + addr_len..].copy_from_slice(&data);
         buf
     }
@@ -376,17 +371,8 @@ impl GatewayInner {
                         log::warn!("Gateway({}) UDPGW is closed", s.name);
                     } else {
                         match udpgw.parse_frame(&buf) {
-                            Some((_, h, ep, data)) => {
-                                match conn_set.find_mut(&h) {
-                                    Some(v) => {
-                                        if let Socket::Udp(v) = v {
-                                            if v.can_send() {
-                                                _ = v.send_slice(&data, ep.remote);
-                                            }
-                                        }
-                                    }
-                                    None => (), //drop
-                                }
+                            Some((_, ep, data)) => {
+                                iface.dispatch_any_udp(device, ep.local, ep.remote, data);
                             }
                             None => (), //drop
                         }
@@ -424,49 +410,24 @@ impl GatewayInner {
             log::info!("Gateway({}) receive {} conn is closed by {:?}", s.name, closed_id_all.len(), closed_id_all);
         }
 
+        match &mut s.udpgw_conn {
+            Some(c) => loop {
+                match conn_set.take_any_udp() {
+                    Some(packet) => {
+                        let buf = udpgw.create_frame(&packet.1, &packet.0, &packet.2);
+                        _ = c.writer.inner.try_send(buf);
+                    }
+                    None => break,
+                }
+            },
+            None => {
+                new_udpgw = true;
+            }
+        }
+
         //forward data
         for (h, v) in conn_set.iter_mut() {
             match v {
-                Socket::Udp(v) => match &mut s.udpgw_conn {
-                    Some(c) => {
-                        let local = v.endpoint();
-                        if v.can_recv() {
-                            match v.recv() {
-                                Ok((data, ep)) => {
-                                    let buf = udpgw.create_frame(&h, &local, &ep, &data);
-                                    _ = c.writer.inner.try_send(buf);
-                                }
-                                Err(_) => {
-                                    v.close();
-                                    close_conn_h.insert(h);
-                                }
-                            }
-                        }
-                        if v.can_send() {
-                            match c.reader.inner.try_recv() {
-                                Ok(buf) => match udpgw.parse_frame(&buf) {
-                                    Some((_, _, ep, data)) => {
-                                        _ = v.send_slice(&data, ep.remote);
-                                    }
-                                    None => (), //drop
-                                },
-                                Err(e) => match e {
-                                    mpsc::error::TryRecvError::Empty => (),
-                                    mpsc::error::TryRecvError::Disconnected => {
-                                        v.close();
-                                        close_conn_h.insert(h);
-                                    }
-                                },
-                            }
-                        }
-                        if !v.is_open() {
-                            close_conn_h.insert(h);
-                        }
-                    }
-                    None => {
-                        new_udpgw = true;
-                    }
-                },
                 Socket::Tcp(v) => match conn_all.get_mut(&h) {
                     Some(c) => {
                         if v.can_recv() {
@@ -526,10 +487,19 @@ impl GatewayInner {
                                 }
                             }
                         }
-                        if !v.is_open() || c.is_closed() || closed_id_all.contains(&c.meta.id) {
-                            _ = c.writer.inner.try_send(Vec::new());
-                            close_conn_h.insert(h);
-                            log::info!("Gateway({}) {} conn is closed by gw close it done", s.name, c.to_string());
+                        if closed_id_all.contains(&c.meta.id) {
+                            v.abort()
+                        }
+                        if !v.may_recv() {
+                            let state = v.state();
+                            if state == State::CloseWait {
+                                v.close();
+                            }
+                            if state == State::Closed {
+                                _ = c.writer.inner.try_send(Vec::new());
+                                close_conn_h.insert(h);
+                                log::info!("Gateway({}) {} conn is closed by gw close it done", s.name, c.to_string());
+                            }
                         }
                     }
                     None => {
@@ -544,7 +514,9 @@ impl GatewayInner {
                         }
                     }
                 },
-                _ => (),
+                _ => {
+                    close_conn_h.insert(h);
+                }
             }
         }
 
