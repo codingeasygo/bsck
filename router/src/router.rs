@@ -226,6 +226,10 @@ impl JobWaiter {
         self.waiter.done()
     }
 
+    pub fn waitings(&self) -> usize {
+        self.waiter.waitings()
+    }
+
     pub async fn wait(&self) {
         self.waiter.wait().await;
     }
@@ -741,6 +745,10 @@ impl Job {
 
     pub fn done(&self) {
         self.job.done()
+    }
+
+    pub fn waitings(&self) -> usize {
+        self.job.waitings()
     }
 
     pub async fn wait(&self) {
@@ -1472,6 +1480,10 @@ impl Router {
         Ok(())
     }
 
+    pub fn waitings(&self) -> usize {
+        self.job.waitings()
+    }
+
     pub async fn wait(&self) {
         self.job.wait().await;
     }
@@ -1491,7 +1503,9 @@ impl Router {
     }
 
     pub async fn display(&self) -> JSON {
-        self.router.lock().await.display()
+        let mut info = self.router.lock().await.display();
+        info.insert("jobs".to_string(), json!(self.waitings()));
+        info
     }
 }
 
