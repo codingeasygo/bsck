@@ -23,7 +23,7 @@ use tokio::sync::{
 use crate::{
     frame::{self},
     router::Router,
-    util::{new_message_err, ConnSeq},
+    util::{new_message_err, now, ConnSeq},
 };
 
 struct UdpGwFlag {
@@ -81,12 +81,13 @@ impl UdpGwEndpoint {
 struct UdpGw {
     ep_all: HashMap<u16, UdpGwEndpoint>,
     id_all: HashMap<UdpGwEndpoint, u16>,
+    last_all: HashMap<u16, i64>,
     id_seq: u16,
 }
 
 impl UdpGw {
     pub fn new() -> Self {
-        Self { ep_all: HashMap::new(), id_all: HashMap::new(), id_seq: 0 }
+        Self { ep_all: HashMap::new(), id_all: HashMap::new(), last_all: HashMap::new(), id_seq: 0 }
     }
 
     pub fn new_cid(&mut self) -> u16 {
@@ -94,10 +95,28 @@ impl UdpGw {
         self.id_seq
     }
 
+    pub fn timeout(&mut self) -> usize {
+        let n = now();
+        let mut remove = vec![];
+        for (k, v) in &self.last_all {
+            if n - *v > 30000 {
+                remove.push(k.clone());
+            }
+        }
+        for k in &remove {
+            self.last_all.remove(k);
+            if let Some(ep) = self.ep_all.remove(k) {
+                self.id_all.remove(&ep);
+            }
+        }
+        remove.len()
+    }
+
     pub fn parse_frame<'a>(&mut self, buf: &'a [u8]) -> Option<(UdpGwFlag, &UdpGwEndpoint, &'a [u8])> {
         let flag = UdpGwFlag::new(buf[2]);
         let id = u16::from_be_bytes([buf[3], buf[4]]);
         let ep = self.ep_all.get(&id)?;
+        self.last_all.insert(id, now());
         if flag.is_ipv6() {
             Some((flag, ep, &buf[23..]))
         } else {
@@ -127,6 +146,7 @@ impl UdpGw {
                 addr.ip().octets().to_vec()
             }
         };
+        self.last_all.insert(id, now());
         let addr_len = addr.len();
         let frame_len = (5 + addr_len + data.len()) as u16;
         let mut buf = vec![0u8; (frame_len + 2) as usize];
@@ -527,8 +547,9 @@ impl GatewayInner {
         }
 
         //close socket
-        if close_conn_h.len() > 0 {
-            log::info!("Gateway({}) {}/{},{} conn will close, {}", s.name, close_conn_h.len(), conn_size, conn_all.len(), udpgw.to_string());
+        let removed = udpgw.timeout();
+        if close_conn_h.len() > 0 || removed > 0 {
+            log::info!("Gateway({}) {}/{},{} conn will close, {}/{} udp will remove", s.name, close_conn_h.len(), conn_size, conn_all.len(), removed, udpgw.to_string());
         }
         for ch in close_conn_h {
             match conn_all.remove(&ch) {
