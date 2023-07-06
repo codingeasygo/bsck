@@ -138,6 +138,10 @@ impl UdpGw {
         buf[7 + addr_len..].copy_from_slice(&data);
         buf
     }
+
+    pub fn to_string(&self) -> String {
+        return format!("UdpGw(seq:{},{},{})", self.id_seq, self.ep_all.len(), self.id_all.len());
+    }
 }
 
 #[derive(Clone, PartialEq, Eq, Hash)]
@@ -524,7 +528,7 @@ impl GatewayInner {
 
         //close socket
         if close_conn_h.len() > 0 {
-            log::info!("Gateway({}) {}/{} conn will close", s.name, close_conn_h.len(), conn_size);
+            log::info!("Gateway({}) {}/{},{} conn will close, {}", s.name, close_conn_h.len(), conn_size, conn_all.len(), udpgw.to_string());
         }
         for ch in close_conn_h {
             match conn_all.remove(&ch) {
