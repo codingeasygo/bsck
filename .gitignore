@@ -39,3 +39,4 @@ router/tests/tests
 test/test
 test/test
 certs/certs
+bsrouter/bsconsole

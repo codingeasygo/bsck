@@ -793,8 +793,8 @@ func (r *Router) Register(channel interface{}) {
 }
 
 func (r *Router) findChannel(name string, new bool) (channel *BondConn) {
-	r.channelLck.RLock()
-	defer r.channelLck.RUnlock()
+	r.channelLck.Lock()
+	defer r.channelLck.Unlock()
 	channel = r.channelAll[name]
 	if channel == nil && new {
 		channel = NewBondConn(name, ConnTypeChannel)
