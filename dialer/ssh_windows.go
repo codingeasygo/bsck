@@ -1,7 +1,9 @@
 package dialer
 
 import (
+	"fmt"
 	"io"
+	"os/exec"
 
 	"github.com/gliderlabs/ssh"
 )
@@ -14,12 +16,20 @@ func sshHandler(s ssh.Session) {
 	}()
 	_, winCh, isPty := s.Pty()
 	if !isPty {
-		io.WriteString(s, "No PTY requested.\n")
+		cmd := exec.Command("powershell")
+		cmd.Stdin = s
+		cmd.Stdout = s
+		cmd.Stderr = s
+		err := cmd.Run()
+		if err != nil {
+			fmt.Fprintf(s, "powershell exit with %v", err)
+		}
 		s.Exit(1)
 		return
 	}
 	f, err := conpty.Start("powershell")
 	if err != nil {
+		fmt.Fprintf(s, "start pty error %v", err)
 		s.Exit(1)
 		return
 	}

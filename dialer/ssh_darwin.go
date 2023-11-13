@@ -24,16 +24,47 @@ func sshHandler(s ssh.Session) {
 		}
 	}()
 
+	shell, err := exec.LookPath("sh")
+	if err != nil {
+		shell, err = exec.LookPath("bash")
+	}
+	if err != nil {
+		shell, err = exec.LookPath("/usr/bin/sh")
+	}
+	if err != nil {
+		shell, err = exec.LookPath("/usr/bin/bash")
+	}
+	if err != nil {
+		shell, err = exec.LookPath("/system/bin/sh")
+	}
+	if err != nil {
+		fmt.Fprintf(s, "look shell fail")
+		return
+	}
+
 	ptyReq, winCh, isPty := s.Pty()
 	if !isPty {
-		io.WriteString(s, "No PTY requested.\n")
+		args := []string{}
+		if cmdArg := s.Command(); len(cmdArg) > 0 {
+			shell = cmdArg[0]
+			args = cmdArg[1:]
+		}
+		cmd := exec.Command(shell, args...)
+		cmd.Stdin = s
+		cmd.Stdout = s
+		cmd.Stderr = s
+		err := cmd.Run()
+		if err != nil {
+			fmt.Fprintf(s, "sh exit with %v", err)
+		}
 		s.Exit(1)
 		return
 	}
-	cmd := exec.Command("sh")
+	cmd := exec.Command(shell)
 	cmd.Env = append(cmd.Env, fmt.Sprintf("TERM=%s", ptyReq.Term))
 	f, err := pty.Start(cmd)
 	if err != nil {
+		fmt.Fprintf(s, "start pty error %v", err)
 		s.Exit(1)
 		return
 	}
