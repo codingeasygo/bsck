@@ -182,6 +182,7 @@ func (p *Proxy) AcceptWsConn(conn *websocket.Conn) {
 }
 
 func (p *Proxy) Start() {
+	p.Router.Start()
 	p.waiter.Add(1)
 	go p.loopKeep()
 }
