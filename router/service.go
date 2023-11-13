@@ -76,14 +76,15 @@ type Web struct {
 
 // Config is struct for all configure
 type Config struct {
-	Name    string            `json:"name"`
-	Dir     string            `json:"dir"`
-	Cert    string            `json:"cert"`
-	Key     string            `json:"key"`
-	Listen  string            `json:"listen"`
-	ACL     map[string]string `json:"acl"`
-	Access  [][]string        `json:"access"`
-	Console struct {
+	Name     string            `json:"name"`
+	Dir      string            `json:"dir"`
+	Cert     string            `json:"cert"`
+	Key      string            `json:"key"`
+	Insecure int               `json:"insecure"`
+	Listen   string            `json:"listen"`
+	ACL      map[string]string `json:"acl"`
+	Access   [][]string        `json:"access"`
+	Console  struct {
 		SOCKS string `json:"socks"`
 		WS    string `json:"ws"`
 	} `json:"console"`
@@ -110,6 +111,12 @@ func ReadConfig(filename string) (config *Config, last int64, err error) {
 	err = json.Unmarshal(configData, config)
 	if err != nil {
 		return
+	}
+	if len(config.Cert) < 1 && config.Insecure != 1 {
+		config.Cert = "bsrouter.pem"
+	}
+	if len(config.Key) < 1 && config.Insecure != 1 {
+		config.Key = "bsrouter.key"
 	}
 	if len(config.Dir) < 1 {
 		config.Dir = filepath.Dir(filename)

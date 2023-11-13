@@ -292,15 +292,21 @@ func (p *Proxy) loadClientConfig(tlsCert, tlsKey, tlsCA, tlsVerify string) (conf
 	}
 	config = &tls.Config{InsecureSkipVerify: p.Insecure}
 	config.Rand = rand.Reader
-	if len(tlsCert) > 0 {
-		var cert tls.Certificate
-		cert, err = LoadX509KeyPair(p.Dir, tlsCert, tlsKey)
-		if err != nil {
-			ErrorLog("Proxy(%v) load cert fail with %v", p.Name, err)
-			return
-		}
-		config.Certificates = append(config.Certificates, cert)
+
+	if len(tlsCert) < 1 {
+		tlsCert = "bsrouter.pem"
 	}
+	if len(tlsKey) < 1 {
+		tlsKey = "bsrouter.key"
+	}
+	var cert tls.Certificate
+	cert, err = LoadX509KeyPair(p.Dir, tlsCert, tlsKey)
+	if err != nil {
+		ErrorLog("Proxy(%v) load cert fail with %v", p.Name, err)
+		return
+	}
+	config.Certificates = append(config.Certificates, cert)
+
 	if len(tlsCA) > 0 {
 		var certPEM []byte
 		certPEM, err = LoadPEMBlock(p.Dir, tlsCA)
