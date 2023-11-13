@@ -1529,41 +1529,66 @@ func (r *Router) DialPiper(uri string, bufferSize int) (raw xio.Piper, err error
 
 // RouterPiper is Waiter/Piper implement
 type RouterPiper struct {
-	raw    io.ReadWriteCloser
-	next   func(err error)
-	ready  int
-	failed error
-	waiter *sync.Cond
+	raw     io.ReadWriteCloser
+	next    func(err error)
+	failed  error
+	readyR  int
+	waiterR *sync.Cond
+	readyW  int
+	waiterW *sync.Cond
 }
 
 // NewRouterPiper will return new RouterPiper
 func NewRouterPiper() (piper *RouterPiper) {
 	piper = &RouterPiper{
-		waiter: sync.NewCond(&sync.Mutex{}),
+		waiterR: sync.NewCond(&sync.Mutex{}),
+		waiterW: sync.NewCond(&sync.Mutex{}),
 	}
 	return
 }
 
 // Wait will wait piper is ready
 func (r *RouterPiper) Wait() error {
-	if r.ready < 1 {
-		r.waiter.L.Lock()
-		if r.ready < 1 {
-			r.waiter.Wait()
+	if r.readyR < 1 {
+		r.waiterR.L.Lock()
+		if r.readyR < 1 {
+			r.waiterR.Wait()
 		}
-		r.waiter.L.Unlock()
+		r.waiterR.L.Unlock()
 	}
 	return r.failed
 }
 
 // Ready will set piper is ready, failed/next at lasted is not nil
 func (r *RouterPiper) Ready(failed error, next func(err error)) {
-	r.waiter.L.Lock()
-	r.failed = failed
-	r.ready = 1
-	r.next = next
-	r.waiter.Broadcast()
-	r.waiter.L.Unlock()
+	r.waiterR.L.Lock()
+	r.readyR = 1
+	if r.failed == nil {
+		r.failed = failed
+	}
+	if next != nil {
+		r.next = next
+	}
+	r.waiterR.Broadcast()
+	r.waiterR.L.Unlock()
+}
+
+func (r *RouterPiper) waitWrite() error {
+	if r.readyW < 1 {
+		r.waiterW.L.Lock()
+		if r.readyW < 1 {
+			r.waiterW.Wait()
+		}
+		r.waiterW.L.Unlock()
+	}
+	return r.failed
+}
+
+func (r *RouterPiper) readWrite() {
+	r.waiterW.L.Lock()
+	r.readyW = 1
+	r.waiterW.Broadcast()
+	r.waiterW.L.Unlock()
 }
 
 // PipeConn will pipe connection, it must be called after Wait success, or panic
@@ -1572,9 +1597,11 @@ func (r *RouterPiper) PipeConn(conn io.ReadWriteCloser, target string) (err erro
 	err = r.failed
 	if err == nil {
 		r.raw = conn
+		r.readWrite()
 		r.next(err)
 		err = fmt.Errorf("pipe done")
 	} else {
+		r.readWrite()
 		conn.Close()
 	}
 	return
@@ -1582,13 +1609,13 @@ func (r *RouterPiper) PipeConn(conn io.ReadWriteCloser, target string) (err erro
 
 // Close will close ready piper, it will lock when it is not ready
 func (r *RouterPiper) Close() (err error) {
-	r.waiter.L.Lock()
-	r.ready = 1
+	r.waiterR.L.Lock()
+	r.readyR = 1
 	if r.failed == nil {
 		r.failed = fmt.Errorf("closed")
 	}
-	r.waiter.Broadcast()
-	r.waiter.L.Unlock()
+	r.waiterR.Broadcast()
+	r.waiterR.L.Unlock()
 	if r.raw != nil {
 		r.raw.Close()
 	}
@@ -1596,8 +1623,7 @@ func (r *RouterPiper) Close() (err error) {
 }
 
 func (r *RouterPiper) Read(p []byte) (n int, err error) {
-	r.Wait()
-	err = r.failed
+	err = r.Wait()
 	if err == nil {
 		n, err = r.raw.Read(p)
 	}
@@ -1605,8 +1631,7 @@ func (r *RouterPiper) Read(p []byte) (n int, err error) {
 }
 
 func (r *RouterPiper) Write(p []byte) (n int, err error) {
-	r.Wait()
-	err = r.failed
+	err = r.waitWrite()
 	if err == nil {
 		n, err = r.raw.Write(p)
 	}
