@@ -6,19 +6,17 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
-	"encoding/hex"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"net/url"
-	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/codingeasygo/bsck/dialer"
 	"github.com/codingeasygo/util/proxy"
 	"github.com/codingeasygo/util/xdebug"
 	"github.com/codingeasygo/util/xmap"
@@ -574,28 +572,6 @@ func TlsConfigShow(from string) (info string) {
 	return
 }
 
-func LoadPEMBlock(dir, from string) (block []byte, err error) {
-	if strings.HasPrefix(from, "-----BEGIN") {
-		block = []byte(from)
-	} else if strings.HasPrefix(from, "0x") {
-		block, err = hex.DecodeString(strings.TrimPrefix(from, "0x"))
-	} else {
-		if !filepath.IsAbs(from) {
-			from = filepath.Join(dir, from)
-		}
-		block, err = os.ReadFile(from)
-	}
-	return
-}
+var LoadPEMBlock = dialer.LoadPEMBlock
 
-func LoadX509KeyPair(dir, cert, key string) (tls.Certificate, error) {
-	certPEMBlock, err := LoadPEMBlock(dir, cert)
-	if err != nil {
-		return tls.Certificate{}, err
-	}
-	keyPEMBlock, err := LoadPEMBlock(dir, key)
-	if err != nil {
-		return tls.Certificate{}, err
-	}
-	return tls.X509KeyPair(certPEMBlock, keyPEMBlock)
-}
+var LoadX509KeyPair = dialer.LoadX509KeyPair

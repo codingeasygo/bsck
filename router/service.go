@@ -545,6 +545,8 @@ func (s *Service) Start() (err error) {
 	s.Webs["state"] = http.HandlerFunc(s.Node.Router.StateH)
 	s.Dialer = dialer.NewPool(s.Config.Name)
 	s.Dialer.Webs = s.Webs
+	dialerConfig := s.Config.Dialer
+	dialerConfig["dir"] = s.Config.Dir
 	err = s.Dialer.Bootstrap(s.Config.Dialer)
 	if err != nil {
 		return

@@ -490,7 +490,7 @@ func (c *Console) ProxyProcess(uri string, stdin, stdout, stderr *os.File, prepa
 func (c *Console) ProxySSH(uri string, stdin io.Reader, stdout, stderr io.Writer, proxyCommand, command string, args ...string) (err error) {
 	replaceURI := uri
 	if len(replaceURI) < 1 {
-		replaceURI = "tcp://127.0.0.1:22"
+		replaceURI = "ssh://server"
 	}
 	replaceURI = strings.ReplaceAll(replaceURI, "->", "_")
 	replaceURI = strings.ReplaceAll(replaceURI, "://", "_")
@@ -498,11 +498,11 @@ func (c *Console) ProxySSH(uri string, stdin io.Reader, stdout, stderr io.Writer
 	for i, a := range args {
 		args[i] = strings.ReplaceAll(a, "bshost", replaceURI)
 	}
-	if !strings.Contains(uri, "tcp://") {
+	if !strings.Contains(uri, "://") {
 		if len(uri) > 0 {
 			uri += "->"
 		}
-		uri += "tcp://127.0.0.1:22"
+		uri += "ssh://server"
 	}
 	allArgs := []string{}
 	allArgs = append(allArgs, "-o", fmt.Sprintf("ProxyCommand=%v", strings.ReplaceAll(proxyCommand, "${URI}", uri)))

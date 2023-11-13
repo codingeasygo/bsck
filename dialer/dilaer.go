@@ -141,6 +141,14 @@ func (p *Pool) Bootstrap(options xmap.M) error {
 		p.Dialers = append(p.Dialers, udpgw)
 		InfoLog("Pool(%v) add tcp dialer to pool", p.Name)
 	}
+	if options.Value("ssh") != nil {
+		conf := options.MapDef(xmap.M{}, "ssh")
+		conf["dir"] = options.StrDef(",", "dir")
+		ssh := NewSshDialer()
+		ssh.Bootstrap(conf)
+		p.Dialers = append(p.Dialers, ssh)
+		InfoLog("Pool(%v) add ssh dialer to pool", p.Name)
+	}
 	if options.Value("tcp") != nil || options.IntDef(0, "standard") > 0 || options.IntDef(0, "std") > 0 {
 		tcp := NewTCPDialer()
 		tcp.Bootstrap(options.MapDef(xmap.M{}, "tcp"))
