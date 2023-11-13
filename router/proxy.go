@@ -337,7 +337,10 @@ func (p *Proxy) Keep() (err error) {
 			if connected >= keep {
 				break
 			}
-			p.Login(channel)
+			_, _, err = p.Login(channel)
+			if err != nil {
+				break
+			}
 		}
 	}
 	return
