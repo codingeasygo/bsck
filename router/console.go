@@ -12,7 +12,6 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -23,6 +22,8 @@ import (
 	wproxy "github.com/codingeasygo/util/proxy/ws"
 	"github.com/codingeasygo/util/xhttp"
 	"github.com/codingeasygo/util/xio"
+	"github.com/codingeasygo/util/xmap"
+	"github.com/codingeasygo/util/xtime"
 )
 
 type Hosts struct {
@@ -314,13 +315,13 @@ func (c *Console) PrintState(uri, query string) (err error) {
 	channels := state.Map("channels")
 	for name := range channels {
 		fmt.Printf(" ->%v\n", name)
-		bond := channels.Map(name)
-		for idx := range bond {
-			val := bond.Map(idx)
-			idxVal, _ := strconv.ParseInt(strings.Replace(idx, "_", "", -1), 10, 64)
-			heartbeat := val.Int64Def(0, "heartbeat")
-			hs := time.Unix(0, heartbeat*1e6).Format("2006-01-02 15:04:05")
-			fmt.Printf("   %d % 4d   %v   %v\n", idxVal, int(val["used"].(float64)), hs, val["connect"])
+		bondAll := channels.ArrayMapDef(nil, name)
+		for _, bond := range bondAll {
+			ping := bond.MapDef(xmap.M{}, "ping")
+			pingSpeed := time.Duration(ping.Int64Def(0, "speed")) * time.Millisecond
+			pingLast := ping.Int64Def(0, "last")
+			pingLastStr := xtime.TimeUnix(pingLast).Format("2006-01-02 15:04:05")
+			fmt.Printf("   %v	%v   %v   %v\n", bond.Value("id"), pingSpeed, pingLastStr, bond.StrDef("", "connect"))
 		}
 	}
 	fmt.Printf("\n\n[Table]\n")
