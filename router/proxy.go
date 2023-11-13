@@ -22,6 +22,7 @@ import (
 	"github.com/codingeasygo/util/xmap"
 	"github.com/codingeasygo/util/xnet"
 	"github.com/quic-go/quic-go"
+	nproxy "golang.org/x/net/proxy"
 	"golang.org/x/net/websocket"
 )
 
@@ -345,7 +346,7 @@ func (p *Proxy) Keep() (err error) {
 	return
 }
 
-func (p *Proxy) dialConn(remote, tlsCert, tlsKey, tlsCA, tlsHost, tlsVerify string) (conn net.Conn, err error) {
+func (p *Proxy) dialConn(remote, proxy, tlsCert, tlsKey, tlsCA, tlsHost, tlsVerify string) (conn net.Conn, err error) {
 	if !strings.Contains(remote, "://") {
 		remote = "tcp://" + remote
 	}
@@ -353,6 +354,24 @@ func (p *Proxy) dialConn(remote, tlsCert, tlsKey, tlsCA, tlsHost, tlsVerify stri
 	if xerr != nil {
 		err = xerr
 		return
+	}
+	var proxyDailer xnet.RawDialer
+	if len(proxy) > 0 {
+		proxyURL, xerr := url.Parse(proxy)
+		if xerr != nil {
+			err = xerr
+			return
+		}
+		var proxyAuth *nproxy.Auth
+		if proxyURL.User != nil {
+			proxyAuth = &nproxy.Auth{}
+			proxyAuth.User = proxyURL.User.Username()
+			proxyAuth.Password, _ = proxyURL.User.Password()
+		}
+		proxyDailer, err = nproxy.SOCKS5("tcp", proxyURL.Host, proxyAuth, nil)
+		if err != nil {
+			return
+		}
 	}
 	var config *tls.Config
 	switch remoteURI.Scheme {
@@ -365,6 +384,9 @@ func (p *Proxy) dialConn(remote, tlsCert, tlsKey, tlsCA, tlsHost, tlsVerify stri
 				ErrorLog("Proxy(%v) load tls config fail with %v", p.Name, err)
 				return
 			}
+		}
+		if proxyDailer != nil {
+			dialer.Dialer = proxyDailer
 		}
 		var rawConn io.ReadWriteCloser
 		rawConn, err = dialer.Dial(remote)
@@ -379,10 +401,28 @@ func (p *Proxy) dialConn(remote, tlsCert, tlsKey, tlsCA, tlsHost, tlsVerify stri
 			return
 		}
 		var dialer net.Dialer
-		conn, err = tls.DialWithDialer(&dialer, "tcp", remoteURI.Host, config)
+		if proxyDailer != nil {
+			rawConn, xerr := proxyDailer.Dial("tcp", remoteURI.Host)
+			if xerr != nil {
+				err = xerr
+				return
+			}
+			tlsConn := tls.Client(rawConn, config)
+			err = tlsConn.HandshakeContext(context.Background())
+			if err != nil {
+				rawConn.Close()
+			}
+			conn = tlsConn
+		} else {
+			conn, err = tls.DialWithDialer(&dialer, "tcp", remoteURI.Host, config)
+		}
 	case "tcp":
 		InfoLog("Router(%v) start dial to %v", p.Name, remote)
-		conn, err = net.Dial("tcp", remoteURI.Host)
+		if len(proxy) > 0 {
+			conn, err = proxyDailer.Dial("tcp", remoteURI.Host)
+		} else {
+			conn, err = net.Dial("tcp", remoteURI.Host)
+		}
 	case "quic":
 		InfoLog("Proxy(%v) start dial to %v by cert:%v,key:%v,ca:%v,verify:%v", p.Name, remote, TlsConfigShow(tlsCert), TlsConfigShow(tlsKey), TlsConfigShow(tlsCA), tlsVerify)
 		config, err = p.loadClientConfig(tlsCert, tlsKey, tlsCA, tlsVerify)
@@ -402,20 +442,21 @@ func (p *Proxy) dialConn(remote, tlsCert, tlsKey, tlsCA, tlsHost, tlsVerify stri
 
 // Login will add channel by local address, master address, auth token, channel index.
 func (p *Proxy) Login(option xmap.M) (channel Conn, result xmap.M, err error) {
-	var remoteAll, tlsCert, tlsKey, tlsCA, tlsHost, tlsVerify string
+	var remoteAll, proxy, tlsCert, tlsKey, tlsCA, tlsHost, tlsVerify string
 	err = option.ValidFormat(`
 		remote,R|S,L:0;
+		proxy,O|S,L:0;
 		tls_cert,O|S,L:0;
 		tls_key,O|S,L:0;
 		tls_host,O|S,L:0;
 		tls_ca,O|S,L:0;
-	`, &remoteAll, &tlsCert, &tlsKey, &tlsHost, &tlsCA)
+	`, &remoteAll, &proxy, &tlsCert, &tlsKey, &tlsHost, &tlsCA)
 	if err != nil {
 		return
 	}
 	tlsVerify = option.StrDef("", "tls_verify")
 	for _, remote := range strings.Split(remoteAll, ",") {
-		conn, xerr := p.dialConn(remote, tlsCert, tlsKey, tlsCA, tlsHost, tlsVerify)
+		conn, xerr := p.dialConn(remote, proxy, tlsCert, tlsKey, tlsCA, tlsHost, tlsVerify)
 		if xerr != nil {
 			err = xerr
 			WarnLog("Proxy(%v) dial to %v fail with %v", p.Name, remote, err)
@@ -442,9 +483,10 @@ func (p *Proxy) Login(option xmap.M) (channel Conn, result xmap.M, err error) {
 
 // Ping will ping channel
 func (p *Proxy) Ping(option xmap.M) (speed xmap.M, err error) {
-	var remoteAll, tlsCert, tlsKey, tlsCA, tlsHost, tlsVerify string
+	var remoteAll, proxy, tlsCert, tlsKey, tlsCA, tlsHost, tlsVerify string
 	err = option.ValidFormat(`
 		remote,R|S,L:0;
+		proxy,O|S,L:0;
 		tls_cert,O|S,L:0;
 		tls_key,O|S,L:0;
 		tls_host,O|S,L:0;
@@ -457,7 +499,7 @@ func (p *Proxy) Ping(option xmap.M) (speed xmap.M, err error) {
 	speed = xmap.M{}
 	for _, remote := range strings.Split(remoteAll, ",") {
 		begin := time.Now()
-		conn, xerr := p.dialConn(remote, tlsCert, tlsKey, tlsCA, tlsHost, tlsVerify)
+		conn, xerr := p.dialConn(remote, proxy, tlsCert, tlsKey, tlsCA, tlsHost, tlsVerify)
 		if xerr == nil {
 			xerr = p.PingConn(NewInfoRWC(conn, conn.RemoteAddr().String()))
 		}
