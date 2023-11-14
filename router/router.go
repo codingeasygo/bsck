@@ -15,6 +15,7 @@ import (
 
 	"github.com/codingeasygo/util/converter"
 	"github.com/codingeasygo/util/xdebug"
+	"github.com/codingeasygo/util/xhash"
 	"github.com/codingeasygo/util/xio"
 	"github.com/codingeasygo/util/xio/frame"
 	"github.com/codingeasygo/util/xmap"
@@ -1689,6 +1690,7 @@ func (n *NormalAcessHandler) DialRawConn(channel Conn, id uint16, uri string) (c
 func (n *NormalAcessHandler) loginAccess(name, token string) (matched string) {
 	n.lock.RLock()
 	defer n.lock.RUnlock()
+	tokenSHA := xhash.SHA1([]byte(token))
 	for key, val := range n.LoginAccess {
 		keyPattern, err := regexp.Compile(key)
 		if err != nil {
@@ -1700,7 +1702,7 @@ func (n *NormalAcessHandler) loginAccess(name, token string) (matched string) {
 			WarnLog("NormalAcessHandler(%v) compile acl token regexp(%v) fail with %v", n.Name, val, err)
 			continue
 		}
-		if keyPattern.MatchString(name) && valPattern.MatchString(token) {
+		if keyPattern.MatchString(name) && valPattern.MatchString(tokenSHA) {
 			matched = key
 			break
 		}
