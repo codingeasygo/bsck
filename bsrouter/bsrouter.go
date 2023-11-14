@@ -7,9 +7,11 @@ import (
 	"os"
 	"os/signal"
 	"os/user"
+	"path/filepath"
 	"syscall"
 
 	"github.com/codingeasygo/bsck/router"
+	"github.com/codingeasygo/util/xcrypto"
 )
 
 // Version is bsrouter version
@@ -45,6 +47,54 @@ func main() {
 		fmt.Fprintf(os.Stderr, "        channels.remote\n")
 		fmt.Fprintf(os.Stderr, "             the master address\n")
 		os.Exit(1)
+	}
+	if len(os.Args) > 1 && os.Args[1] == "create" {
+		if len(os.Args) > 3 && os.Args[2] == "cert" {
+			name := "bsrouter"
+			if len(os.Args) > 4 {
+				name = os.Args[4]
+			}
+			rootCert, rootKey, rootCertPEM, rootKeyPEM, xerr := xcrypto.GenerateRootCA([]string{name}, name, 2048)
+			if xerr != nil {
+				fmt.Printf("%v\n", xerr)
+				os.Exit(1)
+				return
+			}
+			_, _, certPEM, keyPEM, xerr := xcrypto.GenerateCert(rootCert, rootKey, nil, []string{name}, name, []string{name}, nil, 2048)
+			if xerr != nil {
+				fmt.Printf("%v\n", xerr)
+				os.Exit(1)
+				return
+			}
+			xerr = os.WriteFile(filepath.Join(os.Args[3], name+"CA.key"), rootKeyPEM, os.ModePerm)
+			if xerr != nil {
+				fmt.Printf("%v\n", xerr)
+				os.Exit(1)
+				return
+			}
+			xerr = os.WriteFile(filepath.Join(os.Args[3], name+"CA.pem"), rootCertPEM, os.ModePerm)
+			if xerr != nil {
+				fmt.Printf("%v\n", xerr)
+				os.Exit(1)
+				return
+			}
+			xerr = os.WriteFile(filepath.Join(os.Args[3], name+".key"), keyPEM, os.ModePerm)
+			if xerr != nil {
+				fmt.Printf("%v\n", xerr)
+				os.Exit(1)
+				return
+			}
+			xerr = os.WriteFile(filepath.Join(os.Args[3], name+".pem"), certPEM, os.ModePerm)
+			if xerr != nil {
+				fmt.Printf("%v\n", xerr)
+				os.Exit(1)
+				return
+			}
+			os.Exit(0)
+		} else {
+			fmt.Printf("not supported %v\n", os.Args[2:])
+			os.Exit(1)
+		}
 	}
 	var configPath string
 	var err error
