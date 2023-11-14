@@ -602,8 +602,8 @@ func (s *Service) Start() (err error) {
 	}
 	if len(s.Config.Channels) > 0 {
 		s.Node.Channels = s.Config.Channels
-		s.Node.Start()
 	}
+	s.Node.Start()
 	return
 }
 
