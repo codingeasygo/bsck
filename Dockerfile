@@ -1,12 +1,12 @@
-FROM golang:1.17
+FROM golang:1.19
 WORKDIR /src
 ADD . /src/
-RUN GOPROXY=https://goproxy.cn,direct CGO_ENABLED=0 GOOS=linux go build -o /usr/bin/bsrouter ./bsrouter
-RUN GOPROXY=https://goproxy.cn,direct CGO_ENABLED=0 GOOS=linux go build -o /usr/bin/bsconsole ./bsconsole
+RUN cd /src/bsrouter/ && GOOS=linux go build -o .
+RUN cd /src/bsconsole/ && GOOS=linux go build -o .
 
-FROM alpine:latest  
-RUN apk --no-cache add ca-certificates
+FROM ubuntu:22.04  
+RUN apt update && apt-get install -y ca-certificates ssh && apt clean all
 WORKDIR /
-COPY --from=0 /usr/bin/bsrouter /usr/bin
-COPY --from=0 /usr/bin/bsconsole /usr/bin
+COPY --from=0 /src/bsrouter/bsrouter /usr/bin
+COPY --from=0 /src/bsconsole/bsconsole /usr/bin
 RUN /usr/bin/bsconsole install
