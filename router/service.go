@@ -579,7 +579,6 @@ func (s *Service) Start() (err error) {
 		}
 		InfoLog("Server(%v) ws console listen on %v success", s.Name, s.Config.Console.WS)
 	}
-	s.Node.Start()
 	mux := http.NewServeMux()
 	mux.HandleFunc("/dav/", s.Forward.ProcWebSubsH)
 	mux.HandleFunc("/web/", s.Forward.ProcWebSubsH)
