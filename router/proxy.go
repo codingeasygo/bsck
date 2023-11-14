@@ -333,7 +333,7 @@ func (p *Proxy) Keep() (err error) {
 	for name, channel := range p.Channels {
 		for {
 			connected := p.CountChannel(name)
-			keep := channel.IntDef(1, "keep")
+			keep := channel.IntDef(3, "keep")
 			if connected >= keep {
 				break
 			}
