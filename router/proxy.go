@@ -337,8 +337,14 @@ func (p *Proxy) Keep() (err error) {
 			if connected >= keep {
 				break
 			}
-			_, _, err = p.Login(channel)
-			if err != nil {
+			channel, _, xerr := p.Login(channel)
+			if xerr != nil {
+				err = xerr
+				break
+			}
+			if channel.Name() != name {
+				ErrorLog("Proxy(%v) keep login remote name %v must equal to local name %v", p.Name, channel.Name(), name)
+				channel.Close()
 				break
 			}
 		}
