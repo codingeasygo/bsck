@@ -119,7 +119,7 @@ func ReadConfig(filename string) (config *Config, last int64, err error) {
 		config.Key = "bsrouter.key"
 	}
 	if len(config.Dir) < 1 {
-		config.Dir = filepath.Dir(filename)
+		config.Dir, err = filepath.Abs(filepath.Dir(filename))
 	}
 	if len(config.RDPDir) < 1 {
 		config.RDPDir = filepath.Join(user.HomeDir, "Desktop")
@@ -536,12 +536,6 @@ func (s *Service) Start() (err error) {
 	}
 	s.Node = NewProxy(s.Config.Name, s.BufferSize, s.Handler)
 	s.Node.Dir = s.Config.Dir
-	if len(s.Config.Cert) > 0 && !filepath.IsAbs(s.Config.Cert) {
-		s.Config.Cert = filepath.Join(filepath.Dir(s.ConfigPath), s.Config.Cert)
-	}
-	if len(s.Config.Key) > 0 && !filepath.IsAbs(s.Config.Key) {
-		s.Config.Key = filepath.Join(filepath.Dir(s.ConfigPath), s.Config.Key)
-	}
 	s.Webs["state"] = http.HandlerFunc(s.Node.Router.StateH)
 	s.Dialer = dialer.NewPool(s.Config.Name)
 	s.Dialer.Webs = s.Webs
