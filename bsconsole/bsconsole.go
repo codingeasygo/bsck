@@ -187,6 +187,10 @@ func runall(osArgs ...string) {
 		if err != nil {
 			exit(1)
 		}
+		err = mklink(filepath.Join(filedir, "bs-host"), filename)
+		if err != nil {
+			exit(1)
+		}
 		fmt.Printf("Install is done\n")
 		return
 	case "uninstall":
@@ -205,6 +209,7 @@ func runall(osArgs ...string) {
 		removeFile(filepath.Join(filedir, "bs-sftp"))
 		removeFile(filepath.Join(filedir, "bs-ssh"))
 		removeFile(filepath.Join(filedir, "bs-ssh-copy-id"))
+		removeFile(filepath.Join(filedir, "bs-host"))
 		fmt.Printf("Uninstall is done\n")
 		return
 	case "version":
