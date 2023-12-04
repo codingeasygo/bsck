@@ -10,7 +10,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net"
 	"net/http"
 	"net/url"
@@ -99,7 +98,7 @@ type Config struct {
 
 // ReadConfig will read configure from file
 func ReadConfig(filename string) (config *Config, last int64, err error) {
-	configData, err := ioutil.ReadFile(filename)
+	configData, err := os.ReadFile(filename)
 	if err != nil {
 		return
 	}

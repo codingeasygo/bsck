@@ -226,7 +226,7 @@ func runall(osArgs ...string) {
 		var path string
 		u, _ := user.Current()
 		for _, path = range []string{"./.bsrouter.json", "./bsrouter.json", u.HomeDir + "/.bsrouter/bsrouter.json", u.HomeDir + "/.bsrouter.json", "/etc/bsrouter/bsrouter.json", "/etc/bsrouter.json"} {
-			data, err = ioutil.ReadFile(path)
+			data, err = os.ReadFile(path)
 			if err == nil {
 				fmt.Printf("bsconsole using config %v\n", path)
 				break

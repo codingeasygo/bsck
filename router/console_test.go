@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -131,7 +130,7 @@ func TestConsole(t *testing.T) {
 		}
 		usr, _ := user.Current()
 		sshKey := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			data, _ := ioutil.ReadFile(filepath.Join(usr.HomeDir, ".ssh", "id_rsa"))
+			data, _ := os.ReadFile(filepath.Join(usr.HomeDir, ".ssh", "id_rsa"))
 			w.Write(data)
 		}))
 		caller.AddForward("ssh-key", sshKey.URL)

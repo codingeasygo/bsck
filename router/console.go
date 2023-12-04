@@ -40,7 +40,7 @@ func NewRewrite() (rewrite *Rewrite) {
 }
 
 func (r *Rewrite) Read(filename string) (err error) {
-	hostData, err := ioutil.ReadFile(filename)
+	hostData, err := os.ReadFile(filename)
 	if err != nil {
 		return
 	}
