@@ -42,3 +42,4 @@ certs/certs
 bsrouter/bsconsole
 app/android/app/bsrouter/bsrouter.aar
 app/android/app/bsrouter/bsrouter-sources.jar
+bsconsole/bsrouter

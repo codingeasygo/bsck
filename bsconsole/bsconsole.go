@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net"
 	"os"
@@ -10,6 +12,7 @@ import (
 	"os/signal"
 	"os/user"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -17,9 +20,12 @@ import (
 	"time"
 
 	"github.com/codingeasygo/bsck/router"
+	"github.com/codingeasygo/tun2conn"
+	"github.com/codingeasygo/tun2conn/util"
 	"github.com/codingeasygo/util/proxy"
 	"github.com/codingeasygo/util/xhash"
 	"github.com/codingeasygo/util/xio"
+	"github.com/songgao/water"
 )
 
 // Version is bsrouter version
@@ -513,6 +519,96 @@ func runall(osArgs ...string) {
 		if err != nil {
 			exit(1)
 		}
+	case "host":
+		if len(args) > 0 && len(args) < 2 {
+			fmt.Printf("[name] <net address> <uri> is required\n")
+			return
+		}
+
+		device, err := water.New(water.Config{
+			DeviceType: water.TUN,
+		})
+		if err != nil {
+			fmt.Printf("create tun device error %v\n", err)
+			exit(1)
+		}
+		defer device.Close()
+		fmt.Printf("Host create tun device %v success\n", device.Name())
+
+		ifac := util.NewInterface(device.Name())
+		ifac.Log = true
+		gw := tun2conn.NewGateway(device, "10.0.0.1/24", "")
+		gw.Dialer = console
+
+		hostMap := router.NewHostMap()
+
+		addForward := func(args ...string) {
+			var item *router.HostItem
+			if len(args) == 2 {
+				item, err = hostMap.AddForward(args[0], args[0], args[1])
+			} else {
+				item, err = hostMap.AddForward(args[0], args[1], args[2])
+			}
+			if err != nil {
+				fmt.Printf("Host add forward fail with %v by %v\n", err, args)
+			} else {
+				fmt.Printf("Host add forward susscess by %v\n", args)
+				ifac.AddAddress(item.LocalAddr.String(), item.LocalMask, item.LocalGW.String())
+			}
+		}
+		removeForward := func(args ...string) {
+			item := hostMap.RemoveForward(args[0])
+			if item == nil {
+				fmt.Printf("Host remove forward fail by %v\n", args)
+			} else {
+				fmt.Printf("Host remove forward susscess by %v\n", args)
+				ifac.RemoveAddress(item.LocalAddr.String(), item.LocalMask, item.LocalGW.String())
+			}
+		}
+		onCommand := func(cmd string, args ...string) {
+			switch cmd {
+			case "@add":
+				if len(args) < 2 {
+					fmt.Printf("Host add forward fail with invalid cmd @add by %v\n", args)
+					return
+				}
+				addForward(args...)
+			case "@rm", "@remove":
+				if len(args) < 1 {
+					fmt.Printf("Host remove fail with invalid cmd %v by %v\n", cmd, args)
+					return
+				}
+				removeForward(args...)
+			}
+		}
+		if os.Getenv("BS_CONSOLE_CMD") == "1" {
+			go loopCommand(console, onCommand)
+		} else {
+			go procCommand(os.Stdin, onCommand)
+		}
+		if len(args) > 1 {
+			addForward(args...)
+		}
+		gw.Policy = func(on string, ip net.IP, port uint16, domain, cname string) (uri string, newIP net.IP, newPort uint16) {
+			uri, remote := hostMap.Match(ip)
+			if on == "udp" {
+				newIP = remote
+				newPort = port
+			} else {
+				if len(uri) > 0 {
+					uri += "->"
+				}
+				uri += fmt.Sprintf("tcp://%v:%v", remote, port)
+			}
+			return
+		}
+		err = gw.Start()
+		if err != nil {
+			fmt.Printf("start gateway error %v\n", err)
+			exit(1)
+		}
+		defer gw.Stop()
+		<-sig
 	default:
 		fmt.Fprintf(stderr, "%v is not supported\n", command)
 		usage()
@@ -544,5 +640,40 @@ func removeFile(target string) (err error) {
 	fmt.Printf("remove %v\n", target)
 	os.Remove(target)
 	os.Remove(target + ".exe")
+	return
+}
+
+func loopCommand(console *router.Console, on func(cmd string, args ...string)) {
+	for {
+		conn, err := console.Dial("tcp://cmd")
+		if err != nil {
+			fmt.Printf("dial to cmd channel fail with %v\n", err)
+			time.Sleep(3 * time.Second)
+			continue
+		}
+		fmt.Printf("dial to cmd channel fail with %v\n", err)
+		err = procCommand(conn, on)
+		fmt.Printf("read cmd channel fail with %v\n", err)
+	}
+}
+
+func procCommand(input io.Reader, on func(cmd string, args ...string)) (err error) {
+	reader := bufio.NewReader(input)
+	cmdRegex := regexp.MustCompile(`@[^\s]+\s+`)
+	argRegex := regexp.MustCompile(`\s+`)
+	for {
+		line, xerr := reader.ReadString('\n')
+		if xerr != nil {
+			err = xerr
+			break
+		}
+		line = strings.TrimSpace(line)
+		fmt.Println("-->", line)
+		if !cmdRegex.MatchString(line) {
+			continue
+		}
+		args := argRegex.Split(line, -1)
+		on(args[0], args[1:]...)
+	}
 	return
 }

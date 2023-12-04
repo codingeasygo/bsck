@@ -8,11 +8,17 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
 
 	"github.com/codingeasygo/bsck/dialer"
+	sproxy "github.com/codingeasygo/util/proxy/socks"
+	"github.com/codingeasygo/util/xio"
 	"github.com/codingeasygo/util/xmap"
 	"golang.org/x/net/websocket"
 )
@@ -279,4 +285,245 @@ func (w *WaitReadWriteCloser) String() string {
 		return conn.RemoteAddr().String()
 	}
 	return fmt.Sprintf("%v", w.ReadWriteCloser)
+}
+
+func ipAddrPrefix(ip net.IP, mask net.IPMask) (prefix net.IP) {
+	prefix = make(net.IP, len(mask))
+	if len(prefix) == 4 {
+		copy(prefix, ip.To4())
+	} else {
+		copy(prefix, ip.To16())
+	}
+	for i := 0; i < len(prefix); i++ {
+		prefix[i] = prefix[i] & mask[i]
+	}
+	return
+}
+
+func ipAddrSuffix(ip net.IP, mask net.IPMask) (suffix net.IP) {
+	suffix = make(net.IP, len(mask))
+	if len(suffix) == 4 {
+		copy(suffix, ip.To4())
+	} else {
+		copy(suffix, ip.To16())
+	}
+	for i := 0; i < len(suffix); i++ {
+		suffix[i] = suffix[i] & (^mask[i])
+	}
+	return
+}
+
+func ipAddrMerge(prefix, suffix net.IP) (ip net.IP) {
+	ip = make(net.IP, len(prefix))
+	for i := 0; i < len(ip); i++ {
+		ip[i] = prefix[i] | suffix[i]
+	}
+	return
+}
+
+type HostItem struct {
+	LocalAddr  net.IP
+	LocalNet   *net.IPNet
+	LocalMask  int
+	LocalGW    net.IP
+	URI        string
+	RemoteNet  *net.IPNet
+	RemoteMask int
+}
+
+func (h *HostItem) Match(ip net.IP) (uri string, remote net.IP) {
+	prefix := ipAddrPrefix(ip, h.LocalNet.Mask)
+	if h.LocalNet.IP.Equal(prefix) {
+		uri = h.URI
+		suffix := ipAddrSuffix(ip, h.RemoteNet.Mask)
+		remote = ipAddrMerge(h.RemoteNet.IP, suffix)
+	}
+	return
+}
+
+type HostMap struct {
+	items map[string]*HostItem
+	lock  sync.RWMutex
+}
+
+func NewHostMap() (host *HostMap) {
+	host = &HostMap{
+		items: map[string]*HostItem{},
+		lock:  sync.RWMutex{},
+	}
+	return
+}
+
+// AddForward by local uri and remote uri
+func (h *HostMap) AddForward(name, loc, uri string) (item *HostItem, err error) {
+	h.lock.Lock()
+	defer h.lock.Unlock()
+	if h.items[name] != nil {
+		err = fmt.Errorf("forward %v is exists", name)
+		return
+	}
+	localAddr, localNet, err := net.ParseCIDR(strings.TrimPrefix(loc, "host://"))
+	if err != nil {
+		return
+	}
+	localGW := ipAddrPrefix(localAddr, localNet.Mask)
+	localGW[len(localGW)-1] = 1
+	localMask, _ := localNet.Mask.Size()
+	uriParts := strings.Split(uri, "->")
+	_, remoteNet, err := net.ParseCIDR(strings.TrimPrefix(uriParts[len(uriParts)-1], "host://"))
+	if err != nil {
+		return
+	}
+	remoteMask, _ := remoteNet.Mask.Size()
+	item = &HostItem{
+		LocalAddr:  localAddr,
+		LocalNet:   localNet,
+		LocalMask:  localMask,
+		LocalGW:    localGW,
+		URI:        strings.Join(uriParts[:len(uriParts)-1], "->"),
+		RemoteNet:  remoteNet,
+		RemoteMask: remoteMask,
+	}
+	h.items[name] = item
+	return
+}
+
+// RemoveForward by alias name
+func (h *HostMap) RemoveForward(name string) (item *HostItem) {
+	h.lock.Lock()
+	defer h.lock.Unlock()
+	item = h.items[name]
+	delete(h.items, name)
+	return
+}
+
+func (h *HostMap) Match(ip net.IP) (uri string, remote net.IP) {
+	h.lock.RLock()
+	defer h.lock.RUnlock()
+	for _, item := range h.items {
+		uri, remote = item.Match(ip)
+		if remote != nil {
+			break
+		}
+	}
+	return
+}
+
+type HostForward struct {
+	Name    string
+	Dialer  xio.PiperDialer
+	console *sproxy.Server
+	runner  *exec.Cmd
+	sender  net.Conn
+	ready   chan int
+	lock    sync.RWMutex
+}
+
+func NewHostForward(name string, dialer xio.PiperDialer) (forward *HostForward) {
+	forward = &HostForward{
+		Name:   name,
+		Dialer: dialer,
+		ready:  make(chan int, 1),
+		lock:   sync.RWMutex{},
+	}
+	return
+}
+
+func (h *HostForward) checkStart() (err error) {
+	h.lock.Lock()
+	defer h.lock.Unlock()
+	if h.runner != nil {
+		return
+	}
+	InfoLog("HostForward(%v) host backend forward is starting", h.Name)
+	console := sproxy.NewServer()
+	console.Dialer = h
+	ln, _ := console.Start("127.0.0.1:0")
+	dir, _ := filepath.Abs(filepath.Dir(os.Args[0]))
+	exe := filepath.Join(dir, "bsconsole")
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = exec.Command("osascript", "-e", fmt.Sprintf(`do shell script "BS_CONSOLE_URI=127.0.0.1:%v BS_CONSOLE_CMD=1 %v host" with administrator privileges`, ln.Addr().(*net.TCPAddr).Port, exe))
+		// cmd = exec.Command("bash", "-c", fmt.Sprintf("sudo -E %v host", exe))
+	default:
+		cmd = exec.Command("bash", "-c", fmt.Sprintf("sudo -E %v host", exe))
+	}
+	cmd.Dir, _ = os.Getwd()
+	// cmd.Env = append(cmd.Env, fmt.Sprintf("BS_CONSOLE_URI=127.0.0.1:%v", ln.Addr().(*net.TCPAddr).Port))
+	// cmd.Env = append(cmd.Env, "BS_CONSOLE_CMD=1")
+	cmd.Stderr = os.Stderr
+	cmd.Stdout = os.Stdout
+	err = cmd.Start()
+	if err != nil {
+		WarnLog("HostForward(%v) host backend forward start error %v", h.Name, err)
+		return
+	}
+	exiter := make(chan int, 1)
+	go func() {
+		err := cmd.Wait()
+		WarnLog("HostForward(%v) host backend forward is stopped by error %v", h.Name, err)
+		exiter <- 1
+	}()
+	select {
+	case <-h.ready:
+		h.console, h.runner = console, cmd
+		InfoLog("HostForward(%v) host backend forward is ready", h.Name)
+	case <-exiter:
+		err = fmt.Errorf("stopped")
+	}
+	return
+}
+
+func (h *HostForward) DialPiper(uri string, bufferSize int) (raw xio.Piper, err error) {
+	if strings.HasPrefix(uri, "tcp://cmd") {
+		if h.sender != nil {
+			h.Close()
+		}
+		sender, conn, _ := xio.CreatePipedConn()
+		raw = xio.NewCopyPiper(conn, bufferSize)
+		h.sender = sender
+		select {
+		case h.ready <- 1:
+		default:
+		}
+	} else {
+		raw, err = h.Dialer.DialPiper(uri, bufferSize)
+	}
+	return
+}
+
+func (h *HostForward) Close() (err error) {
+	h.lock.Lock()
+	defer h.lock.Unlock()
+	if h.runner == nil {
+		return
+	}
+	h.console.Stop()
+	h.sender.Close()
+	h.runner.Process.Kill()
+	err = h.runner.Wait()
+	h.sender = nil
+	h.runner = nil
+	return
+}
+
+// AddForward by local uri and remote uri
+func (h *HostForward) AddForward(name, loc, uri string) (err error) {
+	err = h.checkStart()
+	if err != nil {
+		return
+	}
+	_, err = fmt.Fprintf(h.sender, "@add %v %v %v\n", name, loc, uri)
+	return
+}
+
+// RemoveForward by alias name
+func (h *HostForward) RemoveForward(name string) (err error) {
+	err = h.checkStart()
+	if err != nil {
+		return
+	}
+	_, err = fmt.Fprintf(h.sender, "@remove %v\n", name)
+	return
 }

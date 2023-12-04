@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -313,4 +314,91 @@ func TestWaitReadWriteCloser(t *testing.T) {
 	fmt.Printf("%v\n", wrwc)
 	cona.Close()
 
+}
+
+func TestIPAddr(t *testing.T) {
+	{
+		ip, n, err := net.ParseCIDR("192.168.1.10/16")
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		fmt.Println(n.Mask.Size())
+		fmt.Println("-->", ip.To16())
+		prefix := ipAddrPrefix(ip.To4(), n.Mask)
+		suffix := ipAddrSuffix(ip.To4(), n.Mask)
+		newIP := ipAddrMerge(prefix, suffix)
+		fmt.Println("ip-->", ip)
+		fmt.Println("Prefix-->", prefix)
+		fmt.Println("Suffix-->", suffix)
+		fmt.Println("newIP-->", newIP)
+	}
+	{
+		ip, n, err := net.ParseCIDR("2001:0db8:85a3:0000:0000:8a2e:0370:7334/32")
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		fmt.Println(n.Mask.Size())
+		fmt.Println("-->", ip.To4())
+		prefix := ipAddrPrefix(ip.To16(), n.Mask)
+		suffix := ipAddrSuffix(ip.To16(), n.Mask)
+		newIP := ipAddrMerge(prefix, suffix)
+		fmt.Println("ip-->", ip)
+		fmt.Println("Prefix-->", prefix)
+		fmt.Println("Suffix-->", suffix)
+		fmt.Println("newIP-->", newIP)
+	}
+}
+
+func TestHostMap(t *testing.T) {
+	var err error
+	host := NewHostMap()
+	_, err = host.AddForward("a0", "host://10.1.1.1/24", "host://192.168.1.1/24")
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	_, err = host.AddForward("a1", "host://10.1.2.1/24", "n0->host://192.168.2.1/24")
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	uri, remote := host.Match(net.ParseIP("10.1.1.10"))
+	if len(uri) > 0 || remote == nil || remote.String() != "192.168.1.10" {
+		t.Errorf("uri:%v,remote:%v", uri, remote)
+		return
+	}
+	uri, remote = host.Match(net.ParseIP("10.1.2.10"))
+	if len(uri) < 1 || remote == nil || remote.String() != "192.168.2.10" {
+		t.Errorf("uri:%v,remote:%v", uri, remote)
+		return
+	}
+	uri, remote = host.Match(net.ParseIP("10.1.3.10"))
+	if len(uri) > 0 || remote != nil {
+		t.Errorf("uri:%v,remote:%v", uri, remote)
+		return
+	}
+
+	host.RemoveForward("a0")
+
+	//test error
+
+	_, err = host.AddForward("a1", "host://10.1.2.1/24", "n0->host://192.168.2.1/24")
+	if err == nil {
+		t.Error(err)
+		return
+	}
+
+	_, err = host.AddForward("a0", "tcp://10.1.2.1/24", "n0->host://192.168.2.1/24")
+	if err == nil {
+		t.Error(err)
+		return
+	}
+
+	_, err = host.AddForward("a0", "host://10.1.2.1/24", "n0->tcp://192.168.2.1/24")
+	if err == nil {
+		t.Error(err)
+		return
+	}
 }

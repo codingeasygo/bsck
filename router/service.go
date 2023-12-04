@@ -155,21 +155,22 @@ type Service struct {
 		SOCKS *sproxy.Server
 		WS    *wproxy.Server
 	}
-	Web        net.Listener
-	WebForward *WebForward
-	Dialer     *dialer.Pool
-	Handler    Handler
-	Finder     ForwardFinder
-	Config     *Config
-	ConfigPath string
-	Client     *xhttp.Client
-	Webs       map[string]http.Handler
-	BufferSize int
-	OnReady    func()
-	configLock sync.RWMutex
-	configLast int64
-	alias      map[string]string
-	aliasLock  sync.RWMutex
+	Web         net.Listener
+	HostForward *HostForward
+	WebForward  *WebForward
+	Dialer      *dialer.Pool
+	Handler     Handler
+	Finder      ForwardFinder
+	Config      *Config
+	ConfigPath  string
+	Client      *xhttp.Client
+	Webs        map[string]http.Handler
+	BufferSize  int
+	OnReady     func()
+	configLock  sync.RWMutex
+	configLast  int64
+	alias       map[string]string
+	aliasLock   sync.RWMutex
 }
 
 // NewService will return new Service
@@ -276,6 +277,8 @@ func (s *Service) AddForward(loc, uri string) (err error) {
 		vnc = true
 		target.Scheme = "tcp"
 		listener, err = s.Node.StartForward(locParts[0], target, uri)
+	case "host":
+		err = s.HostForward.AddForward(locParts[0], locParts[1], uri)
 	case "web":
 		fallthrough
 	case "ws":
@@ -348,6 +351,8 @@ func (s *Service) RemoveForward(loc string) (err error) {
 	case "vnc":
 		vnc = true
 		err = s.Node.StopForward(locParts[0])
+	case "host":
+		err = s.HostForward.RemoveForward(locParts[0])
 	default:
 		err = s.WebForward.RemoveForward(locParts[0])
 	}
@@ -522,6 +527,7 @@ func (s *Service) Start() (err error) {
 	s.Console.WS = wproxy.NewServer()
 	s.Console.WS.Dialer = s
 	s.Console.WS.BufferSize = s.BufferSize
+	s.HostForward = NewHostForward(s.Name, s)
 	s.WebForward = NewWebForward()
 	if s.Handler == nil {
 		handler := NewNormalAcessHandler(s.Config.Name)
