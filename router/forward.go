@@ -444,8 +444,8 @@ func (h *HostForward) checkStart() (err error) {
 	var cmd *exec.Cmd
 	switch runtime.GOOS {
 	case "darwin":
-		cmd = exec.Command("osascript", "-e", fmt.Sprintf(`do shell script "BS_CONSOLE_URI=127.0.0.1:%v BS_CONSOLE_CMD=1 %v host" with administrator privileges`, ln.Addr().(*net.TCPAddr).Port, exe))
-		// cmd = exec.Command("bash", "-c", fmt.Sprintf("sudo -E %v host", exe))
+		// cmd = exec.Command("osascript", "-e", fmt.Sprintf(`do shell script "BS_CONSOLE_URI=127.0.0.1:%v BS_CONSOLE_CMD=1 %v host" with administrator privileges`, ln.Addr().(*net.TCPAddr).Port, exe))
+		cmd = exec.Command("bash", "-c", fmt.Sprintf("sudo -E %v host", exe))
 	default:
 		cmd = exec.Command("bash", "-c", fmt.Sprintf("sudo -E %v host", exe))
 	}
