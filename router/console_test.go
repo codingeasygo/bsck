@@ -20,13 +20,13 @@ import (
 )
 
 func TestHosts(t *testing.T) {
-	hosts := NewHosts()
+	hosts := NewRewrite()
 	err := hosts.Read("/etc/hosts")
 	if err != nil {
 		t.Error(err)
 		return
 	}
-	if _, ok := hosts.Rewrite("localhost"); !ok {
+	if _, ok := hosts.Match("localhost"); !ok {
 		t.Error("error")
 		return
 	}
@@ -36,15 +36,15 @@ func TestHosts(t *testing.T) {
 		t.Error(err)
 		return
 	}
-	if _, ok := hosts.Rewrite("a.test.loc"); !ok {
+	if _, ok := hosts.Match("a.test.loc"); !ok {
 		t.Error("error")
 		return
 	}
-	if _, ok := hosts.Rewrite("x.xxx.loc"); !ok {
+	if _, ok := hosts.Match("x.xxx.loc"); !ok {
 		t.Error("error")
 		return
 	}
-	if _, ok := hosts.Rewrite("none.loc"); ok {
+	if _, ok := hosts.Match("none.loc"); ok {
 		t.Error("error")
 		return
 	}

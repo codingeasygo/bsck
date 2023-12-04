@@ -250,7 +250,7 @@ func runall(osArgs ...string) {
 	signal.Notify(sig, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
 	console.Env = env
 	if hostFile := os.Getenv("BS_REWRITE_HOSTS"); len(hostFile) > 0 {
-		err = console.Hosts.Read(hostFile)
+		err = console.Rewrite.Read(hostFile)
 		if err != nil {
 			fmt.Fprintf(stderr, "read hosts file %v fail with %v\n", hostFile, err)
 			exit(1)
