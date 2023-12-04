@@ -57,7 +57,7 @@ func TestPem2Hex(t *testing.T) {
 	// 		},
 	// 	},
 	// }
-	// ioutil.WriteFile("config.json", []byte(converter.JSON(config)), os.ModePerm)
+	// os.WriteFile("config.json", []byte(converter.JSON(config)), os.ModePerm)
 }
 
 func TestXXX(t *testing.T) {

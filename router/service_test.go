@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net"
 	"net/http"
 	"net/http/httputil"
@@ -81,7 +80,7 @@ var configTest2 = `
 func TestService(t *testing.T) {
 	socks.SetLogLevel(socks.LogLevelDebug)
 	SetLogLevel(LogLevelDebug)
-	ioutil.WriteFile("/tmp/test.json", []byte(configTest1), os.ModePerm)
+	os.WriteFile("/tmp/test.json", []byte(configTest1), os.ModePerm)
 	defer os.Remove("/tmp/test.json")
 	service := NewService()
 	service.ConfigPath = "/tmp/test.json"
@@ -105,7 +104,7 @@ func TestService(t *testing.T) {
 		return
 	}
 	time.Sleep(10 * time.Millisecond)
-	ioutil.WriteFile("/tmp/test.json", []byte(configTest2), os.ModePerm)
+	os.WriteFile("/tmp/test.json", []byte(configTest2), os.ModePerm)
 	err = service.ReloadConfig()
 	time.Sleep(100 * time.Millisecond)
 	runTestEcho := func(name string, echoa, echob *xio.PipeReadWriteCloser) {
@@ -231,7 +230,7 @@ func TestService(t *testing.T) {
 		fmt.Printf("%v\n", converter.JSON(data))
 	}
 	//
-	ioutil.WriteFile("/tmp/test.json", []byte(configTest1), os.ModePerm)
+	os.WriteFile("/tmp/test.json", []byte(configTest1), os.ModePerm)
 	err = service.ReloadConfig()
 	time.Sleep(10 * time.Millisecond)
 	service.Stop()
@@ -314,9 +313,9 @@ var configTestCaller = `
 
 func TestSSH(t *testing.T) {
 	// LogLevel
-	ioutil.WriteFile("/tmp/test_master.json", []byte(configTestMaster), os.ModePerm)
-	ioutil.WriteFile("/tmp/test_slaver.json", []byte(configTestSlaver), os.ModePerm)
-	ioutil.WriteFile("/tmp/test_caller.json", []byte(configTestCaller), os.ModePerm)
+	os.WriteFile("/tmp/test_master.json", []byte(configTestMaster), os.ModePerm)
+	os.WriteFile("/tmp/test_slaver.json", []byte(configTestSlaver), os.ModePerm)
+	os.WriteFile("/tmp/test_caller.json", []byte(configTestCaller), os.ModePerm)
 	defer func() {
 		os.Remove("/tmp/test_master.json")
 		os.Remove("/tmp/test_slaver.json")

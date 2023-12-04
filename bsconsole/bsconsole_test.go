@@ -148,7 +148,7 @@ func TestConsole(t *testing.T) {
 	var stdinWriter, stdoutReader *os.File
 	//
 	time.Sleep(100 * time.Millisecond)
-	ioutil.WriteFile(".bsrouter.json", []byte(configTestCaller), os.ModePerm)
+	os.WriteFile(".bsrouter.json", []byte(configTestCaller), os.ModePerm)
 	{ //conn
 		stdin, stdinWriter, _ = os.Pipe()
 		stdoutReader, stdout, _ = os.Pipe()

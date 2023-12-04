@@ -1,7 +1,6 @@
 package main
 
 import (
-	"io/ioutil"
 	"net/http"
 	"os"
 
@@ -18,10 +17,10 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
-		ioutil.WriteFile("rootCA.crt", rootCert, os.ModePerm)
-		ioutil.WriteFile("rootCA.key", rootKey, os.ModePerm)
-		ioutil.WriteFile("server.crt", serverCert, os.ModePerm)
-		ioutil.WriteFile("server.key", serverKey, os.ModePerm)
+		os.WriteFile("rootCA.crt", rootCert, os.ModePerm)
+		os.WriteFile("rootCA.key", rootKey, os.ModePerm)
+		os.WriteFile("server.crt", serverCert, os.ModePerm)
+		os.WriteFile("server.key", serverKey, os.ModePerm)
 	} else {
 		http.ListenAndServeTLS(":8422", "server.crt", "server.key", nil)
 	}

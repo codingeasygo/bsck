@@ -30,7 +30,7 @@ func TestHosts(t *testing.T) {
 		t.Error("error")
 		return
 	}
-	ioutil.WriteFile("/tmp/hosts", []byte(`127.0.0.1 a.test.loc *.xxx.loc`), os.ModePerm)
+	os.WriteFile("/tmp/hosts", []byte(`127.0.0.1 a.test.loc *.xxx.loc`), os.ModePerm)
 	err = hosts.Read("/tmp/hosts")
 	if err != nil {
 		t.Error(err)

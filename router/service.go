@@ -291,7 +291,7 @@ func (s *Service) AddForward(loc, uri string) (err error) {
 		fileData := fmt.Sprintf(RDPTemplate, listener.Addr(), target.User.Username())
 		os.MkdirAll(s.Config.RDPDir, os.ModePerm)
 		savepath := filepath.Join(s.Config.RDPDir, locParts[0]+".rdp")
-		err := ioutil.WriteFile(savepath, []byte(fileData), os.ModePerm)
+		err := os.WriteFile(savepath, []byte(fileData), os.ModePerm)
 		s.configLock.Unlock()
 		if err != nil {
 			WarnLog("Server(%v) save rdp info to %v failed with %v", s.Name, savepath, err)
@@ -305,7 +305,7 @@ func (s *Service) AddForward(loc, uri string) (err error) {
 		fileData := fmt.Sprintf(VNCTemplate, locParts[0], listener.Addr(), password)
 		os.MkdirAll(s.Config.VNCDir, os.ModePerm)
 		savepath := filepath.Join(s.Config.VNCDir, locParts[0]+".vnc")
-		err := ioutil.WriteFile(savepath, []byte(fileData), os.ModePerm)
+		err := os.WriteFile(savepath, []byte(fileData), os.ModePerm)
 		s.configLock.Unlock()
 		if err != nil {
 			WarnLog("Server(%v) save vnc info to %v failed with %v", s.Name, savepath, err)
