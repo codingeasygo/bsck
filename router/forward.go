@@ -32,7 +32,7 @@ func (f *forwardTransport) RoundTrip(req *http.Request) (res *http.Response, err
 	return
 }
 
-type Forward struct {
+type WebForward struct {
 	webMapping map[string]ForwardUri
 	wsMapping  map[string]ForwardUri
 	lck        sync.RWMutex
@@ -41,8 +41,8 @@ type Forward struct {
 	Dialer     func(uri string, raw io.ReadWriteCloser) (sid uint16, err error)
 }
 
-func NewForward() *Forward {
-	return &Forward{
+func NewWebForward() *WebForward {
+	return &WebForward{
 		webMapping: map[string]ForwardUri{},
 		wsMapping:  map[string]ForwardUri{},
 		lck:        sync.RWMutex{},
@@ -50,7 +50,7 @@ func NewForward() *Forward {
 	}
 }
 
-func (f *Forward) ProcWebSubsH(w http.ResponseWriter, req *http.Request) {
+func (f *WebForward) ProcWebSubsH(w http.ResponseWriter, req *http.Request) {
 	parts := strings.SplitN(req.URL.Path, "/", 4)
 	req.URL.Path = "/"
 	if len(parts) == 4 {
@@ -69,7 +69,7 @@ func (f *Forward) ProcWebSubsH(w http.ResponseWriter, req *http.Request) {
 	f.ProcRouter([]string{"loc://args", router}, w, req)
 }
 
-func (f *Forward) HostForwardF(w http.ResponseWriter, req *http.Request) {
+func (f *WebForward) HostForwardF(w http.ResponseWriter, req *http.Request) {
 	host := req.Host
 	if len(f.WebSuffix) > 0 && strings.HasSuffix(host, f.WebSuffix) {
 		name := strings.Trim(strings.TrimSuffix(host, f.WebSuffix), ". ")
@@ -82,7 +82,7 @@ func (f *Forward) HostForwardF(w http.ResponseWriter, req *http.Request) {
 	fmt.Fprintf(w, "%v is not supported\n", req.URL.Path)
 }
 
-func (f *Forward) ProcName(name string, w http.ResponseWriter, req *http.Request) {
+func (f *WebForward) ProcName(name string, w http.ResponseWriter, req *http.Request) {
 	connection := req.Header.Get("Connection")
 	DebugLog("Forward proc web by name(%v),Connection(%v)", name, connection)
 	var router ForwardUri
@@ -102,7 +102,7 @@ func (f *Forward) ProcName(name string, w http.ResponseWriter, req *http.Request
 	f.ProcRouter(router, w, req)
 }
 
-func (f *Forward) ProcRouter(router ForwardUri, w http.ResponseWriter, req *http.Request) {
+func (f *WebForward) ProcRouter(router ForwardUri, w http.ResponseWriter, req *http.Request) {
 	connection := req.Header.Get("Connection")
 	local, err := url.Parse(router[0])
 	if err != nil {
@@ -153,7 +153,7 @@ func (f *Forward) ProcRouter(router ForwardUri, w http.ResponseWriter, req *http
 	proxy.ServeHTTP(w, req)
 }
 
-func (f *Forward) runWebsocket(conn *websocket.Conn, router string) {
+func (f *WebForward) runWebsocket(conn *websocket.Conn, router string) {
 	if strings.Contains(router, "?") {
 		router += "&" + conn.Request().URL.RawQuery
 	} else {
@@ -168,7 +168,7 @@ func (f *Forward) runWebsocket(conn *websocket.Conn, router string) {
 	wait.Wait()
 }
 
-func (f *Forward) procDial(network, addr string, router string) (raw net.Conn, err error) {
+func (f *WebForward) procDial(network, addr string, router string) (raw net.Conn, err error) {
 	raw, piped := dialer.CreatePipedConn()
 	_, err = f.Dialer(router, piped)
 	if err != nil {
@@ -178,7 +178,7 @@ func (f *Forward) procDial(network, addr string, router string) (raw net.Conn, e
 	return
 }
 
-func (f *Forward) procDialTLS(network, addr string, router string) (raw net.Conn, err error) {
+func (f *WebForward) procDialTLS(network, addr string, router string) (raw net.Conn, err error) {
 	rawConn, piped := dialer.CreatePipedConn()
 	_, err = f.Dialer(router, piped)
 	if err != nil {
@@ -200,7 +200,7 @@ func (f *Forward) procDialTLS(network, addr string, router string) (raw net.Conn
 }
 
 // AddForward by local uri and remote uri
-func (f *Forward) AddForward(loc, uri string) (err error) {
+func (f *WebForward) AddForward(loc, uri string) (err error) {
 	f.lck.Lock()
 	defer f.lck.Unlock()
 	forward := ForwardUri([]string{loc, uri})
@@ -228,7 +228,7 @@ func (f *Forward) AddForward(loc, uri string) (err error) {
 }
 
 // RemoveForward by alias name
-func (f *Forward) RemoveForward(name string) (err error) {
+func (f *WebForward) RemoveForward(name string) (err error) {
 	f.lck.Lock()
 	defer f.lck.Unlock()
 	delete(f.webMapping, name)
@@ -237,7 +237,7 @@ func (f *Forward) RemoveForward(name string) (err error) {
 }
 
 // FindForward will return the forward
-func (f *Forward) FindForward(name string) (uri ForwardUri) {
+func (f *WebForward) FindForward(name string) (uri ForwardUri) {
 	f.lck.Lock()
 	defer f.lck.Unlock()
 	uri, ok := f.wsMapping[name]

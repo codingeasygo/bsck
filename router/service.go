@@ -156,7 +156,7 @@ type Service struct {
 		WS    *wproxy.Server
 	}
 	Web        net.Listener
-	Forward    *Forward
+	WebForward *WebForward
 	Dialer     *dialer.Pool
 	Handler    Handler
 	Finder     ForwardFinder
@@ -282,7 +282,7 @@ func (s *Service) AddForward(loc, uri string) (err error) {
 		fallthrough
 	case "wss":
 		target.Host = target.Hostname()
-		err = s.Forward.AddForward(target.String(), uri)
+		err = s.WebForward.AddForward(target.String(), uri)
 	default:
 		err = fmt.Errorf("not supported scheme %v", target.Scheme)
 	}
@@ -349,7 +349,7 @@ func (s *Service) RemoveForward(loc string) (err error) {
 		vnc = true
 		err = s.Node.StopForward(locParts[0])
 	default:
-		err = s.Forward.RemoveForward(locParts[0])
+		err = s.WebForward.RemoveForward(locParts[0])
 	}
 	if rdp && len(s.Config.RDPDir) > 0 {
 		s.configLock.Lock()
@@ -415,7 +415,7 @@ func (s *Service) dialOne(uri string, raw io.ReadWriteCloser, sync bool) (sid ui
 		target, ok := s.alias[parts[0]]
 		s.aliasLock.Unlock()
 		if !ok {
-			router := s.Forward.FindForward(parts[0])
+			router := s.WebForward.FindForward(parts[0])
 			if len(router) < 2 {
 				err = ErrForwardNotExist
 				return
@@ -522,7 +522,7 @@ func (s *Service) Start() (err error) {
 	s.Console.WS = wproxy.NewServer()
 	s.Console.WS.Dialer = s
 	s.Console.WS.BufferSize = s.BufferSize
-	s.Forward = NewForward()
+	s.WebForward = NewWebForward()
 	if s.Handler == nil {
 		handler := NewNormalAcessHandler(s.Config.Name)
 		if len(s.Config.ACL) > 0 {
@@ -546,7 +546,7 @@ func (s *Service) Start() (err error) {
 		return
 	}
 	// s.Socks.Dialer = s.SocksDialer
-	s.Forward.Dialer = s.SyncDialAll
+	s.WebForward.Dialer = s.SyncDialAll
 	if len(s.Config.Listen) > 0 {
 		err = s.Node.Listen(s.Config.Listen, s.Config.Cert, s.Config.Key)
 		if err != nil {
@@ -580,12 +580,12 @@ func (s *Service) Start() (err error) {
 		InfoLog("Server(%v) ws console listen on %v success", s.Name, s.Config.Console.WS)
 	}
 	mux := http.NewServeMux()
-	mux.HandleFunc("/dav/", s.Forward.ProcWebSubsH)
-	mux.HandleFunc("/web/", s.Forward.ProcWebSubsH)
-	mux.HandleFunc("/ws/", s.Forward.ProcWebSubsH)
-	mux.HandleFunc("/", s.Forward.HostForwardF)
-	s.Forward.WebAuth = s.Config.Web.Auth
-	s.Forward.WebSuffix = s.Config.Web.Suffix
+	mux.HandleFunc("/dav/", s.WebForward.ProcWebSubsH)
+	mux.HandleFunc("/web/", s.WebForward.ProcWebSubsH)
+	mux.HandleFunc("/ws/", s.WebForward.ProcWebSubsH)
+	mux.HandleFunc("/", s.WebForward.HostForwardF)
+	s.WebForward.WebAuth = s.Config.Web.Auth
+	s.WebForward.WebSuffix = s.Config.Web.Suffix
 	server := &http.Server{Addr: s.Config.Web.Listen, Handler: mux}
 	if len(s.Config.Web.Listen) > 0 {
 		s.Web, err = net.Listen("tcp", s.Config.Web.Listen)

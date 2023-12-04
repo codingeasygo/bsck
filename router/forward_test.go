@@ -44,7 +44,7 @@ func TestForward(t *testing.T) {
 	})
 	//
 	var sidSequence uint32
-	forward := NewForward()
+	forward := NewWebForward()
 	forward.WebSuffix = ".loc"
 	forward.Dialer = func(uri string, raw io.ReadWriteCloser) (sid uint16, err error) {
 		if strings.Contains(uri, "error") {
@@ -282,7 +282,7 @@ func TestForward(t *testing.T) {
 
 func TestForwadError(t *testing.T) {
 	// test error
-	forward := NewForward()
+	forward := NewWebForward()
 	forward.AddForward("ws://t0", "tcp://xx")
 	err := forward.AddForward("ws://t0", "tcp://xx")
 	if err == nil {
