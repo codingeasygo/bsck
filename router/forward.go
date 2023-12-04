@@ -450,8 +450,8 @@ func (h *HostForward) checkStart() (err error) {
 		cmd = exec.Command("bash", "-c", fmt.Sprintf("sudo -E %v host", exe))
 	}
 	cmd.Dir, _ = os.Getwd()
-	// cmd.Env = append(cmd.Env, fmt.Sprintf("BS_CONSOLE_URI=127.0.0.1:%v", ln.Addr().(*net.TCPAddr).Port))
-	// cmd.Env = append(cmd.Env, "BS_CONSOLE_CMD=1")
+	cmd.Env = append(cmd.Env, fmt.Sprintf("BS_CONSOLE_URI=127.0.0.1:%v", ln.Addr().(*net.TCPAddr).Port))
+	cmd.Env = append(cmd.Env, "BS_CONSOLE_CMD=1")
 	cmd.Stderr = os.Stderr
 	cmd.Stdout = os.Stdout
 	err = cmd.Start()
@@ -503,6 +503,7 @@ func (h *HostForward) Close() (err error) {
 	h.sender.Close()
 	h.runner.Process.Kill()
 	err = h.runner.Wait()
+	h.console = nil
 	h.sender = nil
 	h.runner = nil
 	return

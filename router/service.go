@@ -627,6 +627,9 @@ func (s *Service) Stop() (err error) {
 		s.Console.WS.Stop()
 		s.Console.WS = nil
 	}
+	if s.HostForward != nil {
+		s.HostForward.Close()
+	}
 	if s.Web != nil {
 		s.Web.Close()
 		s.Web = nil

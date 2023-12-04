@@ -43,3 +43,6 @@ bsrouter/bsconsole
 app/android/app/bsrouter/bsrouter.aar
 app/android/app/bsrouter/bsrouter-sources.jar
 bsconsole/bsrouter
+bsconsole/bsrouter.json
+bsconsole/bsrouter.key
+bsconsole/bsrouter.pem
