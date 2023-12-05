@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/codingeasygo/bsck/dialer"
+	"github.com/codingeasygo/util/xio"
 	"github.com/codingeasygo/util/xmap"
 
 	"golang.org/x/net/websocket"
@@ -56,8 +57,8 @@ func TestWebForward(t *testing.T) {
 			if xerr != nil {
 				err = xerr
 			} else {
-				piper := dialer.NewCopyPipable(raw)
-				piper.Pipe(conn)
+				piper := xio.NewCopyPiper(raw, 4086)
+				go piper.PipeConn(conn, "target")
 			}
 		}
 		fmt.Println("dial to ", uri, err)

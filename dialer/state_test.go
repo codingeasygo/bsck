@@ -33,6 +33,8 @@ func TestState(t *testing.T) {
 	}
 	fmt.Println(len(bys))
 	fmt.Println(string(bys))
+	conn.Close()
+	fmt.Printf("-->%v\n", conn)
 	//
 	if !dialer.Matched("state://test") {
 		t.Error("error")
@@ -46,4 +48,5 @@ func TestState(t *testing.T) {
 	dialer.Name()
 	dialer.Bootstrap(nil)
 	dialer.Options()
+	dialer.Shutdown()
 }

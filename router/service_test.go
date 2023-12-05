@@ -652,7 +652,7 @@ func (t *TestReverseDialer) Dial(channel dialer.Channel, sid uint16, uri string)
 		err = fmt.Errorf("remote %v is not exists", targetURL.Host)
 	}
 	if err == nil {
-		conn = dialer.NewCopyPipable(rawConn)
+		conn = xio.NewCopyPiper(rawConn, 4096)
 	}
 	return
 }

@@ -7,8 +7,8 @@ github.com/codingeasygo/gvisor v0.0.0-20231203111534-4a1d1d9214fa h1:IcMNl2HmkIW
 github.com/codingeasygo/gvisor v0.0.0-20231203111534-4a1d1d9214fa/go.mod h1:10sU+Uh5KKNv1+2x2A0Gvzt8FjD3ASIhorV3YsauXhk=
 github.com/codingeasygo/tun2conn v0.0.0-20231205094809-470ce3f72404 h1:4pOVs1JljnLz2WPvZKdTiDbyMH6rwOKMxO8MVuzM294=
 github.com/codingeasygo/tun2conn v0.0.0-20231205094809-470ce3f72404/go.mod h1:KQT0uHJVQxjtFC/hFSC0nfKu4zZWmUoo9Dgh80uTLAU=
-github.com/codingeasygo/util v0.0.0-20231204090510-3bcb3634ed7f h1:6xgR+rvDY3O103tvEZ9iN9HKkEZKqbZqnaeCnh4D+jU=
-github.com/codingeasygo/util v0.0.0-20231204090510-3bcb3634ed7f/go.mod h1:CE705pc3Xn2F3nqMKhvfaigeXeDudpdteTzbf+2jwig=
+github.com/codingeasygo/tun2conn v0.0.0-20231205095415-06b71c252ba8 h1:FopDhehgnF7LnjpWnFQPAi8+HfsujDrcF0C7EG+3zLk=
+github.com/codingeasygo/tun2conn v0.0.0-20231205095415-06b71c252ba8/go.mod h1:KQT0uHJVQxjtFC/hFSC0nfKu4zZWmUoo9Dgh80uTLAU=
 github.com/codingeasygo/util v0.0.0-20231205030719-5c096beae14d h1:Eb1FlSTXzizcA2v75x9CvCjyDnCez3KB0jFIOYjpphU=
 github.com/codingeasygo/util v0.0.0-20231205030719-5c096beae14d/go.mod h1:CE705pc3Xn2F3nqMKhvfaigeXeDudpdteTzbf+2jwig=
 github.com/codingeasygo/web v0.0.0-20230907002627-38429b961da0 h1:EB2qTZ3dth9C7XAiQhmJbHY5faGfkVUr6p95oAdgm8k=

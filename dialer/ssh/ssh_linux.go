@@ -1,4 +1,4 @@
-package dialer
+package ssh
 
 import (
 	"fmt"

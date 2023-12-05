@@ -69,14 +69,15 @@ func NewEchoReadWriteCloser() *EchoReadWriteCloser {
 // Pipe is Pipable implment
 func (e *EchoReadWriteCloser) Pipe(raw io.ReadWriteCloser) (err error) {
 	go e.copyAndClose(e, raw)
-	go e.copyAndClose(raw, e)
+	err = e.copyAndClose(raw, e)
 	return
 }
 
-func (e *EchoReadWriteCloser) copyAndClose(src io.ReadWriteCloser, dst io.ReadWriteCloser) {
-	io.Copy(dst, src)
+func (e *EchoReadWriteCloser) copyAndClose(src io.ReadWriteCloser, dst io.ReadWriteCloser) (err error) {
+	_, err = io.Copy(dst, src)
 	dst.Close()
 	src.Close()
+	return
 }
 
 func (e *EchoReadWriteCloser) String() string {

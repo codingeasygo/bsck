@@ -1,10 +1,7 @@
 package dialer
 
 import (
-	"fmt"
 	"io"
-	"os"
-	"sync/atomic"
 	"time"
 )
 
@@ -141,22 +138,22 @@ import (
 // 	return string(bys)
 // }
 
-type DuplexPiped struct {
-	UpReader   *os.File
-	UpWriter   *os.File
-	DownReader *os.File
-	DownWriter *os.File
-	closed     uint32
-}
+// type DuplexPiped struct {
+// 	UpReader   *os.File
+// 	UpWriter   *os.File
+// 	DownReader *os.File
+// 	DownWriter *os.File
+// 	closed     uint32
+// }
 
-func (d *DuplexPiped) Close() error {
-	if !atomic.CompareAndSwapUint32(&d.closed, 0, 1) {
-		return fmt.Errorf("DuplexPiped is closed")
-	}
-	d.UpWriter.Close()
-	d.DownWriter.Close()
-	return nil
-}
+// func (d *DuplexPiped) Close() error {
+// 	if !atomic.CompareAndSwapUint32(&d.closed, 0, 1) {
+// 		return fmt.Errorf("DuplexPiped is closed")
+// 	}
+// 	d.UpWriter.Close()
+// 	d.DownWriter.Close()
+// 	return nil
+// }
 
 // type WriterF func(p []byte) (n int, err error)
 
@@ -187,8 +184,8 @@ func fullBuf(r io.Reader, p []byte, length uint32, last *int64) error {
 	return nil
 }
 
-func assert(v bool) {
-	if !v {
-		panic("assert fail")
-	}
-}
+// func assert(v bool) {
+// 	if !v {
+// 		panic("assert fail")
+// 	}
+// }

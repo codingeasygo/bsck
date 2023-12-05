@@ -3,6 +3,7 @@ package dialer
 import (
 	"bytes"
 	"fmt"
+	"net/http"
 	"testing"
 
 	"github.com/codingeasygo/util/xmap"
@@ -12,20 +13,44 @@ func init() {
 	SetLogLevel(LogLevelDebug)
 }
 
+type errDialer struct {
+	Dialer
+}
+
+func (e *errDialer) Bootstrap(o xmap.M) (err error) {
+	err = fmt.Errorf("test erro")
+	return
+}
+
 func TestPool(t *testing.T) {
+	_ = DefaultDialerCreator("x")
+	NewDialer = func(t string) (dialer Dialer) {
+		return NewTCPDialer()
+	}
 	pool := NewPool("test")
+	pool.Webs = map[string]http.Handler{
+		"a": http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}),
+	}
 	err := pool.Bootstrap(xmap.M{
-		"std": 1,
+		"std":   1,
+		"ssh":   1,
+		"udpgw": 1,
+		"web":   1,
+		"dialers": []xmap.M{
+			{"type": "xxx"},
+		},
 	})
 	if err != nil {
 		t.Error(err)
 		return
 	}
-	_, err = pool.Dial(nil, 10, "http://dav?dir=/tmp")
-	if err != nil {
+	_, err = pool.Dial(nil, 10, "tcp://127.0.0.1:10")
+	if err == nil {
 		t.Error(err)
 		return
 	}
+	pool.Shutdown()
+	pool.AddDialer(NewTCPDialer())
 
 	//test not dialer
 	pool = NewPool("test")
@@ -34,13 +59,10 @@ func TestPool(t *testing.T) {
 		t.Error(err)
 		return
 	}
-	pool.AddDialer(NewTCPDialer())
-	pool.Bootstrap(xmap.M{
-		"standard": 1,
-	})
 	//
 	//test error
 	//dialer type error
+	NewDialer = DefaultDialerCreator
 	err = pool.Bootstrap(xmap.M{
 		"dialers": []xmap.M{
 			{
@@ -64,6 +86,16 @@ func TestPool(t *testing.T) {
 		t.Error(err)
 		return
 	}
+
+	NewDialer = func(t string) (dialer Dialer) {
+		dialer = &errDialer{}
+		return
+	}
+	pool = NewPool("test")
+	pool.Bootstrap(xmap.M{
+		"dialers": []xmap.M{{"type": "xx"}},
+	})
+	NewDialer = DefaultDialerCreator
 }
 
 type ClosableBuffer struct {
@@ -78,20 +110,7 @@ func (c *ClosableBuffer) Close() error {
 	return nil
 }
 
-func TestCopyPipable(t *testing.T) {
-	cona, conb := CreatePipedConn()
-	reader := NewClosableBuffer(bytes.NewBufferString("1234567890"))
-	piped := NewCopyPipable(reader)
-	piped.Pipe(conb)
-	buf := make([]byte, 10)
-	cona.Read(buf)
-	fmt.Println(string(buf))
-	//
-	//test pipe error
-	err := piped.Pipe(conb)
-	if err == nil {
-		t.Error(err)
-	}
-	//
-	piped.Close()
+func TestCreator(t *testing.T) {
+	RegisterDialerCreator("abc", func() Dialer { return NewTCPDialer() })
+	DefaultDialerCreator("abc")
 }

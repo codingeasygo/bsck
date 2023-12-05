@@ -1,15 +1,19 @@
 package dialer
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
 	"testing"
+
+	"github.com/codingeasygo/util/xio"
 )
 
 func TestEcho(t *testing.T) {
 	dialer := NewEchoDialer()
 	dialer.Bootstrap(nil)
+	defer dialer.Shutdown()
 	if dialer.Matched("tcp://echox") {
 		t.Error("error")
 		return
@@ -42,10 +46,14 @@ func TestEcho(t *testing.T) {
 	//
 	//test closed EchoReadWriteCloser()
 	rwc := NewEchoReadWriteCloser()
+	qc := xio.NewQueryConn()
+	go rwc.Pipe(qc)
+	qc.Query(context.Background(), []byte("abc"))
 	rwc.Close()
 	_, err = rwc.Write(nil)
 	if err == nil {
 		t.Error(err)
 		return
 	}
+	fmt.Printf("-->%v\n", rwc)
 }

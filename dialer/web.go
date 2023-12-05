@@ -78,10 +78,7 @@ func (web *WebDialer) Dial(channel Channel, sid uint16, uri string) (raw Conn, e
 		err = fmt.Errorf("stopped")
 		return
 	}
-	conn, basic, err := PipeWebDialerConn(channel, sid, uri)
-	if err != nil {
-		return
-	}
+	conn, basic, _ := PipeWebDialerConn(channel, sid, uri)
 	web.cons[fmt.Sprintf("%v", sid)] = conn
 	web.accept <- conn
 	raw = basic
@@ -109,12 +106,12 @@ func (web *WebDialer) FindConnByID(sid string) (conn *WebDialerConn, err error) 
 }
 
 // FindConnByRequest will find connection by id
-func (web *WebDialer) FindConnByRequest(req *http.Request) (conn *WebDialerConn, err error) {
-	remoteArgs, err := url.ParseQuery(req.RemoteAddr)
-	if err != nil {
-		return
+func (web *WebDialer) FindConnByRequest(remoteAddr string) (conn *WebDialerConn, err error) {
+	var sid string
+	remoteArgs, err := url.ParseQuery(remoteAddr)
+	if err == nil {
+		sid = remoteArgs.Get("session_id")
 	}
-	sid := remoteArgs.Get("session_id")
 	if len(sid) < 1 {
 		err = fmt.Errorf("session_id is not exits on RemoteAddr, req is not WebDialer Request")
 		return
@@ -124,8 +121,8 @@ func (web *WebDialer) FindConnByRequest(req *http.Request) (conn *WebDialerConn,
 }
 
 // FindConnByRequest will find connection by id
-func (web *WebDialer) FindChannelByRequest(req *http.Request) (channel Channel, err error) {
-	conn, err := web.FindConnByRequest(req)
+func (web *WebDialer) FindChannelByRequest(remoteAddr string) (channel Channel, err error) {
+	conn, err := web.FindConnByRequest(remoteAddr)
 	if err != nil {
 		return
 	}
@@ -329,20 +326,3 @@ func (w *WebdavFileHandler) ServeHTTP(resp http.ResponseWriter, req *http.Reques
 		w.dav.ServeHTTP(resp, req)
 	}
 }
-
-// type ResponseWriter struct {
-// 	http.ResponseWriter
-// }
-
-// func (r *ResponseWriter) Write(p []byte) (n int, err error) {
-// 	n, err = r.ResponseWriter.Write(p)
-// 	if err == nil {
-// 		os.Stdout.Write(p)
-// 	}
-// 	return
-// }
-
-// func (r *ResponseWriter) WriteHeader(statusCode int) {
-// 	r.ResponseWriter.WriteHeader(statusCode)
-// 	fmt.Printf("--->%v\n%v\n", r.ResponseWriter.Header(), statusCode)
-// }

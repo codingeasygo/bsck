@@ -1,4 +1,4 @@
-package dialer
+package ssh
 
 import (
 	"crypto/rsa"
@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/url"
 
+	"github.com/codingeasygo/bsck/dialer"
 	"github.com/codingeasygo/util/xhash"
 	"github.com/codingeasygo/util/xio"
 	"github.com/codingeasygo/util/xmap"
@@ -15,6 +16,10 @@ import (
 
 	gossh "golang.org/x/crypto/ssh"
 )
+
+func init() {
+	dialer.RegisterDialerCreator("ssh", func() dialer.Dialer { return NewSshDialer() })
+}
 
 type SshDialer struct {
 	conf    xmap.M
@@ -33,7 +38,7 @@ func NewSshDialer() (dialer *SshDialer) {
 
 // Name will return dialer name
 func (s *SshDialer) Name() string {
-	return "echo"
+	return "ssh"
 }
 
 func (s *SshDialer) Network() string {
@@ -52,7 +57,7 @@ func (s *SshDialer) Addr() net.Addr {
 func (s *SshDialer) Bootstrap(options xmap.M) error {
 	s.conf = options
 	// signer
-	cert, err := LoadX509KeyPair(s.conf.StrDef(".", "dir"), s.conf.StrDef("bsrouter.pem"), s.conf.StrDef("bsrouter.key"))
+	cert, err := LoadX509KeyPair(s.conf.StrDef(".", "dir"), s.conf.StrDef("bsrouter.pem", "cert"), s.conf.StrDef("bsrouter.key", "key"))
 	if err != nil {
 		return err
 	}
@@ -117,7 +122,7 @@ func (s *SshDialer) Accept() (conn net.Conn, err error) {
 }
 
 // Dial one ssh connection.
-func (s *SshDialer) Dial(channel Channel, sid uint16, uri string) (raw Conn, err error) {
+func (s *SshDialer) Dial(channel dialer.Channel, sid uint16, uri string) (raw dialer.Conn, err error) {
 	conn, raw, err := xio.CreatePipedConn()
 	if err == nil {
 		s.accpter <- conn

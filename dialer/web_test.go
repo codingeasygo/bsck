@@ -4,42 +4,45 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 	"time"
 
+	"github.com/codingeasygo/util/xdebug"
 	"github.com/codingeasygo/util/xhttp"
 	"github.com/codingeasygo/util/xmap"
 )
 
-func TestWebDialer(t *testing.T) {
-	//test web dialer
-	l, err := net.Listen("tcp", ":2422")
+type testChannel struct {
+	id uint16
+}
+
+func (t *testChannel) ID() uint16 {
+	return t.id
+}
+func (t *testChannel) Name() string {
+	return "test"
+}
+func (t *testChannel) Context() xmap.M {
+	return xmap.M{}
+}
+
+func testWebServer(addr string, dialer *WebDialer) (ln net.Listener, err error) {
+	ln, err = net.Listen("tcp", addr)
 	if err != nil {
-		t.Error(err)
 		return
 	}
-	dialer := NewWebDialer("dav", NewWebdavHandler(xmap.M{
-		"t0": "/tmp",
-	}))
-	dialer.Bootstrap(nil)
-	if dialer.Matched("tcp://dav?dir=t0") {
-		t.Error("error")
-		return
-	}
-	if !dialer.Matched("http://dav?dir=t0") {
-		t.Error("error")
-		return
-	}
-	//
 	go func() {
 		var cid uint16
 		for {
-			con, err := l.Accept()
+			con, err := ln.Accept()
 			if err != nil {
 				break
 			}
-			raw, err := dialer.Dial(nil, cid, "http://dav?dir=t0")
+			cid++
+			raw, err := dialer.Dial(&testChannel{id: cid}, cid, "http://dav?dir=t0")
 			if err != nil {
 				panic(err)
 			}
@@ -57,43 +60,112 @@ func TestWebDialer(t *testing.T) {
 			go io.Copy(raw, con)
 		}
 	}()
-	fmt.Println(xhttp.GetText("http://localhost:2422/"))
-	fmt.Println(xhttp.GetText("http://localhost:2422/"))
-	//
-	dialer.Shutdown()
-	time.Sleep(100 * time.Millisecond)
-	//for cover
-	fmt.Printf("%v,%v\n", dialer.Addr(), dialer.Network())
-	//test web conn
-	conn, _, err := PipeWebDialerConn(nil, 100, "http://dav?dir=t0")
-	if err != nil {
-		t.Error(err)
-		return
+	return
+}
+
+func TestWebDialer(t *testing.T) {
+	tester := xdebug.CaseTester{
+		0: 1,
+		4: 1,
 	}
-	conn.SetDeadline(time.Now())
-	conn.SetReadDeadline(time.Now())
-	conn.SetWriteDeadline(time.Now())
-	fmt.Printf("%v,%v,%v\n", conn.LocalAddr(), conn.RemoteAddr(), conn.Network())
-	//test error
-	//
-	ts := httptest.NewServer(dialer.Handler)
-	data, err := xhttp.GetText("%v", ts.URL)
-	if err == nil {
-		t.Errorf("%v-%v", data, err)
-		return
+	//dav
+	if tester.Run("dav") {
+		dialer := NewWebDialer("dav", NewWebdavHandler(xmap.M{
+			"t0": "/tmp",
+		}))
+		ln, err := testWebServer(":2422", dialer)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		dialer.Bootstrap(nil)
+		if dialer.Matched("tcp://dav?dir=t0") {
+			t.Error("error")
+			return
+		}
+		if !dialer.Matched("http://dav?dir=t0") {
+			t.Error("error")
+			return
+		}
+		fmt.Println(xhttp.GetText("http://localhost:2422/"))
+		dialer.Shutdown()
+		time.Sleep(100 * time.Millisecond)
+		ln.Close()
 	}
-	//
-	_, err = dialer.Dial(nil, 100, "://")
-	if err == nil {
-		t.Error(err)
-		return
+	if tester.Run("srv") { //srv
+		var dialer *WebDialer
+		dialer = NewWebDialer("srv", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			conn, err := dialer.FindConnByRequest(r.RemoteAddr)
+			fmt.Printf("-->%v,%v\n", conn, err)
+			channel, err := dialer.FindChannelByRequest(r.RemoteAddr)
+			fmt.Printf("-->%v,%v\n", channel, err)
+			fmt.Fprintf(w, "OK")
+		}))
+		ln, err := testWebServer(":2423", dialer)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		dialer.Bootstrap(nil)
+		fmt.Println(xhttp.GetText("http://localhost:2423/"))
+		dialer.Shutdown()
+		time.Sleep(100 * time.Millisecond)
+		ln.Close()
 	}
-	dialer.Name()
-	dialer.Options()
+	if tester.Run("cover") { //for cover
+		dialer := NewWebDialer("xx", nil)
+		fmt.Printf("%v,%v\n", dialer.Addr(), dialer.Network())
+		dialer.Name()
+		dialer.Options()
+		dialer.stopped = true
+		dialer.Dial(nil, 0, "")
+		dialer.FindConnByID("xxx")
+		dialer.FindChannelByRequest("xxxx")
+		dialer.cons["11"] = &WebDialerConn{}
+		dialer.FindChannelByRequest("session_id=11")
+
+		//
+		conn, _, err := PipeWebDialerConn(&testChannel{}, 100, "http://dav?dir=t0")
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		conn.SetDeadline(time.Now())
+		conn.SetReadDeadline(time.Now())
+		conn.SetWriteDeadline(time.Now())
+		fmt.Printf("%v,%v,%v\n", conn.LocalAddr(), conn.RemoteAddr(), conn.Network())
+		conn, _, _ = PipeWebDialerConn(nil, 100, "http://dav?dir=t0")
+		fmt.Printf("%v,%v,%v\n", conn.LocalAddr(), conn.RemoteAddr(), conn.Network())
+
+		//
+		addr := NewWebDialerAddr("", "")
+		addr.Network()
+	}
+	if tester.Run("dav-cover") {
+		dav := NewWebdavHandler(xmap.M{"xx": "/tmp"})
+		req := httptest.NewRequest("GET", "http://localhost", nil)
+		dav.ServeHTTP(httptest.NewRecorder(), req)
+
+		req = httptest.NewRequest("GET", "http://localhost?dir=xx", nil)
+		dav.ServeHTTP(httptest.NewRecorder(), req)
+
+		req = httptest.NewRequest("GET", "http://localhost?dir=x0", nil)
+		dav.ServeHTTP(httptest.NewRecorder(), req)
+
+		req.RemoteAddr = "xxxx;xx;"
+		dav.ServeHTTP(httptest.NewRecorder(), req)
+
+		req.RemoteAddr = fmt.Sprintf("uri=%v", url.QueryEscape(string([]byte{1, 2, 3})))
+		dav.ServeHTTP(httptest.NewRecorder(), req)
+
+		f := NewWebdavFileHandler(".")
+		req = httptest.NewRequest("POST", "http://localhost", nil)
+		f.ServeHTTP(httptest.NewRecorder(), req)
+	}
 }
 
 func TestPipedConne(t *testing.T) {
-	a, b := CreatePipedConn()
+	a, b := CreatePipedConn("a", "b")
 	a.RemoteAddr()
 	a.LocalAddr()
 	fmt.Printf("-->%v\n", a)

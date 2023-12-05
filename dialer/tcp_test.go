@@ -2,14 +2,20 @@ package dialer
 
 import (
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/codingeasygo/util/xmap"
 )
 
 func TestTCPDialer(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintf(w, "%v", "OK")
+	}))
 	tcp := NewTCPDialer()
 	tcp.Bootstrap(nil)
+	defer tcp.Shutdown()
 	if !tcp.Matched("tcp://localhost:80") {
 		t.Error("error")
 		return
@@ -18,13 +24,19 @@ func TestTCPDialer(t *testing.T) {
 		t.Error("error")
 		return
 	}
-	con, err := tcp.Dial(nil, 10, "http://localhost")
+	con, err := tcp.Dial(nil, 10, ts.URL)
 	if err != nil {
 		t.Error(err)
 		return
 	}
 	con.Close()
 	//
+	con, err = tcp.Dial(nil, 10, "http://www.baidu.com")
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	con.Close()
 	con, err = tcp.Dial(nil, 10, "https://www.baidu.com")
 	if err != nil {
 		t.Error(err)
@@ -32,19 +44,19 @@ func TestTCPDialer(t *testing.T) {
 	}
 	con.Close()
 	//
-	con, err = tcp.Dial(nil, 10, "http://localhost?bind=0.0.0.0:0")
+	con, err = tcp.Dial(nil, 10, ts.URL+"?bind=0.0.0.0:0")
 	if err != nil {
 		t.Error(err)
 		return
 	}
 	con.Close()
 	//
-	fmt.Printf("%v test done...", tcp)
+	fmt.Printf("%v test done...\n", tcp)
 	tcp.Name()
 	tcp.Options()
 	//
 	//test error
-	_, err = tcp.Dial(nil, 10, "http://localhost?bind=0.0.0.0")
+	_, err = tcp.Dial(nil, 10, ts.URL+"?bind=0.0.0.0")
 	if err == nil {
 		t.Error(err)
 		return
@@ -55,7 +67,7 @@ func TestTCPDialer(t *testing.T) {
 	tcp.Bootstrap(xmap.M{
 		"bind": "0.0.0.0:0",
 	})
-	con, err = tcp.Dial(nil, 10, "http://localhost")
+	con, err = tcp.Dial(nil, 10, ts.URL)
 	if err != nil {
 		t.Error(err)
 		return

@@ -3,52 +3,14 @@ package dialer
 import (
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"sync"
-	"sync/atomic"
 
 	"github.com/codingeasygo/util/converter"
 	"github.com/codingeasygo/util/xmap"
 )
 
-type Pipable interface {
-	Pipe(r io.ReadWriteCloser) error
-}
-
 type Conn = io.ReadWriteCloser
-
-type CopyPipable struct {
-	io.ReadWriteCloser
-	piped uint32
-}
-
-func NewCopyPipable(raw io.ReadWriteCloser) *CopyPipable {
-	return &CopyPipable{ReadWriteCloser: raw}
-}
-
-func (c *CopyPipable) Pipe(r io.ReadWriteCloser) (err error) {
-	if atomic.CompareAndSwapUint32(&c.piped, 0, 1) {
-		go c.copyAndClose(c, r)
-		go c.copyAndClose(r, c)
-	} else {
-		err = fmt.Errorf("piped")
-	}
-	return
-}
-
-func (c *CopyPipable) copyAndClose(src io.ReadWriteCloser, dst io.ReadWriteCloser) {
-	io.Copy(dst, src)
-	dst.Close()
-	src.Close()
-}
-
-func (c *CopyPipable) String() string {
-	if conn, ok := c.ReadWriteCloser.(net.Conn); ok {
-		return conn.RemoteAddr().String()
-	}
-	return fmt.Sprintf("%v", c.ReadWriteCloser)
-}
 
 type Channel interface {
 	//the connection id
@@ -143,8 +105,8 @@ func (p *Pool) Bootstrap(options xmap.M) error {
 	}
 	if options.Value("ssh") != nil {
 		conf := options.MapDef(xmap.M{}, "ssh")
-		conf["dir"] = options.StrDef(",", "dir")
-		ssh := NewSshDialer()
+		conf["dir"] = options.StrDef(".", "dir")
+		ssh := NewDialer("ssh")
 		ssh.Bootstrap(conf)
 		p.Dialers = append(p.Dialers, ssh)
 		InfoLog("Pool(%v) add ssh dialer to pool", p.Name)
@@ -182,8 +144,18 @@ func (p *Pool) Shutdown() (err error) {
 
 // DefaultDialerCreator is default all dialer creator
 func DefaultDialerCreator(t string) (dialer Dialer) {
+	creator := dialerAll[t]
+	if creator != nil {
+		dialer = creator()
+	}
 	return
 }
 
+var dialerAll = map[string]func() Dialer{}
+
 // NewDialer is default all dialer creator
 var NewDialer = DefaultDialerCreator
+
+func RegisterDialerCreator(t string, creator func() Dialer) {
+	dialerAll[t] = creator
+}

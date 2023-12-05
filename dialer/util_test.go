@@ -33,12 +33,6 @@ func TestFullBuf(t *testing.T) {
 	time.Sleep(time.Millisecond)
 }
 
-func TestAssert(t *testing.T) {
-	assert(true)
-	func() {
-		defer func() {
-			recover()
-		}()
-		assert(false)
-	}()
+func TestDuplexPiped(t *testing.T) {
+
 }
