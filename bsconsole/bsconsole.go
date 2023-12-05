@@ -673,7 +673,6 @@ func procCommand(input io.Reader, on func(cmd string, args ...string)) (err erro
 			break
 		}
 		line = strings.TrimSpace(line)
-		fmt.Println("-->", line)
 		if !cmdRegex.MatchString(line) {
 			continue
 		}

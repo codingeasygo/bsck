@@ -439,15 +439,16 @@ func (h *HostForward) checkStart() (err error) {
 	console := sproxy.NewServer()
 	console.Dialer = h
 	ln, _ := console.Start("127.0.0.1:0")
-	dir, _ := filepath.Abs(filepath.Dir(os.Args[0]))
-	exe := filepath.Join(dir, "bsconsole")
+	exeFile, _ := os.Executable()
+	dir, _ := filepath.Abs(filepath.Dir(exeFile))
+	runFile := filepath.Join(dir, "bsconsole")
 	var cmd *exec.Cmd
 	switch runtime.GOOS {
 	case "darwin":
 		// cmd = exec.Command("osascript", "-e", fmt.Sprintf(`do shell script "BS_CONSOLE_URI=127.0.0.1:%v BS_CONSOLE_CMD=1 %v host" with administrator privileges`, ln.Addr().(*net.TCPAddr).Port, exe))
-		cmd = exec.Command("bash", "-c", fmt.Sprintf("sudo -E %v host", exe))
+		cmd = exec.Command("bash", "-c", fmt.Sprintf("sudo -E %v host", runFile))
 	default:
-		cmd = exec.Command("bash", "-c", fmt.Sprintf("sudo -E %v host", exe))
+		cmd = exec.Command("bash", "-c", fmt.Sprintf("sudo -E %v host", runFile))
 	}
 	cmd.Dir, _ = os.Getwd()
 	cmd.Env = append(cmd.Env, fmt.Sprintf("BS_CONSOLE_URI=127.0.0.1:%v", ln.Addr().(*net.TCPAddr).Port))
