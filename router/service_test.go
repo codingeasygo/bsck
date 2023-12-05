@@ -11,6 +11,7 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"os"
+	"os/exec"
 	"strings"
 	"testing"
 	"time"
@@ -18,11 +19,13 @@ import (
 	"github.com/codingeasygo/bsck/dialer"
 	"github.com/codingeasygo/util/converter"
 	"github.com/codingeasygo/util/proxy/socks"
-	"github.com/codingeasygo/util/xhttp"
+	"github.com/codingeasygo/util/xdebug"
+	"github.com/codingeasygo/util/xhash"
 	"github.com/codingeasygo/util/xio"
 	"github.com/codingeasygo/util/xmap"
 	"github.com/codingeasygo/web"
 	"github.com/codingeasygo/web/httptest"
+	sshsrv "github.com/gliderlabs/ssh"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -35,12 +38,14 @@ var configTest1 = `
         "suffix": ".test.loc:15024",
         "auth": ""
     },
-    "socks5": ":5081",
+    "console": {
+        "socks": ":5081"
+    },
     "forwards": {
-		"tx~tcp://:2332": "http://web?dir=/tmp"
-	},
-    "channels": [],
-    "dialer":{
+        "tx~tcp://:2332": "http://web?dir=/tmp"
+    },
+    "channels": {},
+    "dialer": {
         "standard": 1
     }
 }
@@ -54,24 +59,49 @@ var configTest2 = `
         "suffix": ".test.loc:15024",
         "auth": ""
     },
-    "socks5": ":5081",
+    "console": {
+        "socks": ":5081"
+    },
     "forwards": {
         "t0~web://t0": "http://127.0.0.1:80",
         "t1~web://t1": "http://web?dir=.",
         "t2~tcp://:2332": "http://dav?dir=.",
         "t3~socks://localhost:10322": "tcp://echo",
-        "t4~rdp://localhost:0": "tcp://127.0.0.1:22",
-		"t5~vnc://localhost:0": "tcp://dev.loc:22",
-		"w1~web://w1": "tcp://echo?abc=1",
-		"w2": "tcp://echo",
-		"w3": "http://dav?dir=.",
-		"w40": "http://test1",
-		"w41": "http://test1",
-		"w5": "tcp://dev.loc:22",
-		"w6": "http://state"
+		"t4~proxy://localhost:10332": "tcp://echo",
+        "t5~rdp://localhost:0": "tcp://127.0.0.1:22",
+        "t6~vnc://localhost:0": "tcp://dev.loc:22",
+        "w1~web://w1": "tcp://echo?abc=1",
+        "w2": "tcp://echo",
+        "w3": "http://dav?dir=.",
+        "w40": "http://test1",
+        "w41": "http://test1",
+        "w5": "tcp://dev.loc:22",
+        "w6": "http://state"
     },
-    "channels": [],
-    "dialer":{
+    "channels": {},
+    "dialer": {
+        "standard": 1
+    }
+}
+`
+
+var configTestErr = `
+{
+    "name": "r0",
+    "listen": ":15023",
+    "web": {
+        "listen": ":15024",
+        "suffix": ".test.loc:15024",
+        "auth": ""
+    },
+    "console": {
+        "socks": ":5081"
+    },
+    "forwards": {
+        "tx~tcp://127.0.0.1:xx": "http://web?dir=/tmp"
+    },
+    "channels": {},
+    "dialer": {
         "standard": 1
     }
 }
@@ -83,158 +113,286 @@ func TestService(t *testing.T) {
 	os.WriteFile("/tmp/test.json", []byte(configTest1), os.ModePerm)
 	defer os.Remove("/tmp/test.json")
 	service := NewService()
+	service.OnReady = func() {}
 	service.ConfigPath = "/tmp/test.json"
 	service.Webs = map[string]http.Handler{
 		"test1": http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			fmt.Fprintf(w, "abc")
 		}),
 	}
-	service.Finder = ForwardFinderF(func(uri string) (target string, err error) {
-		switch uri {
-		case "find0":
-			target = "http://dav?dir=."
-		default:
-			err = fmt.Errorf("not supported %v", uri)
-		}
-		return
-	})
 	err := service.Start()
 	if err != nil {
 		t.Error(err)
 		return
 	}
 	time.Sleep(10 * time.Millisecond)
-	os.WriteFile("/tmp/test.json", []byte(configTest2), os.ModePerm)
-	err = service.ReloadConfig()
-	time.Sleep(100 * time.Millisecond)
-	runTestEcho := func(name string, echoa, echob *xio.PipeReadWriteCloser) {
-		wc := make(chan int, 1)
-		go func() {
-			buf := make([]byte, 128)
-			for i := 0; i < 10; i++ {
-				n, _ := echoa.Read(buf)
-				fmt.Printf("%v received %v", name, string(buf[0:n]))
-				wc <- 1
-			}
-			echoa.Close()
-			wc <- 1
-		}()
-		for i := 0; i < 10; i++ {
-			fmt.Fprintf(echoa, "abc\n")
-			<-wc
+	tester := xdebug.CaseTester{
+		0: 1,
+		2: 1,
+	}
+	if tester.Run("ReloadConfig") {
+		os.WriteFile("/tmp/test.json", []byte(configTest2), os.ModePerm)
+		err = service.ReloadConfig()
+		if err != nil {
+			t.Error(err)
+			return
 		}
-		<-wc
-		_, err = fmt.Fprintf(echoa, "abc\n")
+		os.WriteFile("/tmp/test.json", []byte(configTest2), os.ModePerm)
+		err = service.ReloadConfig()
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
+
+		//
+		os.WriteFile("/tmp/test.json", []byte(configTest1), os.ModePerm)
+		err = service.ReloadConfig()
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		err = service.ReloadConfig()
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
+
+		//
+		os.WriteFile("/tmp/test.json", []byte(configTestErr), os.ModePerm)
+		err = service.ReloadConfig()
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
+
+		//
+		service.Config.Forwards["none"] = "none"
+		os.WriteFile("/tmp/test.json", []byte(configTest1), os.ModePerm)
+		err = service.ReloadConfig()
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
+
+		//
+		service.ConfigPath = "none"
+		err = service.ReloadConfig()
+		if err == nil {
+			t.Error(err)
+			return
+		}
+	}
+	if tester.Run("ForwardName") {
+		service.AddForward("a0", "http://dav")
+		service.AddForward("a1", "http://dav?dir=.")
+		service.WebForward.AddForward("web://a2", "http://dav?dir=.")
+		conn0 := xio.NewQueryConn()
+		_, err = service.DialAll("a0?x=1", conn0, false)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		conn0.Close()
+		conn1 := xio.NewQueryConn()
+		_, err = service.DialAll("a1?x=1", conn1, false)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		conn1.Close()
+		conn2 := xio.NewQueryConn()
+		_, err = service.DialAll("a2", conn2, false)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		conn2.Close()
+	}
+	if tester.Run("ForwardFinder") {
+		service.Finder = ForwardFinderF(func(uri string) (target string, err error) {
+			switch uri {
+			case "find0":
+				target = "http://dav?dir=."
+			default:
+				err = fmt.Errorf("not supported %v", uri)
+			}
+			return
+		})
+		conn := xio.NewQueryConn()
+		_, err = service.DialAll("find0", conn, false)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		conn.Close()
+	}
+	if tester.Run("ForwardError") { //Forward Error
+		err = service.AddForward("xx~"+string([]byte{1, 1}), "http://web?dir=/tmp")
+		if err == nil {
+			t.Error(err)
+			return
+		}
+		err = service.AddForward("xa", "http://web?dir=/tmp")
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		err = service.AddForward("xa", "http://web?dir=/tmp")
+		if err == nil {
+			t.Error(err)
+			return
+		}
+		err = service.AddForward("xb~xxx://xxkk", "http://web?dir=/tmp")
+		if err == nil {
+			t.Error(err)
+			return
+		}
+		err = service.RemoveForward("xx~" + string([]byte{1, 1}))
+		if err == nil {
+			t.Error(err)
+			return
+		}
+		err = service.RemoveForward("xa")
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		err = service.RemoveForward("xa")
+		if err == nil {
+			t.Error(err)
+			return
+		}
+
+		//
+		service.Config.VNCDir = "xxxx"
+		err = service.AddForward("va~vnc://", "http://web?dir=/tmp")
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		err = service.RemoveForward("va~vnc://")
+		if err != nil {
+			t.Error(err)
+			return
+		}
+
+		//
+		service.Config.RDPDir = "xxxx"
+		err = service.AddForward("vb~rdp://", "http://web?dir=/tmp")
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		err = service.RemoveForward("vb~rdp://")
+		if err != nil {
+			t.Error(err)
+			return
+		}
+	}
+	if tester.Run("DialError") {
+		_, err = service.DialNet("tcp", "base64-xx"+string([]byte{1, 1}))
+		if err == nil {
+			t.Error(err)
+			return
+		}
+		_, err = service.DialNet("tcp", "127.0.0.1:10")
 		if err == nil {
 			t.Error(err)
 			return
 		}
 	}
 	service.Stop()
-	{ //socks test
-		echoa, echob, _ := xio.Pipe()
-		_, err = service.SyncDialAll("tcp://echo", echob)
+	if tester.Run("StartError") {
+		srv := NewService()
+		err := srv.Start()
+		if err == nil {
+			t.Error(err)
+			return
+		}
+
+		//config
+		srv.ConfigPath = "xxx.json"
+		err = srv.Start()
+		if err == nil {
+			t.Error(err)
+			return
+		}
+		srv.ConfigPath = ""
+		srv.ConfigPath = "log.go"
+		err = srv.Start()
+		if err == nil {
+			t.Error(err)
+			return
+		}
+		srv.ConfigPath = ""
+
+		//Node Listen
+		srv.Config = &Config{
+			Listen: "127.0.0.1:x",
+		}
+		err = srv.Start()
+		if err == nil {
+			t.Error(err)
+			return
+		}
+
+		//Forward
+		srv.Config = &Config{
+			Forwards: map[string]string{
+				"xx~tcp://127.0.0.1:x": "xxx",
+			},
+		}
+		err = srv.Start()
 		if err != nil {
 			t.Error(err)
 			return
 		}
-		runTestEcho("socks1", echoa, echob)
-	}
-	{ //socks test
-		echoa, echob, _ := xio.Pipe()
-		_, err = service.SyncDialAll("tcp://echo?abc=1", echob)
-		if err != nil {
+
+		//Console
+		srv.Config = &Config{}
+		srv.Config.Console.SOCKS = "127.0.0.1:x"
+		err = srv.Start()
+		if err == nil {
 			t.Error(err)
 			return
 		}
-		runTestEcho("socks2", echoa, echob)
-	}
-	{ //socks test
-		echoa, echob, _ := xio.Pipe()
-		_, err = service.SyncDialAll("w1?abc=1", echob)
-		if err != nil {
+		srv.Config = &Config{}
+		srv.Config.Console.WS = "127.0.0.1:x"
+		err = srv.Start()
+		if err == nil {
 			t.Error(err)
 			return
 		}
-		runTestEcho("socks3", echoa, echob)
-	}
-	{ //socks test
-		echoa, echob, _ := xio.Pipe()
-		_, err = service.SyncDialAll("w2?abc=1", echob)
-		if err != nil {
+
+		//Web
+		srv.Config = &Config{}
+		srv.Config.Web.Listen = "127.0.0.1:x"
+		err = srv.Start()
+		if err == nil {
 			t.Error(err)
 			return
 		}
-		runTestEcho("socks4", echoa, echob)
-	}
-	{ //web test
-		data, err := xhttp.GetText("http://:2332?abc=123")
-		if err != nil || !strings.Contains(data, "router.go") {
+
+		//Dialer
+		srv.Config = &Config{}
+		srv.Config.Dialer = xmap.M{
+			"dialers": []xmap.M{
+				{
+					"type": "xxx",
+				},
+			},
+		}
+		err = srv.Start()
+		if err == nil {
 			t.Error(err)
 			return
 		}
-		fmt.Printf("%v\n", data)
+
 	}
-	{ //web test
-		data, err := service.Client.GetText("http://w3?abc=123")
-		if err != nil || !strings.Contains(data, "router.go") {
-			t.Error(err)
-			return
-		}
-		fmt.Printf("%v\n", data)
-	}
-	{ //web test
-		data, err := service.Client.GetText("http://w40,w41")
-		if err != nil || data != "abc" {
-			t.Error(err)
-			return
-		}
-		fmt.Printf("%v\n", data)
-	}
-	{ //finder test
-		data, err := service.Client.GetText("http://find0")
-		if err != nil || !strings.Contains(data, "router.go") {
-			t.Error(err)
-			return
-		}
-		fmt.Printf("%v\n", data)
-	}
-	{ //ssh test
-		client, err := service.DialSSH("w5", &ssh.ClientConfig{
-			User:            "test",
-			HostKeyCallback: ssh.InsecureIgnoreHostKey(),
-			Auth:            []ssh.AuthMethod{ssh.Password("123")},
-		})
-		if err != nil {
-			t.Error(err)
-			return
-		}
-		ss, err := client.NewSession()
-		if err != nil {
-			t.Error(err)
-			return
-		}
-		ss.Stdin = bytes.NewBufferString("echo -n abc")
-		data, err := ss.Output("bash")
-		if err != nil || string(data) != "abc" {
-			t.Errorf("err:%v,%v", err, string(data))
-			return
-		}
-	}
-	{ //state test
-		data, err := service.Client.GetMap("http://w6?*=*")
-		if err != nil {
-			t.Error(err)
-			return
-		}
-		fmt.Printf("%v\n", converter.JSON(data))
-	}
-	//
-	os.WriteFile("/tmp/test.json", []byte(configTest1), os.ModePerm)
-	err = service.ReloadConfig()
-	time.Sleep(10 * time.Millisecond)
-	service.Stop()
-	time.Sleep(10 * time.Millisecond)
 }
 
 var configTestMaster = `
@@ -244,13 +402,13 @@ var configTestMaster = `
     "web": {},
     "console": {},
     "forwards": {},
-    "channels": [],
+    "channels": {},
     "dialer": {
         "standard": 1
     },
     "acl": {
-        "slaver": "abc",
-        "caller": "abc"
+        "slaver": "a9993e364706816aba3e25717850c26c9cd0d89d",
+        "caller": "a9993e364706816aba3e25717850c26c9cd0d89d"
     },
     "access": [
         [
@@ -268,16 +426,17 @@ var configTestSlaver = `
     "web": {},
     "console": {},
     "forwards": {},
-    "channels": [
-        {
+    "channels": {
+        "master": {
             "enable": 1,
             "remote": "localhost:15023",
             "token": "abc",
             "index": 0
         }
-    ],
+    },
     "dialer": {
-        "standard": 1
+        "standard": 1,
+		"ssh" : 1
     },
     "access": [
         [
@@ -294,17 +453,17 @@ var configTestCaller = `
     "listen": "",
     "web": {},
     "console": {
-        "socks":":1701"
+        "socks": ":1701"
     },
     "forwards": {},
-    "channels": [
-        {
+    "channels": {
+        "master": {
             "enable": 1,
             "remote": "localhost:15023",
             "token": "abc",
             "index": 0
         }
-    ],
+    },
     "dialer": {
         "standard": 1
     }
@@ -312,6 +471,23 @@ var configTestCaller = `
 `
 
 func TestSSH(t *testing.T) {
+	sshServer := &sshsrv.Server{
+		Addr: "127.0.0.1:13322",
+		ServerConfigCallback: func(ctx sshsrv.Context) *ssh.ServerConfig {
+			return &ssh.ServerConfig{
+				NoClientAuth: true,
+			}
+		},
+		Handler: func(s sshsrv.Session) {
+			cmd := exec.Command("bash")
+			cmd.Stdin = s
+			cmd.Stdout = s
+			cmd.Stderr = s
+			cmd.Run()
+		},
+	}
+	defer sshServer.Close()
+	go sshServer.ListenAndServe()
 	// LogLevel
 	os.WriteFile("/tmp/test_master.json", []byte(configTestMaster), os.ModePerm)
 	os.WriteFile("/tmp/test_slaver.json", []byte(configTestSlaver), os.ModePerm)
@@ -347,10 +523,8 @@ func TestSSH(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 	for i := 0; i < 10; i++ { //ssh test
 		info := fmt.Sprintf("data-%v", i)
-		client, err := caller.DialSSH("master->slaver->tcp://dev.loc:22", &ssh.ClientConfig{
-			User:            "test",
+		client, err := caller.DialSSH("master->slaver->tcp://127.0.0.1:13322", &ssh.ClientConfig{
 			HostKeyCallback: ssh.InsecureIgnoreHostKey(),
-			Auth:            []ssh.AuthMethod{ssh.Password("123")},
 		})
 		if err != nil {
 			t.Error(err)
@@ -374,10 +548,18 @@ func TestSSH(t *testing.T) {
 		ss.Close()
 		client.Close()
 	}
+
+	_, err = caller.DialSSH("master->slaver->tcp://127.0.0.1:10", nil)
+	if err == nil {
+		t.Error(err)
+		return
+	}
+
 	caller.Stop()
 	slaver.Stop()
 	master.Stop()
 	time.Sleep(100 * time.Millisecond)
+
 }
 
 func TestState(t *testing.T) {
@@ -402,6 +584,7 @@ func TestState(t *testing.T) {
 	err = caller.Start()
 	if err != nil {
 		t.Error(err)
+		time.Sleep(1000 * time.Second)
 		return
 	}
 	time.Sleep(100 * time.Millisecond)
@@ -412,19 +595,9 @@ func TestState(t *testing.T) {
 			t.Error(err)
 			return
 		}
-		state, err := caller.Client.GetMap(EncodeWebURI("http://(master->http://state)/?*=*"))
+		state, err := caller.Client.GetMap(EncodeWebURI("http://(master->http://state)/"))
 		if err != nil || len(state.Map("channels")) < 1 || len(state.ArrayDef(nil, "table")) < 1 {
 			t.Error(converter.JSON(state))
-			return
-		}
-		state, err = caller.Client.GetMap(EncodeWebURI("http://(master->http://state)/?a=111"))
-		if err != nil || len(state.Map("channels")) > 0 || len(state.ArrayDef(nil, "table")) > 0 {
-			t.Error(state)
-			return
-		}
-		state, err = caller.Client.GetMap(EncodeWebURI("http://(master->http://state)"))
-		if err != nil || len(state.Map("channels")) > 0 || len(state.ArrayDef(nil, "table")) > 0 {
-			t.Error(state)
 			return
 		}
 		conna.Close()
@@ -490,7 +663,7 @@ func TestReverseWeb(t *testing.T) {
 		Name:   "master",
 		Listen: ":12663",
 		ACL: map[string]string{
-			"slaver": "123",
+			"slaver": xhash.SHA1([]byte("123")),
 		},
 		Access: [][]string{{".*", ".*"}},
 	}
@@ -499,6 +672,7 @@ func TestReverseWeb(t *testing.T) {
 		t.Error(err)
 		return
 	}
+	defer master.Stop()
 	slaver := NewService()
 	slaver.Config = &Config{
 		Name: "slaver",
@@ -517,6 +691,7 @@ func TestReverseWeb(t *testing.T) {
 		t.Error(err)
 		return
 	}
+	defer slaver.Stop()
 	time.Sleep(time.Millisecond * 100)
 
 	//mock remote http server
@@ -574,7 +749,7 @@ func TestSlaverHandler(t *testing.T) {
 		Name:   "master",
 		Listen: ":12663",
 		ACL: map[string]string{
-			"slaver": "123",
+			"slaver": xhash.SHA1([]byte("123")),
 		},
 		Access: [][]string{{".*", ".*"}},
 	}
@@ -583,11 +758,12 @@ func TestSlaverHandler(t *testing.T) {
 		t.Error(err)
 		return
 	}
+	defer master.Stop()
 	slaver := NewService()
 	slaver.Config = &Config{
 		Name: "slaver",
 		Channels: map[string]xmap.M{
-			"maseter": {
+			"master": {
 				"enable": 1,
 				"index":  1,
 				"remote": ":12663",
@@ -601,6 +777,7 @@ func TestSlaverHandler(t *testing.T) {
 		t.Error(err)
 		return
 	}
+	defer slaver.Stop()
 	time.Sleep(time.Millisecond * 100)
 
 	//mock remote http server

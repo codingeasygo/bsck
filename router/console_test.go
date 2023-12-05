@@ -9,13 +9,13 @@ import (
 	"net/http/httptest"
 	"os"
 	"os/exec"
-	"os/user"
-	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/codingeasygo/util/converter"
 	"github.com/codingeasygo/util/proxy/socks"
+	sshsrv "github.com/gliderlabs/ssh"
+	"golang.org/x/crypto/ssh"
 )
 
 func TestHosts(t *testing.T) {
@@ -62,17 +62,17 @@ var configTestConsole1 = `
     "listen": "",
     "web": {},
     "console": {
-        "socks":":1701"
+        "socks": ":1701"
     },
     "forwards": {},
-    "channels": [
-        {
+    "channels": {
+        "master": {
             "enable": 1,
             "remote": "localhost:15023",
             "token": "abc",
             "index": 0
         }
-    ],
+    },
     "dialer": {
         "standard": 1
     }
@@ -85,17 +85,17 @@ var configTestConsole2 = `
     "listen": "",
     "web": {},
     "console": {
-        "ws":":1701"
+        "ws": ":1701"
     },
     "forwards": {},
-    "channels": [
-        {
+    "channels": {
+        "master": {
             "enable": 1,
             "remote": "localhost:15023",
             "token": "abc",
             "index": 0
         }
-    ],
+    },
     "dialer": {
         "standard": 1
     }
@@ -103,6 +103,25 @@ var configTestConsole2 = `
 `
 
 func TestConsole(t *testing.T) {
+	sshServer := &sshsrv.Server{
+		Addr: "127.0.0.1:13322",
+		ServerConfigCallback: func(ctx sshsrv.Context) *ssh.ServerConfig {
+			return &ssh.ServerConfig{
+				NoClientAuth: true,
+			}
+		},
+		Handler: func(s sshsrv.Session) {
+			fmt.Println("---->xxxx-->")
+			cmd := exec.Command("bash")
+			cmd.Stdin = s
+			cmd.Stdout = s
+			cmd.Stderr = s
+			cmd.Run()
+		},
+	}
+	defer sshServer.Close()
+	go sshServer.ListenAndServe()
+	//
 	socks.SetLogLevel(socks.LogLevelDebug)
 	var err error
 	//
@@ -122,18 +141,17 @@ func TestConsole(t *testing.T) {
 	}
 	testCaller := func(configData string) {
 		caller := NewService()
-		json.Unmarshal([]byte(configData), &caller.Config)
+		err = json.Unmarshal([]byte(configData), &caller.Config)
+		if err != nil {
+			t.Error(err)
+			return
+		}
 		err = caller.Start()
 		if err != nil {
 			t.Error(err)
 			return
 		}
-		usr, _ := user.Current()
-		sshKey := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			data, _ := os.ReadFile(filepath.Join(usr.HomeDir, ".ssh", "id_rsa"))
-			w.Write(data)
-		}))
-		caller.AddForward("ssh-key", sshKey.URL)
+		defer caller.Stop()
 		time.Sleep(100 * time.Millisecond)
 		conf := &Config{}
 		json.Unmarshal([]byte(configData), conf)
@@ -142,6 +160,7 @@ func TestConsole(t *testing.T) {
 			t.Error(err)
 			return
 		}
+		defer console.Close()
 		{ //http
 			state, err := console.Client.GetMap(EncodeWebURI("http://(http://state)?*=*"))
 			if err != nil || len(state) < 1 {
@@ -182,6 +201,11 @@ func TestConsole(t *testing.T) {
 				t.Error(err)
 				return
 			}
+			err = console.Ping("master->tcp://127.0.0.1:10", 10*time.Millisecond, 3)
+			if err == nil {
+				t.Error(err)
+				return
+			}
 			time.Sleep(100 * time.Millisecond)
 		}
 		{ //PrintState
@@ -218,6 +242,61 @@ func TestConsole(t *testing.T) {
 			}
 			if result, _ := console.parseProxyURI("${HOST}", "tcp://a"); result != "a" {
 				t.Error("error")
+				return
+			}
+			if _, err := console.parseProxyURI("${HOST}", "a.b."+string([]byte{1, 0x7f})); err == nil {
+				t.Error("error")
+				return
+			}
+			console.Rewrite = NewRewrite()
+			console.Rewrite.Single["a.b.c"] = "x.y.z"
+			if result, _ := console.parseProxyURI("${HOST}", "tcp://a.b.c:80"); result != "x.y.z:80" {
+				t.Error(result)
+				return
+			}
+		}
+		{ //forward
+			ln, err := console.StartForward("127.0.0.1:0", "master->tcp://echo")
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			conn, err := net.Dial("tcp", ln.Addr().String())
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			fmt.Fprintf(conn, "abc")
+			buffer := make([]byte, 1024)
+			n, err := conn.Read(buffer)
+			if err != nil || string(buffer[:n]) != "abc" {
+				t.Error(err)
+				return
+			}
+			conn.Close()
+			ln.Close()
+			//
+			//dial error
+			ln, err = console.StartForward("127.0.0.1:0", "xxx->tcp://echo")
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			conn, err = net.Dial("tcp", ln.Addr().String())
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			_, err = conn.Read(buffer)
+			if err == nil {
+				t.Error(err)
+				return
+			}
+			//
+			//start error
+			_, err = console.StartForward("127.0.0.1:x", "master->tcp://echo")
+			if err == nil {
+				t.Error(err)
 				return
 			}
 		}
@@ -260,6 +339,14 @@ func TestConsole(t *testing.T) {
 				t.Error(err)
 				return
 			}
+			err = console.ProxyProcess("master->tcp://${HOST}", nil, os.Stdout, os.Stderr, func(l net.Listener) (env []string, runner string, args []string, err error) {
+				err = fmt.Errorf("test error")
+				return
+			})
+			if err == nil {
+				t.Error(err)
+				return
+			}
 			//
 			res.Reset()
 			log.Reset()
@@ -279,15 +366,31 @@ func TestConsole(t *testing.T) {
 				t.Error(res.String())
 				return
 			}
+			err = console.ProxyExec("master->tcp://${HOSTxx}", nil, res, log, func(l net.Listener) (env []string, runner string, args []string, err error) {
+				err = fmt.Errorf("test error")
+				return
+			})
+			if err == nil {
+				t.Error(err)
+				return
+			}
 			//
 			res.Reset()
 			log.Reset()
-			conn, err := exec.LookPath("conn")
+			err = console.ProxySSH("", bytes.NewBuffer([]byte("echo -n OK")), res, log, "nc 127.0.0.1 13322", "ssh", "-o", "StrictHostKeyChecking=no")
 			if err != nil {
-				t.Errorf("find conn command is fail with %v", err)
+				fmt.Printf("log is \n%v\n", log.String())
+				t.Error(err)
 				return
 			}
-			err = console.ProxySSH("dev.loc", bytes.NewBuffer(nil), res, log, conn+" tcp://dev.loc:22", "ssh", "-ltest", "echo", "-n", "OK")
+			fmt.Printf("res is \n%v\n", res.String())
+			if res.String() != "OK" {
+				t.Error(res.String())
+				return
+			}
+			res.Reset()
+			log.Reset()
+			err = console.ProxySSH("dev", bytes.NewBuffer([]byte("echo -n OK")), res, log, "nc 127.0.0.1 13322", "ssh", "-o", "StrictHostKeyChecking=no")
 			if err != nil {
 				fmt.Printf("log is \n%v\n", log.String())
 				t.Error(err)
@@ -299,7 +402,6 @@ func TestConsole(t *testing.T) {
 				return
 			}
 		}
-		caller.Stop()
 	}
 	testCaller(configTestConsole1)
 	testCaller(configTestConsole2)
@@ -310,4 +412,12 @@ func TestConsole(t *testing.T) {
 		t.Error(err)
 		return
 	}
+	_, err = NewConsole("").Dial("tcp://echo")
+	if err == nil {
+		t.Error(err)
+		return
+	}
+	console := NewConsole("")
+	console.running["xxx"] = &ErrReadWriteCloser{}
+	console.Close()
 }

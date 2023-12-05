@@ -38,7 +38,7 @@ func hget(format string, args ...interface{}) (data string, err error) {
 	return
 }
 
-func TestForward(t *testing.T) {
+func TestWebForward(t *testing.T) {
 	dialerPool := dialer.NewPool("test")
 	dialerPool.Bootstrap(xmap.M{
 		"standard": 1,
@@ -281,7 +281,7 @@ func TestForward(t *testing.T) {
 	}
 }
 
-func TestForwadError(t *testing.T) {
+func TestWebForwadError(t *testing.T) {
 	// test error
 	forward := NewWebForward()
 	forward.AddForward("ws://t0", "tcp://xx")
@@ -304,6 +304,13 @@ func TestForwadError(t *testing.T) {
 		return
 	}
 	fmt.Printf("Err:%v\n", err)
+	//
+	req := httptest.NewRequest("GET", "http://127.0.0.1", nil)
+	res := httptest.NewRecorder()
+	forward.ProcRouter(ForwardUri{string([]byte{1, 1})}, res, req)
+	//
+	forward.Dialer = func(uri string, raw io.ReadWriteCloser) (sid uint16, err error) { return 0, fmt.Errorf("error") }
+	forward.procDial("tcp", "127.0.0.1:10", "test")
 }
 
 func TestWaitReadWriteCloser(t *testing.T) {

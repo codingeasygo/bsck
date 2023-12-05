@@ -4,13 +4,14 @@
     "web": {},
     "console": {},
     "forwards": {},
-    "channels": [
-        {
+    "channels": {
+        "master": {
             "enable": 1,
             "remote": "localhost:15023",
-            "token": "abc"
+            "token": "abc",
+            "index": 0
         }
-    ],
+    },
     "dialer": {
         "standard": 1
     },
@@ -19,6 +20,5 @@
             ".*",
             ".*"
         ]
-    ],
-    "log": 40
+    ]
 }

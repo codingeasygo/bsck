@@ -173,6 +173,10 @@ func (p *Pool) Dial(channel Channel, sid uint16, uri string) (r Conn, err error)
 
 // Shutdown will shutdown all dialer
 func (p *Pool) Shutdown() (err error) {
+	for _, dialer := range p.Dialers {
+		dialer.Shutdown()
+	}
+	p.Dialers = []Dialer{}
 	return
 }
 

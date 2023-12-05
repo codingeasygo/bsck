@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net"
 	"net/http"
 	"net/url"
@@ -153,7 +152,7 @@ func (c *Console) Close() (err error) {
 	return
 }
 
-func (c *Console) dialAll(uri string, raw io.ReadWriteCloser) (sid uint16, err error) {
+func (c *Console) DialConn(raw io.ReadWriteCloser, uri string) (sid uint16, err error) {
 	DebugLog("Console start dial to %v on slaver %v", uri, c.SlaverURI)
 	var conn net.Conn
 	if strings.HasPrefix(c.SlaverURI, "socks5://") {
@@ -173,16 +172,17 @@ func (c *Console) dialAll(uri string, raw io.ReadWriteCloser) (sid uint16, err e
 	}
 	DebugLog("Console dial to %v on slaver %v success", uri, c.SlaverURI)
 	proc := func(err error) {
-		if err != nil {
+		defer func() {
 			conn.Close()
 			raw.Close()
-			return
+		}()
+		if err == nil {
+			go xio.CopyBuffer(conn, raw, make([]byte, c.BufferSize))
+			xio.CopyBuffer(raw, conn, make([]byte, c.BufferSize))
+			c.locker.Lock()
+			delete(c.conns, fmt.Sprintf("%p", conn))
+			c.locker.Unlock()
 		}
-		go xio.CopyBuffer(conn, raw, make([]byte, c.BufferSize))
-		xio.CopyBuffer(raw, conn, make([]byte, c.BufferSize))
-		c.locker.Lock()
-		delete(c.conns, fmt.Sprintf("%p", conn))
-		c.locker.Unlock()
 	}
 	c.locker.Lock()
 	c.conns[fmt.Sprintf("%p", conn)] = conn
@@ -209,7 +209,7 @@ func (c *Console) dialNet(network, addr string) (conn net.Conn, err error) {
 	}
 	conn, raw := dialer.CreatePipedConn()
 	if err == nil {
-		_, err = c.dialAll(addr, raw)
+		_, err = c.DialConn(raw, addr)
 		if err != nil {
 			conn.Close()
 			raw.Close()
@@ -221,7 +221,7 @@ func (c *Console) dialNet(network, addr string) (conn net.Conn, err error) {
 // Redirect will redirect connection to reader/writer/closer
 func (c *Console) Redirect(uri string, reader io.Reader, writer io.Writer, closer io.Closer) (err error) {
 	raw := xio.NewCombinedReadWriteCloser(reader, writer, closer)
-	_, err = c.dialAll(uri, raw)
+	_, err = c.DialConn(raw, uri)
 	return
 }
 
@@ -229,7 +229,7 @@ func (c *Console) Redirect(uri string, reader io.Reader, writer io.Writer, close
 func (c *Console) Dial(uri string) (conn io.ReadWriteCloser, err error) {
 	conn, raw := dialer.CreatePipedConn()
 	if err == nil {
-		_, err = c.dialAll(uri, raw)
+		_, err = c.DialConn(raw, uri)
 		if err != nil {
 			conn.Close()
 			raw.Close()
@@ -264,20 +264,13 @@ func (c *Console) Ping(uri string, delay time.Duration, max uint64) (err error) 
 		runCount++
 		pingStart := time.Now()
 		conn, err = c.Dial(uri)
-		if err != nil {
-			fmt.Printf("Ping to %v fail with dial error %v\n", uri, err)
-			time.Sleep(delay)
-			continue
+		if err == nil {
+			fmt.Fprintf(bytes.NewBuffer(buf), "%v", runCount)
+			_, err = conn.Write(buf)
+			if err == nil {
+				err = xio.FullBuffer(conn, buf, 64, nil)
+			}
 		}
-		fmt.Fprintf(bytes.NewBuffer(buf), "%v", runCount)
-		_, err = conn.Write(buf)
-		if err != nil {
-			fmt.Printf("Ping to %v fail with write error %v\n", uri, err)
-			conn.Close()
-			time.Sleep(delay)
-			continue
-		}
-		err = xio.FullBuffer(conn, buf, 64, nil)
 		if err != nil {
 			fmt.Printf("Ping to %v fail with read error %v\n", uri, err)
 			conn.Close()
@@ -336,7 +329,7 @@ func (c *Console) PrintState(uri, query string) (err error) {
 // DialPiper will dial uri on router and return piper
 func (c *Console) DialPiper(uri string, bufferSize int) (raw xio.Piper, err error) {
 	piper := NewRouterPiper()
-	_, err = c.dialAll(uri, piper)
+	_, err = c.DialConn(piper, uri)
 	raw = piper
 	return
 }
@@ -391,7 +384,7 @@ func (c *Console) StartForward(loc string, uri string) (listener net.Listener, e
 			if err != nil {
 				break
 			}
-			_, err = c.dialAll(uri, conn)
+			_, err = c.DialConn(conn, uri)
 			if err == nil {
 				InfoLog("Console start transfer %v to %v", conn.RemoteAddr(), uri)
 			} else {
@@ -485,8 +478,6 @@ func (c *Console) ProxyProcess(uri string, stdin, stdout, stderr *os.File, prepa
 }
 
 // ProxySSH will start ssh client command and connect to uri by proxy command.
-//
-// it will try load the ssh key from slaver forwarding by bs-ssh-key, bs-ssh-key is forwarding to http server and return ssh key in body by uri argument.
 func (c *Console) ProxySSH(uri string, stdin io.Reader, stdout, stderr io.Writer, proxyCommand, command string, args ...string) (err error) {
 	replaceURI := uri
 	if len(replaceURI) < 1 {
@@ -507,19 +498,6 @@ func (c *Console) ProxySSH(uri string, stdin io.Reader, stdout, stderr io.Writer
 	allArgs := []string{}
 	allArgs = append(allArgs, "-o", fmt.Sprintf("ProxyCommand=%v", strings.ReplaceAll(proxyCommand, "${URI}", uri)))
 	//
-	sshKey, err := c.Client.GetBytes("http://ssh-key?uri=%v", url.QueryEscape(uri))
-	if err == nil {
-		tempFile, tempErr := ioutil.TempFile("", "*")
-		if tempErr != nil {
-			err = fmt.Errorf("SSH create temp file fail with %v", tempErr)
-			return
-		}
-		defer os.Remove(tempFile.Name())
-		tempFile.Write(sshKey)
-		tempFile.Close()
-		allArgs = append(allArgs, "-i", tempFile.Name())
-		InfoLog("Console proxy ssh using remote ssh key from %v", uri)
-	}
 	if command == "ssh" {
 		allArgs = append(allArgs, replaceURI)
 	}

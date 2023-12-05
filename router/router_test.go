@@ -14,7 +14,9 @@ import (
 	"time"
 
 	"github.com/codingeasygo/util/converter"
+	"github.com/codingeasygo/util/proxy/socks"
 	"github.com/codingeasygo/util/xdebug"
+	"github.com/codingeasygo/util/xhash"
 	"github.com/codingeasygo/util/xhttp"
 	"github.com/codingeasygo/util/xio"
 	"github.com/codingeasygo/util/xio/frame"
@@ -41,6 +43,12 @@ func init() {
 	ShowLog = 2
 	SetLogLevel(LogLevelDebug)
 	go runEchoServer("127.0.0.1:13200")
+	transport := socks.NewServer()
+	transport.Dialer = xio.PiperDialerF(xio.DialNetPiper)
+	_, err := transport.Start("127.0.0.1:13210")
+	if err != nil {
+		panic(err)
+	}
 	go http.ListenAndServe(":6063", nil)
 }
 
@@ -63,6 +71,7 @@ func TestCmd(t *testing.T) {
 	fmt.Printf("%v\n", CmdDialBack)
 	fmt.Printf("%v\n", CmdConnData)
 	fmt.Printf("%v\n", CmdConnClosed)
+	fmt.Printf("%v\n", CmdNotify)
 	fmt.Printf("%v\n", RouterCmd(0))
 }
 
@@ -82,6 +91,25 @@ func TestConnID(t *testing.T) {
 	fmt.Printf("%v\n", connID.RemoteID())
 	fmt.Printf("%v\n", connID)
 	connID.Split()
+}
+
+func TestRouterItem(t *testing.T) {
+	conn1 := NewRouterConn(frame.NewRawReadWriteCloser(nil, nil, frame.DefaultBufferSize), 1, ConnTypeChannel)
+	conn2 := NewRouterConn(frame.NewRawReadWriteCloser(nil, nil, frame.DefaultBufferSize), 2, ConnTypeChannel)
+	item := RouterItem{}
+	item.FromConn = conn1
+	item.FromSID[0] = 1
+	item.FromSID[1] = 1
+	item.NextConn = conn2
+	item.NexSID[0] = 1
+	item.NexSID[1] = 1
+	fmt.Println("-->", item.AllKey())
+}
+
+func TestWrapReadyReadWriteCloser(t *testing.T) {
+	conn1 := NewRouterConn(frame.NewRawReadWriteCloser(nil, nil, frame.DefaultBufferSize), 1, ConnTypeChannel)
+	WrapReadyReadWriteCloser(conn1, conn1)
+	WrapReadyReadWriteCloser(conn1, nil)
 }
 
 func TestBondConn(t *testing.T) {
@@ -177,13 +205,13 @@ func (e *ErrReadWriteCloser) Ready(failed error, next func(err error)) {
 
 func newBaseNode() (node0, node1 *Router, err error) {
 	access0 := NewNormalAcessHandler("N0")
-	access0.LoginAccess["N1"] = "123"
-	access0.LoginAccess["N2"] = "123"
+	access0.LoginAccess["N1"] = xhash.SHA1([]byte("123"))
+	access0.LoginAccess["N2"] = xhash.SHA1([]byte("123"))
 	access0.DialAccess = append(access0.DialAccess, []string{".*", ".*"})
 	node0 = NewRouter("N0", access0)
 
 	access1 := NewNormalAcessHandler("N1")
-	access1.LoginAccess["N2"] = "123"
+	access1.LoginAccess["N2"] = xhash.SHA1([]byte("123"))
 	access1.DialAccess = append(access1.DialAccess, []string{".*", ".*"})
 	node1 = NewRouter("N1", access1)
 	channelA10, channelB10, _ := xio.CreatePipedConn()
@@ -199,7 +227,7 @@ func newLinkNode() (nodeList []*Router, nameList []string, err error) {
 	for i := 0; i < 10; i++ {
 		name := fmt.Sprintf("N%02d", i)
 		access := NewNormalAcessHandler(name)
-		access.LoginAccess[fmt.Sprintf("N%02d", i+1)] = "123"
+		access.LoginAccess[fmt.Sprintf("N%02d", i+1)] = xhash.SHA1([]byte("123"))
 		access.DialAccess = append(access.DialAccess, []string{".*", ".*"})
 		node := NewRouter(name, access)
 		nodeList = append(nodeList, node)
@@ -236,7 +264,7 @@ func newMultiNode() (nodeList []*Router, nameList []string, err error) {
 			continue
 		}
 		node0 := nodeList[0]
-		node0.Handler.(*NormalAcessHandler).LoginAccess[fmt.Sprintf("N%02d", i)] = "123"
+		node0.Handler.(*NormalAcessHandler).LoginAccess[fmt.Sprintf("N%02d", i)] = xhash.SHA1([]byte("123"))
 		channelA, channelB, _ := xio.CreatePipedConn()
 		node0.Accept(channelA, false)
 		_, _, err = node.JoinConn(channelB, xmap.M{
@@ -253,9 +281,9 @@ func newMultiNode() (nodeList []*Router, nameList []string, err error) {
 func TestRouter(t *testing.T) {
 	tester := xdebug.CaseTester{
 		0:  1,
-		14: 1,
+		20: 1,
 	}
-	if tester.Run() { //base dial
+	if tester.Run("base dial") { //base dial
 		node0, node1, err := newBaseNode()
 		if err != nil {
 			t.Error(err)
@@ -300,7 +328,7 @@ func TestRouter(t *testing.T) {
 		node1.Stop()
 		node0.Stop()
 	}
-	if tester.Run() { //parallel dial
+	if tester.Run("parallel dial") { //parallel dial
 		node0, node1, err := newBaseNode()
 		if err != nil {
 			t.Error(err)
@@ -462,7 +490,7 @@ func TestRouter(t *testing.T) {
 		node0.Stop()
 		node1.Stop()
 	}
-	if tester.Run() { //DialAccess fail
+	if tester.Run("DialAccess fail") { //DialAccess fail
 		node0, node1, err := newBaseNode()
 		if err != nil {
 			t.Error(err)
@@ -479,7 +507,7 @@ func TestRouter(t *testing.T) {
 		node0.Stop()
 		node1.Stop()
 	}
-	if tester.Run() { //dial fail
+	if tester.Run("dial fail") { //dial fail
 		node0, node1, err := newBaseNode()
 		if err != nil {
 			t.Error(err)
@@ -565,10 +593,6 @@ func TestRouter(t *testing.T) {
 				connA.Close()
 			}
 		}
-		if true {
-			return
-		}
-		fmt.Println("--->xx")
 		nodeB := nodeList[len(nodeList)-1]
 		connURIB := fmt.Sprintf("%v->tcp://127.0.0.1:13200", strings.Join(nameListB[1:], "->"))
 		for i := 0; i < 10; i++ {
@@ -707,7 +731,7 @@ func TestRouter(t *testing.T) {
 		node0.Stop()
 		node1.Stop()
 	}
-	if tester.Run() { //ping
+	if tester.Run("notify") { //notify
 		node0, node1, err := newBaseNode()
 		if err != nil {
 			t.Error(err)
@@ -857,19 +881,30 @@ func TestRouter(t *testing.T) {
 			piper := NewRouterPiper()
 			piper.Close()
 			piper.PipeConn(xio.NewDiscardReadWriteCloser(), "")
+
+			piper = NewRouterPiper()
+			piper.readyW = 0
+			go func() {
+				time.Sleep(10 * time.Millisecond)
+				piper.readyWrite()
+			}()
+			piper.waitWrite()
 		}
 
 		node0.Stop()
 		node1.Stop()
 		node1.Stop()
 	}
-	if tester.Run() { //mock error
+	if tester.Run("TestError") { //mock error
 		access0 := NewNormalAcessHandler("N0")
 		access0.LoginAccess["N1"] = "123"
 		access0.DialAccess = append(access0.DialAccess, []string{".*", ".*"})
 		node0 := NewRouter("N0", access0)
 		discard := NewRouterConn(frame.NewRawReadWriteCloser(node0.Header, xio.NewDiscardReadWriteCloser(), 1024), 0, ConnTypeRaw)
 		discard.SetName("DISCARD")
+
+		discard2 := NewRouterConn(frame.NewRawReadWriteCloser(node0.Header, xio.NewDiscardReadWriteCloser(), 1024), 0, ConnTypeChannel)
+		discard2.SetName("DISCARD")
 		{ //cmd error
 			node0.Accept(frame.NewRawReadWriter(node0.Header, bytes.NewBufferString("abc"), node0.BufferSize), true)
 		}
@@ -902,7 +937,8 @@ func TestRouter(t *testing.T) {
 			conn := NewRouterConn(frame.NewRawReadWriteCloser(node0.Header, NewErrReadWriteCloser([]byte("abc"), 10), node0.BufferSize), 1, ConnTypeChannel)
 			conn.SetName("ERR")
 			node0.addTable(discard, ConnID{1, 1}, conn, ConnID{1, 1}, "test")
-			node0.procConnData(discard, NewRouterFrameByMessage(node0.Header, nil, ConnID{1, 1}, CmdDialBack, []byte("abc"))) //router error //forward error
+			node0.procConnData(discard, NewRouterFrameByMessage(node0.Header, nil, ConnID{1, 1}, CmdDialBack, []byte("abc")))    //router error //forward error
+			node0.procConnData(discard2, NewRouterFrameByMessage(node0.Header, nil, ConnID{10, 10}, CmdDialBack, []byte("abc"))) //router error //forward error
 		}
 		{ //join conn error
 			writeErr := NewRouterConn(frame.NewRawReadWriteCloser(node0.Header, NewErrReadWriteCloser([]byte("abc"), 10), node0.BufferSize), 1, ConnTypeChannel)
@@ -929,6 +965,16 @@ func TestRouter(t *testing.T) {
 				return
 			}
 		}
+		node0.Stop()
+	}
+	if tester.Run("cover") {
+		frame := &RouterFrame{Buffer: []byte("")}
+		fmt.Printf("%v\n", frame)
+		frame = &RouterFrame{Buffer: make([]byte, 1024)}
+		fmt.Printf("%v\n", frame)
+
+		conn := NewRouterConn(nil, 1, ConnTypeChannel)
+		conn.TrafficBytes()
 	}
 }
 
@@ -952,6 +998,7 @@ func TestNormalAcessHandlerErr(t *testing.T) {
 			return
 		})
 		errDial.DialRawConn(discard, 0, "")
+		errDial.ConnDialer = nil
 		errDial.RawDialer = DialRawStdF(func(channel Conn, sid uint16, uri string) (raw io.ReadWriteCloser, err error) {
 			return
 		})

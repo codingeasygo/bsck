@@ -7,6 +7,8 @@ github.com/codingeasygo/gvisor v0.0.0-20231203111534-4a1d1d9214fa h1:IcMNl2HmkIW
 github.com/codingeasygo/gvisor v0.0.0-20231203111534-4a1d1d9214fa/go.mod h1:10sU+Uh5KKNv1+2x2A0Gvzt8FjD3ASIhorV3YsauXhk=
 github.com/codingeasygo/util v0.0.0-20231204090510-3bcb3634ed7f h1:6xgR+rvDY3O103tvEZ9iN9HKkEZKqbZqnaeCnh4D+jU=
 github.com/codingeasygo/util v0.0.0-20231204090510-3bcb3634ed7f/go.mod h1:CE705pc3Xn2F3nqMKhvfaigeXeDudpdteTzbf+2jwig=
+github.com/codingeasygo/util v0.0.0-20231205030719-5c096beae14d h1:Eb1FlSTXzizcA2v75x9CvCjyDnCez3KB0jFIOYjpphU=
+github.com/codingeasygo/util v0.0.0-20231205030719-5c096beae14d/go.mod h1:CE705pc3Xn2F3nqMKhvfaigeXeDudpdteTzbf+2jwig=
 github.com/codingeasygo/web v0.0.0-20230907002627-38429b961da0 h1:EB2qTZ3dth9C7XAiQhmJbHY5faGfkVUr6p95oAdgm8k=
 github.com/codingeasygo/web v0.0.0-20230907002627-38429b961da0/go.mod h1:YOIpmocUy7mG3Q/z2tb37AR8PVNqdY9qs9R88ykBR70=
 github.com/creack/pty v1.1.20 h1:VIPb/a2s17qNeQgDnkfZC35RScx+blkKF8GV68n80J4=

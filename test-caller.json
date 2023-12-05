@@ -3,21 +3,18 @@
     "listen": "",
     "web": {},
     "console": {
-        "socks": ":1703"
+        "socks": ":1701"
     },
-    "forwards": {
-        "dav": "http://dav?dir=."
-    },
-    "channels": [
-        {
-            "enable": 0,
+    "forwards": {},
+    "channels": {
+        "master": {
+            "enable": 1,
             "remote": "localhost:15023",
             "token": "abc",
             "index": 0
         }
-    ],
+    },
     "dialer": {
         "standard": 1
-    },
-    "log": 40
+    }
 }

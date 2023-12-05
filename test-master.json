@@ -4,19 +4,18 @@
     "web": {},
     "console": {},
     "forwards": {},
-    "channels": [],
+    "channels": {},
     "dialer": {
         "standard": 1
     },
     "acl": {
-        "slaver": "abc",
-        "caller": "abc"
+        "slaver": "a9993e364706816aba3e25717850c26c9cd0d89d",
+        "caller": "a9993e364706816aba3e25717850c26c9cd0d89d"
     },
     "access": [
         [
             ".*",
             ".*"
         ]
-    ],
-    "log": 40
+    ]
 }

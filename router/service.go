@@ -98,13 +98,15 @@ type Config struct {
 
 // ReadConfig will read configure from file
 func ReadConfig(filename string) (config *Config, last int64, err error) {
-	configData, err := os.ReadFile(filename)
+	var configData []byte
+	stat, err := os.Stat(filename)
+	if err == nil {
+		configData, err = os.ReadFile(filename)
+	}
 	if err != nil {
 		return
 	}
-	if stat, xerr := os.Stat(filename); xerr != nil {
-		last = stat.ModTime().Local().UnixNano() / 1e6
-	}
+	last = stat.ModTime().Local().UnixNano() / 1e6
 	user, _ := user.Current()
 	config = &Config{}
 	err = json.Unmarshal(configData, config)
@@ -192,39 +194,33 @@ func NewService() (s *Service) {
 
 // ReloadConfig will check configure modify time and reload
 func (s *Service) ReloadConfig() (err error) {
-	fileInfo, err := os.Stat(s.ConfigPath)
-	if err != nil {
-		DebugLog("Server(%v) reload configure fail with %v", s.Name, err)
-		return
-	}
-	newLast := fileInfo.ModTime().Local().UnixNano() / 1e6
-	if newLast == s.configLast {
-		return
-	}
-	config := s.Config
 	newConfig, newLast, err := ReadConfig(s.ConfigPath)
 	if err != nil {
 		DebugLog("Server(%v) read configure %v fail with %v", s.Name, s.ConfigPath, err)
 		return
 	}
+	if newLast == s.configLast {
+		return
+	}
+	config := s.Config
 	DebugLog("Server(%v) will reload modified configure %v by old(%v),new(%v)", s.Name, s.ConfigPath, s.configLast, newLast)
 	//remove missing
 	for loc := range config.Forwards {
 		if _, ok := newConfig.Forwards[loc]; ok {
 			continue
 		}
-		err = s.RemoveForward(loc)
-		if err != nil {
-			ErrorLog("Server(%v) remove forward by %v fail with %v", s.Name, loc, err)
+		xerr := s.RemoveForward(loc)
+		if xerr != nil {
+			ErrorLog("Server(%v) remove forward by %v fail with %v", s.Name, loc, xerr)
 		}
 	}
 	for loc, uri := range newConfig.Forwards {
 		if config.Forwards[loc] == uri {
 			continue
 		}
-		err = s.AddForward(loc, uri)
-		if err != nil {
-			ErrorLog("Server(%v) add forward by %v->%v fail with %v", s.Name, loc, uri, err)
+		xerr := s.AddForward(loc, uri)
+		if xerr != nil {
+			ErrorLog("Server(%v) add forward by %v->%v fail with %v", s.Name, loc, uri, xerr)
 		}
 	}
 	config.Forwards = newConfig.Forwards
@@ -291,7 +287,6 @@ func (s *Service) AddForward(loc, uri string) (err error) {
 	if err == nil && rdp && len(s.Config.RDPDir) > 0 {
 		s.configLock.Lock()
 		fileData := fmt.Sprintf(RDPTemplate, listener.Addr(), target.User.Username())
-		os.MkdirAll(s.Config.RDPDir, os.ModePerm)
 		savepath := filepath.Join(s.Config.RDPDir, locParts[0]+".rdp")
 		err := os.WriteFile(savepath, []byte(fileData), os.ModePerm)
 		s.configLock.Unlock()
@@ -305,7 +300,6 @@ func (s *Service) AddForward(loc, uri string) (err error) {
 		s.configLock.Lock()
 		password, _ := target.User.Password()
 		fileData := fmt.Sprintf(VNCTemplate, locParts[0], listener.Addr(), password)
-		os.MkdirAll(s.Config.VNCDir, os.ModePerm)
 		savepath := filepath.Join(s.Config.VNCDir, locParts[0]+".vnc")
 		err := os.WriteFile(savepath, []byte(fileData), os.ModePerm)
 		s.configLock.Unlock()
@@ -341,6 +335,8 @@ func (s *Service) RemoveForward(loc string) (err error) {
 	var rdp, vnc bool
 	switch target.Scheme {
 	case "socks":
+		err = s.Node.StopForward(locParts[0])
+	case "proxy":
 		err = s.Node.StopForward(locParts[0])
 	case "tcp":
 		err = s.Node.StopForward(locParts[0])
@@ -489,10 +485,9 @@ func (s *Service) DialSSH(uri string, config *ssh.ClientConfig) (client *ssh.Cli
 		return
 	}
 	c, channel, request, err := ssh.NewClientConn(conn, uri, config)
-	if err != nil {
-		return nil, err
+	if err == nil {
+		client = ssh.NewClient(c, channel, request)
 	}
-	client = ssh.NewClient(c, channel, request)
 	return
 }
 
@@ -544,6 +539,9 @@ func (s *Service) Start() (err error) {
 	s.Webs["state"] = http.HandlerFunc(s.Node.Router.StateH)
 	s.Dialer = dialer.NewPool(s.Config.Name)
 	s.Dialer.Webs = s.Webs
+	if s.Config.Dialer == nil {
+		s.Config.Dialer = xmap.M{}
+	}
 	dialerConfig := s.Config.Dialer
 	dialerConfig["dir"] = s.Config.Dir
 	err = s.Dialer.Bootstrap(s.Config.Dialer)
@@ -561,9 +559,9 @@ func (s *Service) Start() (err error) {
 		InfoLog("Server(%v) node listen on %v success", s.Name, s.Config.Listen)
 	}
 	for loc, uri := range s.Config.Forwards {
-		err = s.AddForward(loc, uri)
-		if err != nil {
-			ErrorLog("Server(%v) add forward by %v->%v fail with %v", s.Name, loc, uri, err)
+		xerr := s.AddForward(loc, uri)
+		if xerr != nil {
+			ErrorLog("Server(%v) add forward by %v->%v fail with %v", s.Name, loc, uri, xerr)
 		}
 	}
 	if len(s.Config.Console.SOCKS) > 0 {
@@ -634,5 +632,6 @@ func (s *Service) Stop() (err error) {
 		s.Web.Close()
 		s.Web = nil
 	}
+	s.Dialer.Shutdown()
 	return
 }

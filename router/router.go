@@ -631,22 +631,22 @@ func (r *RouterItem) Next(conn Conn) (next Conn, sid ConnID) {
 
 func (r *RouterItem) AllKey() (keyList []string) {
 	{
-		local, remote := routerKey(r.FromConn, r.FromSID)
+		local, _ := routerKey(r.FromConn, r.FromSID)
 		if len(local) > 0 {
 			keyList = append(keyList, local)
 		}
-		if len(remote) > 0 {
-			keyList = append(keyList, remote)
-		}
+		// if len(remote) > 0 {
+		// 	keyList = append(keyList, remote)
+		// }
 	}
 	{
-		local, remote := routerKey(r.NextConn, r.NexSID)
+		local, _ := routerKey(r.NextConn, r.NexSID)
 		if len(local) > 0 {
 			keyList = append(keyList, local)
 		}
-		if len(remote) > 0 {
-			keyList = append(keyList, remote)
-		}
+		// if len(remote) > 0 {
+		// 	keyList = append(keyList, remote)
+		// }
 	}
 	return
 }
@@ -1585,7 +1585,7 @@ func (r *RouterPiper) waitWrite() error {
 	return r.failed
 }
 
-func (r *RouterPiper) readWrite() {
+func (r *RouterPiper) readyWrite() {
 	r.waiterW.L.Lock()
 	r.readyW = 1
 	r.waiterW.Broadcast()
@@ -1598,11 +1598,11 @@ func (r *RouterPiper) PipeConn(conn io.ReadWriteCloser, target string) (err erro
 	err = r.failed
 	if err == nil {
 		r.raw = conn
-		r.readWrite()
+		r.readyWrite()
 		r.next(err)
 		err = fmt.Errorf("pipe done")
 	} else {
-		r.readWrite()
+		r.readyWrite()
 		conn.Close()
 	}
 	return

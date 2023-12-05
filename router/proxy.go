@@ -293,19 +293,15 @@ func (p *Proxy) loadClientConfig(tlsCert, tlsKey, tlsCA, tlsVerify string) (conf
 	config = &tls.Config{InsecureSkipVerify: p.Insecure}
 	config.Rand = rand.Reader
 
-	if len(tlsCert) < 1 {
-		tlsCert = "bsrouter.pem"
+	if len(tlsCert) > 0 && len(tlsKey) > 0 {
+		var cert tls.Certificate
+		cert, err = LoadX509KeyPair(p.Dir, tlsCert, tlsKey)
+		if err != nil {
+			ErrorLog("Proxy(%v) load cert fail with %v", p.Name, err)
+			return
+		}
+		config.Certificates = append(config.Certificates, cert)
 	}
-	if len(tlsKey) < 1 {
-		tlsKey = "bsrouter.key"
-	}
-	var cert tls.Certificate
-	cert, err = LoadX509KeyPair(p.Dir, tlsCert, tlsKey)
-	if err != nil {
-		ErrorLog("Proxy(%v) load cert fail with %v", p.Name, err)
-		return
-	}
-	config.Certificates = append(config.Certificates, cert)
 
 	if len(tlsCA) > 0 {
 		var certPEM []byte
@@ -318,6 +314,7 @@ func (p *Proxy) loadClientConfig(tlsCert, tlsKey, tlsCA, tlsVerify string) (conf
 		ok := certPool.AppendCertsFromPEM([]byte(certPEM))
 		if !ok {
 			ErrorLog("Proxy(%v) append ca fail", p.Name)
+			err = fmt.Errorf("load %v fail", tlsCA)
 			return
 		}
 		config.RootCAs = certPool
@@ -345,6 +342,7 @@ func (p *Proxy) Keep() (err error) {
 			if channel.Name() != name {
 				ErrorLog("Proxy(%v) keep login remote name %v must equal to local name %v", p.Name, channel.Name(), name)
 				channel.Close()
+				err = fmt.Errorf("remote name %v must equal to local name %v", channel.Name(), name)
 				break
 			}
 		}
@@ -374,10 +372,7 @@ func (p *Proxy) dialConn(remote, proxy, tlsCert, tlsKey, tlsCA, tlsHost, tlsVeri
 			proxyAuth.User = proxyURL.User.Username()
 			proxyAuth.Password, _ = proxyURL.User.Password()
 		}
-		proxyDailer, err = nproxy.SOCKS5("tcp", proxyURL.Host, proxyAuth, nil)
-		if err != nil {
-			return
-		}
+		proxyDailer, _ = nproxy.SOCKS5("tcp", proxyURL.Host, proxyAuth, nil)
 	}
 	var config *tls.Config
 	switch remoteURI.Scheme {
@@ -406,6 +401,7 @@ func (p *Proxy) dialConn(remote, proxy, tlsCert, tlsKey, tlsCA, tlsHost, tlsVeri
 			ErrorLog("Proxy(%v) load tls config fail with %v", p.Name, err)
 			return
 		}
+		config.ServerName = remoteURI.Hostname()
 		var dialer net.Dialer
 		if proxyDailer != nil {
 			rawConn, xerr := proxyDailer.Dial("tcp", remoteURI.Host)
@@ -489,7 +485,7 @@ func (p *Proxy) Login(option xmap.M) (channel Conn, result xmap.M, err error) {
 
 // Ping will ping channel
 func (p *Proxy) Ping(option xmap.M) (speed xmap.M, err error) {
-	var remoteAll, proxy, tlsCert, tlsKey, tlsCA, tlsHost, tlsVerify string
+	var remoteAll, proxy, tlsCert, tlsKey, tlsHost, tlsCA, tlsVerify string
 	err = option.ValidFormat(`
 		remote,R|S,L:0;
 		proxy,O|S,L:0;
@@ -497,7 +493,7 @@ func (p *Proxy) Ping(option xmap.M) (speed xmap.M, err error) {
 		tls_key,O|S,L:0;
 		tls_host,O|S,L:0;
 		tls_ca,O|S,L:0;
-	`, &remoteAll, &tlsCert, &tlsKey, &tlsHost, &tlsCA)
+	`, &remoteAll, &proxy, &tlsCert, &tlsKey, &tlsHost, &tlsCA)
 	if err != nil {
 		return
 	}
@@ -564,6 +560,12 @@ type quicConn struct {
 	quic.Stream
 }
 
+func (q *quicConn) Close() (err error) {
+	q.Stream.Close()
+	q.Stream.CancelRead(0)
+	return
+}
+
 type quicListener struct {
 	*quic.Listener
 }
@@ -572,37 +574,32 @@ func quicListen(addr string, tls *tls.Config) (ln net.Listener, err error) {
 	quicConf := &quic.Config{EnableDatagrams: true}
 	quicConf.KeepAlivePeriod = time.Second
 	base, err := quic.ListenAddr(addr, tls, quicConf)
-	if err != nil {
-		return
+	if err == nil {
+		ln = &quicListener{Listener: base}
 	}
-	ln = &quicListener{Listener: base}
 	return
 }
 
 func quicDial(addr string, tls *tls.Config) (conn net.Conn, err error) {
+	c := &quicConn{}
+	conn = c
 	quicConf := &quic.Config{EnableDatagrams: true}
 	quicConf.KeepAlivePeriod = time.Second
-	base, err := quic.DialAddr(context.Background(), addr, tls, quicConf)
-	if err != nil {
-		return
+	c.Connection, err = quic.DialAddr(context.Background(), addr, tls, quicConf)
+	if err == nil {
+		c.Stream, err = c.Connection.OpenStream()
 	}
-	stream, err := base.OpenStream()
-	if err != nil {
-		return
-	}
-	return &quicConn{Connection: base, Stream: stream}, nil
+	return
 }
 
-func (q *quicListener) Accept() (net.Conn, error) {
-	conn, err := q.Listener.Accept(context.Background())
-	if err != nil {
-		return nil, err
+func (q *quicListener) Accept() (conn net.Conn, err error) {
+	c := &quicConn{}
+	conn = c
+	c.Connection, err = q.Listener.Accept(context.Background())
+	if err == nil {
+		c.Stream, err = c.Connection.AcceptStream(context.Background())
 	}
-	stream, err := conn.AcceptStream(context.Background())
-	if err != nil {
-		return nil, err
-	}
-	return &quicConn{Connection: conn, Stream: stream}, nil
+	return c, err
 }
 
 func TlsConfigShow(from string) (info string) {

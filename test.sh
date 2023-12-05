@@ -12,7 +12,7 @@ echo "Installing Dependence"
 #########Running Test#########
 echo "Running Test"
 pkgs="\
- github.com/codingeasygo/bsck\
+    github.com/codingeasygo/bsck/router\
 "
 
 echo "mode: set" > a.out
