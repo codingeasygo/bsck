@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/rand"
 	"net"
 	"net/http"
 	"net/url"
@@ -24,12 +25,16 @@ import (
 	"sync"
 
 	"github.com/codingeasygo/bsck/dialer"
+	"github.com/codingeasygo/bsck/gfw"
+	"github.com/codingeasygo/bsck/router/native"
 	"github.com/codingeasygo/util/proxy"
 	sproxy "github.com/codingeasygo/util/proxy/socks"
 	wproxy "github.com/codingeasygo/util/proxy/ws"
 	"github.com/codingeasygo/util/xhttp"
 	"github.com/codingeasygo/util/xio"
 	"github.com/codingeasygo/util/xmap"
+	"github.com/codingeasygo/util/xtime"
+	"github.com/codingeasygo/web"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -91,6 +96,12 @@ type Config struct {
 		WS    string `json:"ws"`
 		Unix  string `json:"unix"`
 	} `json:"console"`
+	Proxy struct {
+		WEB     string   `json:"web"`
+		Addr    string   `json:"addr"`
+		Skip    []string `json:"skip"`
+		Channel string   `json:"channel"`
+	} `json:"proxy"`
 	Web      Web               `json:"web"`
 	Log      int               `json:"log"`
 	Forwards map[string]string `json:"forwards"`
@@ -204,6 +215,12 @@ type Service struct {
 		SOCKS *sproxy.Server
 		WS    *wproxy.Server
 		Unix  *sproxy.Server
+	}
+	Proxy struct {
+		Web    net.Listener
+		Mux    *web.SessionMux
+		Listen net.Listener
+		Server *proxy.Server
 	}
 	Web         net.Listener
 	WebForward  *WebForward
@@ -642,6 +659,70 @@ func (s *Service) stopServiceBackendAll() {
 	}
 }
 
+// PACH is http handler to get pac js
+func (s *Service) proxyPACH(w *web.Session) web.Result {
+	w.W.Header().Set("Content-Type", "application/x-javascript")
+	rules, _ := gfw.ReadAllRules(filepath.Join(s.Node.Dir, "gfwlist.txt"), filepath.Join(s.Node.Dir, "user_rules.txt"))
+	abp := gfw.CreateAbpJS(rules, fmt.Sprintf("127.0.1:%v", s.Proxy.Web.Addr().(*net.TCPAddr).Port))
+	return w.Printf("%v", abp)
+}
+
+func (s *Service) proxyModeH(w *web.Session) web.Result {
+	mode := w.Argument("mode")
+	pacURL := fmt.Sprintf("http://127.0.1:%v/pac.js?timestamp=%v", s.Proxy.Web.Addr().(*net.TCPAddr).Port, xtime.Now())
+	message, err := native.ChangeProxyMode(mode, pacURL, "127.0.0.1", s.Proxy.Listen.Addr().(*net.TCPAddr).Port)
+	if err != nil {
+		ErrorLog("Server(%v) change proxy mode to %v fail with %v, message is \n%v", s.Name, mode, err, message)
+		w.W.WriteHeader(500)
+		return w.Printf("%v", message)
+	} else {
+		InfoLog("Server(%v) change proxy mode to %v success", s.Name, mode)
+		return w.Printf("%v", "OK")
+	}
+}
+
+func (s *Service) dialDirectPiper(uri string, bufferSize int) (raw xio.Piper, err error) {
+	conn, err := s.Dialer.Dial(dialer.NewChannelInfo(0, ""), 0, uri)
+	if err != nil {
+		return
+	}
+	raw = xio.NewCopyPiper(conn, bufferSize)
+	return
+}
+
+func (s *Service) dialProxyPiper(uri string, bufferSize int) (raw xio.Piper, err error) {
+	for _, skip := range s.Config.Proxy.Skip {
+		matcher, xerr := regexp.Compile(skip)
+		if xerr == nil && matcher.MatchString(uri) {
+			raw, err = s.dialDirectPiper(uri, bufferSize)
+			return
+		}
+	}
+	channelAll := s.Node.ListChannelName()
+	channelSelected := channelAll
+	if len(s.Config.Proxy.Channel) > 0 {
+		matcher, xerr := regexp.Compile(s.Config.Proxy.Channel)
+		if xerr != nil {
+			err = xerr
+			return
+		}
+		channelSelected = []string{}
+		for _, c := range channelAll {
+			if matcher.MatchString(c) {
+				channelSelected = append(channelSelected, c)
+			}
+		}
+	}
+	if len(channelSelected) < 1 {
+		err = fmt.Errorf("not channel be used on proxy")
+		return
+	}
+	channel := channelSelected[rand.Intn(len(channelSelected))]
+	targetURI := fmt.Sprintf("%v->%v", channel, uri)
+	raw, err = s.DialPiper(targetURI, bufferSize)
+	return
+}
+
 // Start will start service
 func (s *Service) Start() (err error) {
 	if len(s.ConfigPath) > 0 {
@@ -732,6 +813,26 @@ func (s *Service) Start() (err error) {
 		}
 		InfoLog("Server(%v) unix console listen on %v success", s.Name, s.Config.Console.Unix)
 	}
+	if len(s.Config.Proxy.WEB) > 0 && len(s.Config.Proxy.Addr) > 0 {
+		s.Proxy.Mux = web.NewSessionMux("")
+		s.Proxy.Mux.HandleFunc("^/pac\\.js(\\?.*)?$", s.proxyPACH)
+		s.Proxy.Mux.HandleFunc("^/proxy(\\?.*)?$", s.proxyModeH)
+		s.Proxy.Server = proxy.NewServer(xio.PiperDialerF(s.dialProxyPiper))
+		s.Proxy.Listen, err = s.Proxy.Server.Start("tcp", s.Config.Proxy.Addr)
+		if err != nil {
+			ErrorLog("Server(%v) start proxy server on %v fail with %v\n", s.Name, s.Config.Proxy.Addr, err)
+			s.Stop()
+			return
+		}
+		s.Proxy.Web, err = net.Listen("tcp", s.Config.Proxy.WEB)
+		if err != nil {
+			ErrorLog("Server(%v) start proxy web on %v fail with %v\n", s.Name, s.Config.Proxy.WEB, err)
+			s.Stop()
+			return
+		}
+		go (&http.Server{Handler: s.Proxy.Mux}).Serve(s.Proxy.Web)
+		InfoLog("Server(%v) proxy server listen on %v/%v success", s.Name, s.Config.Proxy.WEB, s.Config.Proxy.Addr)
+	}
 	for loc, uri := range s.Config.Forwards {
 		xerr := s.AddForward(loc, uri)
 		if xerr != nil {
@@ -786,6 +887,12 @@ func (s *Service) Stop() (err error) {
 	if s.Console.Unix != nil {
 		s.Console.Unix.Stop()
 		s.Console.Unix = nil
+	}
+	if s.Proxy.Web != nil {
+		s.Proxy.Web.Close()
+	}
+	if s.Proxy.Server != nil {
+		s.Proxy.Server.Close()
 	}
 	if s.Web != nil {
 		s.Web.Close()

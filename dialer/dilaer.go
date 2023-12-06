@@ -21,6 +21,29 @@ type Channel interface {
 	Context() xmap.M
 }
 
+type ChannelInfo struct {
+	I uint16
+	N string
+	C xmap.M
+}
+
+func NewChannelInfo(id uint16, name string) (info *ChannelInfo) {
+	info = &ChannelInfo{I: id, N: name, C: xmap.M{}}
+	return
+}
+
+func (c *ChannelInfo) ID() uint16 {
+	return c.I
+}
+
+func (c *ChannelInfo) Name() string {
+	return c.N
+}
+
+func (c *ChannelInfo) Context() xmap.M {
+	return c.C
+}
+
 // Dialer is the interface that wraps the dialer
 type Dialer interface {
 	Name() string

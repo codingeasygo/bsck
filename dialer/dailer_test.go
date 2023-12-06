@@ -38,6 +38,13 @@ func (t *testChannel) Context() xmap.M {
 	return xmap.M{}
 }
 
+func TestChannelInfo(t *testing.T) {
+	info := NewChannelInfo(1, "a")
+	info.ID()
+	info.Name()
+	info.Context()
+}
+
 func TestPool(t *testing.T) {
 	_ = DefaultDialerCreator("x")
 	NewDialer = func(t string) (dialer Dialer) {

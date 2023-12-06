@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/rand"
 	"net/http"
 	"reflect"
 	"regexp"
@@ -23,6 +24,10 @@ import (
 	"github.com/codingeasygo/util/xsort"
 	"github.com/codingeasygo/util/xtime"
 )
+
+func init() {
+	rand.Seed(xtime.Now())
+}
 
 const (
 	ConnOK = "OK"
@@ -863,6 +868,15 @@ func (r *Router) SelectChannel(name string) (target Conn, err error) {
 	}
 	if target == nil {
 		err = NewRouterError(ErrorChannelNotFound, "channel %v is not found", name)
+	}
+	return
+}
+
+func (r *Router) ListChannelName() (name []string) {
+	r.channelLck.RLock()
+	defer r.channelLck.RUnlock()
+	for n := range r.channelAll {
+		name = append(name, n)
 	}
 	return
 }

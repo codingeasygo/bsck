@@ -8,12 +8,14 @@ import (
 	"net/http"
 	"net/http/httptest"
 	_ "net/http/pprof"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/codingeasygo/bsck/router/native"
 	"github.com/codingeasygo/util/converter"
 	"github.com/codingeasygo/util/proxy/socks"
 	"github.com/codingeasygo/util/xdebug"
@@ -49,6 +51,8 @@ func init() {
 		dir, _ := filepath.Abs(".")
 		return dir
 	}
+	os.RemoveAll("run")
+	native.ChangeProxyScript = "#!/bin/bash\necho ok"
 	go runEchoServer("127.0.0.1:13200")
 	transport := socks.NewServer()
 	transport.Dialer = xio.PiperDialerF(xio.DialNetPiper)
@@ -439,6 +443,7 @@ func TestRouter(t *testing.T) {
 		}
 		waiter.Wait()
 		time.Sleep(50 * time.Millisecond)
+		node1.ListChannelName()
 		channel0, err := node1.SelectChannel("N0")
 		if err != nil || channel0.UsedConnID() > 0 {
 			t.Errorf("%v,%v", err, channel0.UsedConnID())

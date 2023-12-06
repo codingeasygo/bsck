@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/codingeasygo/bsck/dialer"
+	"github.com/codingeasygo/bsck/router/native"
 	"github.com/codingeasygo/util/converter"
 	"github.com/codingeasygo/util/proxy/socks"
 	"github.com/codingeasygo/util/xdebug"
@@ -61,6 +62,12 @@ var configTest1 = `
     },
     "console": {
         "socks": ":5081"
+    },
+    "proxy": {
+        "web": "127.0.0.1:0",
+        "addr": "127.0.0.1:0",
+        "skip": [".*skip.loc"],
+        "channel": ".*"
     },
     "forwards": {
         "tx~tcp://:2332": "http://web?dir=/tmp"
@@ -397,6 +404,26 @@ func TestService(t *testing.T) {
 		}
 		assertNotUnix(srv.Config)
 
+		//Proxy
+		srv.Config = &Config{}
+		srv.Config.Proxy.WEB = "127.0.0.1:x"
+		srv.Config.Proxy.Addr = "127.0.0.1:x"
+		err = srv.Start()
+		if err == nil {
+			t.Error(err)
+			return
+		}
+		assertNotUnix(srv.Config)
+		srv.Config = &Config{}
+		srv.Config.Proxy.WEB = "127.0.0.1:x"
+		srv.Config.Proxy.Addr = "127.0.0.1:0"
+		err = srv.Start()
+		if err == nil {
+			t.Error(err)
+			return
+		}
+		assertNotUnix(srv.Config)
+
 		os.RemoveAll("/tmp/xxx__")
 		os.MkdirAll("/tmp/xxx__", os.ModePerm)
 		os.Chmod("/tmp/xxx__", 0)
@@ -498,6 +525,11 @@ var configTestCaller = `
     "console": {
         "socks": ":1701"
     },
+    "proxy": {
+        "web": "127.0.0.1:0",
+        "addr": "127.0.0.1:0",
+        "channel": ".*"
+    },
     "forwards": {},
     "channels": {
         "master": {
@@ -512,6 +544,108 @@ var configTestCaller = `
     }
 }
 `
+
+func TestProxy(t *testing.T) {
+	// LogLevel
+	os.WriteFile("/tmp/test_master.json", []byte(configTestMaster), os.ModePerm)
+	os.WriteFile("/tmp/test_slaver.json", []byte(configTestSlaver), os.ModePerm)
+	os.WriteFile("/tmp/test_caller.json", []byte(configTestCaller), os.ModePerm)
+	defer func() {
+		os.Remove("/tmp/test_master.json")
+		os.Remove("/tmp/test_slaver.json")
+		os.Remove("/tmp/test_caller.json")
+	}()
+	var err error
+	//
+	master := NewService()
+	master.ConfigPath = "/tmp/test_master.json"
+	err = master.Start()
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	slaver := NewService()
+	slaver.ConfigPath = "/tmp/test_slaver.json"
+	err = slaver.Start()
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	caller := NewService()
+	caller.ConfigPath = "/tmp/test_caller.json"
+	err = caller.Start()
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	time.Sleep(100 * time.Millisecond)
+
+	ts := httptest.NewServer(caller.Proxy.Mux)
+
+	_, err = ts.GetText("/pac.js")
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	_, err = ts.GetText("/proxy?mode=global")
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	old := native.ChangeProxyScript
+	native.ChangeProxyScript = "#!/bin/bash\nexit 1"
+	_, err = ts.GetText("/proxy?mode=global")
+	if err == nil {
+		t.Error(err)
+		return
+	}
+	native.ChangeProxyScript = old
+
+	//proxy
+	raw, err := caller.dialProxyPiper("tcp://127.0.0.1:13200", 4096)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	raw.Close()
+	//skip
+	caller.Config.Proxy.Skip = []string{".*"}
+	raw, err = caller.dialProxyPiper("tcp://127.0.0.1:13200", 4096)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	raw.Close()
+	_, err = caller.dialProxyPiper("tcp://127.0.0.1:10", 4096)
+	if err == nil {
+		t.Error(err)
+		return
+	}
+	//not channel
+	caller.Config.Proxy.Channel = "none"
+	caller.Config.Proxy.Skip = []string{}
+	_, err = caller.dialProxyPiper("tcp://127.0.0.1:13200", 4096)
+	if err == nil {
+		t.Error(err)
+		return
+	}
+	//err chnnale
+	caller.Config.Proxy.Channel = "[xx"
+	caller.Config.Proxy.Skip = []string{}
+	_, err = caller.dialProxyPiper("tcp://127.0.0.1:13200", 4096)
+	if err == nil {
+		t.Error(err)
+		return
+	}
+
+	caller.Stop()
+	slaver.Stop()
+	master.Stop()
+	time.Sleep(100 * time.Millisecond)
+	assertNotUnix(caller.Config)
+}
 
 func TestSSH(t *testing.T) {
 	sshServer := &sshsrv.Server{
