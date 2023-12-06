@@ -5,9 +5,11 @@ import (
 	"net/http"
 	_ "net/http/pprof"
 	"os"
+	"os/exec"
 	"os/signal"
 	"os/user"
 	"path/filepath"
+	"runtime"
 	"syscall"
 
 	"github.com/codingeasygo/bsck/router"
@@ -116,6 +118,23 @@ func main() {
 	}
 	service := router.NewService()
 	service.ConfigPath = configPath
+	service.NewBackend = func(name string) (cmd *exec.Cmd, err error) {
+		switch name {
+		case "HostForward":
+			exeFile, _ := os.Executable()
+			exeDir, _ := filepath.Abs(filepath.Dir(exeFile))
+			runFile := filepath.Join(exeDir, "bsconsole")
+			consoleURI := service.Config.ConsoleURI()
+			cmd = exec.Command("bash", "-c", fmt.Sprintf("sudo %v --slaver=%v host.service", runFile, consoleURI))
+			if runtime.GOOS == "darwin" {
+				// cmd = exec.Command("osascript", "-e", fmt.Sprintf(`do shell script "%v --slaver %v host.service" with administrator privileges`, runFile, consoleURI))
+				cmd = exec.Command("bash", "-c", fmt.Sprintf("sudo %v --slaver=%v host.service", runFile, consoleURI))
+			}
+		default:
+			err = fmt.Errorf("%v is not supported", name)
+		}
+		return
+	}
 	err = service.Start()
 	if err != nil {
 		panic(err)

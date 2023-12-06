@@ -6,7 +6,7 @@ toolchain go1.21.4
 
 require (
 	github.com/codingeasygo/tun2conn v0.0.0-20231205095415-06b71c252ba8
-	github.com/codingeasygo/util v0.0.0-20231205030719-5c096beae14d
+	github.com/codingeasygo/util v0.0.0-20231206062002-1ce2f004b7d9
 	github.com/codingeasygo/web v0.0.0-20230907002627-38429b961da0
 	github.com/creack/pty v1.1.20
 	github.com/gliderlabs/ssh v0.3.5

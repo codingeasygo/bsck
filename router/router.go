@@ -740,7 +740,7 @@ func NewRouter(name string, handler Handler) (router *Router) {
 		MaxConnection: 4096,
 		Heartbeat:     5 * time.Second,
 		Timeout:       15 * time.Second,
-		exiter:        make(chan int, 1),
+		exiter:        make(chan int, 10),
 		waiter:        sync.WaitGroup{},
 	}
 	router.Header.SetLengthFieldMagic(0)
@@ -1466,6 +1466,7 @@ func (r *Router) Notify(name string, message []byte) (err error) {
 }
 
 func (r *Router) Start() (err error) {
+	r.exiter = make(chan int, 10)
 	r.waiter.Add(1)
 	go r.procPingLoop()
 	r.waiter.Add(1)

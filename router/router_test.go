@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	_ "net/http/pprof"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -42,10 +43,16 @@ func runEchoServer(addr string) {
 func init() {
 	ShowLog = 2
 	SetLogLevel(LogLevelDebug)
+	userHomeDir()
+	defaultUnixFile = filepath.Join("run", "bsrouter.sock")
+	userHomeDir = func() string {
+		dir, _ := filepath.Abs(".")
+		return dir
+	}
 	go runEchoServer("127.0.0.1:13200")
 	transport := socks.NewServer()
 	transport.Dialer = xio.PiperDialerF(xio.DialNetPiper)
-	_, err := transport.Start("127.0.0.1:13210")
+	_, err := transport.Start("tcp", "127.0.0.1:13210")
 	if err != nil {
 		panic(err)
 	}

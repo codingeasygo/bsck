@@ -102,6 +102,7 @@ func runall(osArgs ...string) {
 	}
 	var command string
 	var args []string
+	var slaverURI string
 	runner, err := os.Executable()
 	if err != nil {
 		fmt.Printf("%v\n", err)
@@ -111,23 +112,25 @@ func runall(osArgs ...string) {
 	dir := filepath.Dir(runner)
 	_, fn := filepath.Split(osArgs[0])
 	fn = strings.TrimSuffix(fn, ".exe")
-	if strings.HasPrefix(fn, "bs-") {
-		command = strings.TrimPrefix(fn, "bs-")
-		args = osArgs[1:]
-	} else {
-		if len(osArgs) < 2 {
-			usage()
-			exit(1)
-			return
-		}
-		command = osArgs[1]
-		args = osArgs[2:]
-	}
-	var slaverURI string
+	args = osArgs[1:]
+
 	if len(args) > 0 && (strings.HasPrefix(args[0], "-slaver=") || strings.HasPrefix(args[0], "--slaver=")) {
 		slaverURI = args[0]
 		slaverURI = strings.TrimPrefix(slaverURI, "-slaver=")
 		slaverURI = strings.TrimPrefix(slaverURI, "--slaver=")
+		args = args[1:]
+	}
+
+	if strings.HasPrefix(fn, "bs-") {
+		command = strings.TrimPrefix(fn, "bs-")
+		args = args[:]
+	} else {
+		if len(args) < 1 {
+			usage()
+			exit(1)
+			return
+		}
+		command = args[0]
 		args = args[1:]
 	}
 	switch command {
@@ -247,11 +250,7 @@ func runall(osArgs ...string) {
 			fmt.Fprintf(stderr, "parse config fail with %v\n", err)
 			exit(1)
 		}
-		console, err = router.NewConsoleByConfig(&config)
-		if err != nil {
-			fmt.Fprintf(stderr, "new console from config %v fail with %v\n", path, err)
-			exit(1)
-		}
+		console = router.NewConsoleByConfig(&config)
 	} else {
 		if !strings.Contains(slaverURI, "://") {
 			slaverURI = "socks5://" + slaverURI
@@ -524,7 +523,7 @@ func runall(osArgs ...string) {
 		if err != nil {
 			exit(1)
 		}
-	case "host":
+	case "host", "host.service":
 		if len(args) > 0 && len(args) < 2 {
 			fmt.Printf("[name] <net address> <uri> is required\n")
 			return
@@ -586,8 +585,8 @@ func runall(osArgs ...string) {
 				removeForward(args...)
 			}
 		}
-		if os.Getenv("BS_CONSOLE_CMD") == "1" {
-			go loopCommand(console, onCommand)
+		if command == "host.service" {
+			go loopCommand(console, "HostForward.Service", onCommand)
 		} else {
 			go procCommand(os.Stdin, onCommand)
 		}
@@ -648,9 +647,9 @@ func removeFile(target string) (err error) {
 	return
 }
 
-func loopCommand(console *router.Console, on func(cmd string, args ...string)) {
+func loopCommand(console *router.Console, name string, on func(cmd string, args ...string)) {
 	for {
-		conn, err := console.Dial("tcp://cmd")
+		conn, err := console.Dial("tcp://" + name)
 		if err != nil {
 			fmt.Printf("dial to cmd channel fail with %v\n", err)
 			time.Sleep(3 * time.Second)

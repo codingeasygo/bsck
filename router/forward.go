@@ -8,17 +8,11 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
-	"os"
-	"os/exec"
-	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
 
 	"github.com/codingeasygo/bsck/dialer"
-	sproxy "github.com/codingeasygo/util/proxy/socks"
-	"github.com/codingeasygo/util/xio"
 	"github.com/codingeasygo/util/xmap"
 	"golang.org/x/net/websocket"
 )
@@ -409,123 +403,123 @@ func (h *HostMap) Match(ip net.IP) (uri string, remote net.IP) {
 	return
 }
 
-type HostForward struct {
-	Name    string
-	Dialer  xio.PiperDialer
-	console *sproxy.Server
-	runner  *exec.Cmd
-	sender  net.Conn
-	ready   chan int
-	lock    sync.RWMutex
-}
+// type HostForward struct {
+// 	Name    string
+// 	Dialer  xio.PiperDialer
+// 	console *sproxy.Server
+// 	runner  *exec.Cmd
+// 	sender  net.Conn
+// 	ready   chan int
+// 	lock    sync.RWMutex
+// }
 
-func NewHostForward(name string, dialer xio.PiperDialer) (forward *HostForward) {
-	forward = &HostForward{
-		Name:   name,
-		Dialer: dialer,
-		ready:  make(chan int, 1),
-		lock:   sync.RWMutex{},
-	}
-	return
-}
+// func NewHostForward(name string, dialer xio.PiperDialer) (forward *HostForward) {
+// 	forward = &HostForward{
+// 		Name:   name,
+// 		Dialer: dialer,
+// 		ready:  make(chan int, 1),
+// 		lock:   sync.RWMutex{},
+// 	}
+// 	return
+// }
 
-func (h *HostForward) checkStart() (err error) {
-	h.lock.Lock()
-	defer h.lock.Unlock()
-	if h.runner != nil {
-		return
-	}
-	InfoLog("HostForward(%v) host backend forward is starting", h.Name)
-	console := sproxy.NewServer()
-	console.Dialer = h
-	ln, _ := console.Start("127.0.0.1:0")
-	exeFile, _ := os.Executable()
-	dir, _ := filepath.Abs(filepath.Dir(exeFile))
-	runFile := filepath.Join(dir, "bsconsole")
-	var cmd *exec.Cmd
-	switch runtime.GOOS {
-	case "darwin":
-		// cmd = exec.Command("osascript", "-e", fmt.Sprintf(`do shell script "BS_CONSOLE_URI=127.0.0.1:%v BS_CONSOLE_CMD=1 %v host" with administrator privileges`, ln.Addr().(*net.TCPAddr).Port, exe))
-		cmd = exec.Command("bash", "-c", fmt.Sprintf("sudo -E %v host", runFile))
-	default:
-		cmd = exec.Command("bash", "-c", fmt.Sprintf("sudo -E %v host", runFile))
-	}
-	cmd.Dir, _ = os.Getwd()
-	cmd.Env = append(cmd.Env, fmt.Sprintf("BS_CONSOLE_URI=127.0.0.1:%v", ln.Addr().(*net.TCPAddr).Port))
-	cmd.Env = append(cmd.Env, "BS_CONSOLE_CMD=1")
-	cmd.Stderr = os.Stderr
-	cmd.Stdout = os.Stdout
-	err = cmd.Start()
-	if err != nil {
-		WarnLog("HostForward(%v) host backend forward start error %v", h.Name, err)
-		return
-	}
-	exiter := make(chan int, 1)
-	go func() {
-		err := cmd.Wait()
-		WarnLog("HostForward(%v) host backend forward is stopped by error %v", h.Name, err)
-		exiter <- 1
-	}()
-	select {
-	case <-h.ready:
-		h.console, h.runner = console, cmd
-		InfoLog("HostForward(%v) host backend forward is ready", h.Name)
-	case <-exiter:
-		err = fmt.Errorf("stopped")
-	}
-	return
-}
+// func (h *HostForward) checkStart() (err error) {
+// 	h.lock.Lock()
+// 	defer h.lock.Unlock()
+// 	if h.runner != nil {
+// 		return
+// 	}
+// 	InfoLog("HostForward(%v) host backend forward is starting", h.Name)
+// 	console := sproxy.NewServer()
+// 	console.Dialer = h
+// 	ln, _ := console.Start("tcp", "127.0.0.1:0")
+// 	exeFile, _ := os.Executable()
+// 	dir, _ := filepath.Abs(filepath.Dir(exeFile))
+// 	runFile := filepath.Join(dir, "bsconsole")
+// 	var cmd *exec.Cmd
+// 	switch runtime.GOOS {
+// 	case "darwin":
+// 		// cmd = exec.Command("osascript", "-e", fmt.Sprintf(`do shell script "BS_CONSOLE_URI=127.0.0.1:%v BS_CONSOLE_CMD=1 %v host" with administrator privileges`, ln.Addr().(*net.TCPAddr).Port, exe))
+// 		cmd = exec.Command("bash", "-c", fmt.Sprintf("sudo -E %v host", runFile))
+// 	default:
+// 		cmd = exec.Command("bash", "-c", fmt.Sprintf("sudo -E %v host", runFile))
+// 	}
+// 	cmd.Dir, _ = os.Getwd()
+// 	cmd.Env = append(cmd.Env, fmt.Sprintf("BS_CONSOLE_URI=127.0.0.1:%v", ln.Addr().(*net.TCPAddr).Port))
+// 	cmd.Env = append(cmd.Env, "BS_CONSOLE_CMD=1")
+// 	cmd.Stderr = os.Stderr
+// 	cmd.Stdout = os.Stdout
+// 	err = cmd.Start()
+// 	if err != nil {
+// 		WarnLog("HostForward(%v) host backend forward start error %v", h.Name, err)
+// 		return
+// 	}
+// 	exiter := make(chan int, 1)
+// 	go func() {
+// 		err := cmd.Wait()
+// 		WarnLog("HostForward(%v) host backend forward is stopped by error %v", h.Name, err)
+// 		exiter <- 1
+// 	}()
+// 	select {
+// 	case <-h.ready:
+// 		h.console, h.runner = console, cmd
+// 		InfoLog("HostForward(%v) host backend forward is ready", h.Name)
+// 	case <-exiter:
+// 		err = fmt.Errorf("stopped")
+// 	}
+// 	return
+// }
 
-func (h *HostForward) DialPiper(uri string, bufferSize int) (raw xio.Piper, err error) {
-	if strings.HasPrefix(uri, "tcp://cmd") {
-		if h.sender != nil {
-			h.Close()
-		}
-		sender, conn, _ := xio.CreatePipedConn()
-		raw = xio.NewCopyPiper(conn, bufferSize)
-		h.sender = sender
-		select {
-		case h.ready <- 1:
-		default:
-		}
-	} else {
-		raw, err = h.Dialer.DialPiper(uri, bufferSize)
-	}
-	return
-}
+// func (h *HostForward) DialPiper(uri string, bufferSize int) (raw xio.Piper, err error) {
+// 	if strings.HasPrefix(uri, "tcp://cmd") {
+// 		if h.sender != nil {
+// 			h.Close()
+// 		}
+// 		sender, conn, _ := xio.CreatePipedConn()
+// 		raw = xio.NewCopyPiper(conn, bufferSize)
+// 		h.sender = sender
+// 		select {
+// 		case h.ready <- 1:
+// 		default:
+// 		}
+// 	} else {
+// 		raw, err = h.Dialer.DialPiper(uri, bufferSize)
+// 	}
+// 	return
+// }
 
-func (h *HostForward) Close() (err error) {
-	h.lock.Lock()
-	defer h.lock.Unlock()
-	if h.runner == nil {
-		return
-	}
-	h.console.Stop()
-	h.sender.Close()
-	h.runner.Process.Kill()
-	err = h.runner.Wait()
-	h.console = nil
-	h.sender = nil
-	h.runner = nil
-	return
-}
+// func (h *HostForward) Close() (err error) {
+// 	h.lock.Lock()
+// 	defer h.lock.Unlock()
+// 	if h.runner == nil {
+// 		return
+// 	}
+// 	h.console.Stop()
+// 	h.sender.Close()
+// 	h.runner.Process.Kill()
+// 	err = h.runner.Wait()
+// 	h.console = nil
+// 	h.sender = nil
+// 	h.runner = nil
+// 	return
+// }
 
-// AddForward by local uri and remote uri
-func (h *HostForward) AddForward(name, loc, uri string) (err error) {
-	err = h.checkStart()
-	if err != nil {
-		return
-	}
-	_, err = fmt.Fprintf(h.sender, "@add %v %v %v\n", name, loc, uri)
-	return
-}
+// // AddForward by local uri and remote uri
+// func (h *HostForward) AddForward(name, loc, uri string) (err error) {
+// 	err = h.checkStart()
+// 	if err != nil {
+// 		return
+// 	}
+// 	_, err = fmt.Fprintf(h.sender, "@add %v %v %v\n", name, loc, uri)
+// 	return
+// }
 
-// RemoveForward by alias name
-func (h *HostForward) RemoveForward(name string) (err error) {
-	err = h.checkStart()
-	if err != nil {
-		return
-	}
-	_, err = fmt.Fprintf(h.sender, "@remove %v\n", name)
-	return
-}
+// // RemoveForward by alias name
+// func (h *HostForward) RemoveForward(name string) (err error) {
+// 	err = h.checkStart()
+// 	if err != nil {
+// 		return
+// 	}
+// 	_, err = fmt.Fprintf(h.sender, "@remove %v\n", name)
+// 	return
+// }

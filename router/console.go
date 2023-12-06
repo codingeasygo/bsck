@@ -115,23 +115,8 @@ func NewConsole(slaverURI string) (console *Console) {
 	return
 }
 
-func NewConsoleByConfig(config *Config) (console *Console, err error) {
-	uri := ""
-	if len(config.Console.SOCKS) > 0 {
-		uri = config.Console.SOCKS
-		if !strings.HasPrefix(uri, "socks5://") {
-			uri = "socks5://" + uri
-		}
-	} else if len(config.Console.WS) > 0 {
-		uri = config.Console.WS
-		if !strings.HasPrefix(uri, "ws://") && !strings.HasPrefix(uri, "wss://") {
-			uri = "ws://" + uri
-		}
-	} else {
-		err = fmt.Errorf("not console config found")
-		return
-	}
-	console = NewConsole(uri)
+func NewConsoleByConfig(config *Config) (console *Console) {
+	console = NewConsole(config.ConsoleURI())
 	return
 }
 
@@ -155,7 +140,7 @@ func (c *Console) Close() (err error) {
 func (c *Console) DialConn(raw io.ReadWriteCloser, uri string) (sid uint16, err error) {
 	DebugLog("Console start dial to %v on slaver %v", uri, c.SlaverURI)
 	var conn net.Conn
-	if strings.HasPrefix(c.SlaverURI, "socks5://") {
+	if strings.HasPrefix(c.SlaverURI, "unix://") || strings.HasPrefix(c.SlaverURI, "socks5://") {
 		conn, err = sproxy.DialType(c.SlaverURI, 0x05, uri)
 	} else if strings.HasPrefix(c.SlaverURI, "ws://") || strings.HasPrefix(c.SlaverURI, "wss://") {
 		conn, err = wproxy.Dial(c.SlaverURI, uri)
@@ -404,7 +389,7 @@ func (c *Console) StartProxy(loc, uri string) (server *proxy.Server, listener ne
 		}
 		return
 	}))
-	listener, err = server.Start(loc)
+	listener, err = server.Start("tcp", loc)
 	return
 }
 

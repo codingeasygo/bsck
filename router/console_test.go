@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/codingeasygo/util/converter"
 	"github.com/codingeasygo/util/proxy/socks"
+	"github.com/codingeasygo/util/xio"
 	sshsrv "github.com/gliderlabs/ssh"
 	"golang.org/x/crypto/ssh"
 )
@@ -102,6 +104,50 @@ var configTestConsole2 = `
 }
 `
 
+var configTestConsole3 = `
+{
+    "name": "caller",
+    "listen": "",
+    "web": {},
+    "console": {
+        "unix": "/tmp/test/console.sock"
+    },
+    "forwards": {},
+    "channels": {
+        "master": {
+            "enable": 1,
+            "remote": "localhost:15023",
+            "token": "abc",
+            "index": 0
+        }
+    },
+    "dialer": {
+        "standard": 1
+    }
+}
+`
+
+var configTestConsole4 = `
+{
+    "name": "caller",
+    "listen": "",
+    "web": {},
+    "console": {},
+    "forwards": {},
+    "channels": {
+        "master": {
+            "enable": 1,
+            "remote": "localhost:15023",
+            "token": "abc",
+            "index": 0
+        }
+    },
+    "dialer": {
+        "standard": 1
+    }
+}
+`
+
 func TestConsole(t *testing.T) {
 	sshServer := &sshsrv.Server{
 		Addr: "127.0.0.1:13322",
@@ -151,15 +197,14 @@ func TestConsole(t *testing.T) {
 			t.Error(err)
 			return
 		}
-		defer caller.Stop()
+		defer func() {
+			caller.Stop()
+			assertNotUnix(caller.Config)
+		}()
 		time.Sleep(100 * time.Millisecond)
 		conf := &Config{}
 		json.Unmarshal([]byte(configData), conf)
-		console, err := NewConsoleByConfig(conf)
-		if err != nil {
-			t.Error(err)
-			return
-		}
+		console := NewConsoleByConfig(conf)
 		defer console.Close()
 		{ //http
 			state, err := console.Client.GetMap(EncodeWebURI("http://(http://state)?*=*"))
@@ -405,13 +450,10 @@ func TestConsole(t *testing.T) {
 	}
 	testCaller(configTestConsole1)
 	testCaller(configTestConsole2)
+	testCaller(configTestConsole3)
+	testCaller(configTestConsole4)
 	slaver.Stop()
 	master.Stop()
-	_, err = NewConsoleByConfig(&Config{})
-	if err == nil {
-		t.Error(err)
-		return
-	}
 	_, err = NewConsole("").Dial("tcp://echo")
 	if err == nil {
 		t.Error(err)
@@ -420,4 +462,92 @@ func TestConsole(t *testing.T) {
 	console := NewConsole("")
 	console.running["xxx"] = &ErrReadWriteCloser{}
 	console.Close()
+}
+
+func TestBackendPiper(t *testing.T) {
+	waiter := make(chan string, 1)
+	service := NewService()
+	service.OnService = func(name, command string) {
+		waiter <- command
+	}
+	service.NewBackend = func(name string) (cmd *exec.Cmd, err error) {
+		cmd = exec.Command("bash", "-c", "sleep 0.1")
+		return
+	}
+	service.Config = &Config{Dir: "."}
+	err := service.Start()
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	console := NewConsoleByConfig(service.Config)
+
+	var serviceConn io.ReadWriteCloser
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		serviceConn, err = console.Dial("tcp://HostForward.Service")
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		go func() {
+			fmt.Fprintf(serviceConn, "service log\n")
+			io.Copy(serviceConn, serviceConn)
+		}()
+	}()
+
+	err = service.AddForward("a0~host://10.1.1.1/24", "tcp://echo")
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	command := <-waiter
+	fmt.Printf("receive command %v\n", command)
+
+	err = service.RemoveForward("a0~host://10.1.1.1/24")
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	command = <-waiter
+	fmt.Printf("receive command %v\n", command)
+
+	serviceConn2, err := console.Dial("tcp://HostForward.Service")
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	serviceConn.Close()
+
+	service.Stop()
+	serviceConn2.Close()
+	assertNotUnix(service.Config)
+
+	_, err = service.dialConsolePiper("tcp://xx"+string([]byte{1, 2, 3}), 1024)
+	if err == nil {
+		t.Error(err)
+		return
+	}
+	err = service.sendBackendCommand("xxx", "abc")
+	if err == nil {
+		t.Error(err)
+		return
+	}
+
+	piper := NewBackendPiper(service, "test")
+	_, err = piper.Write([]byte("abc"))
+	if err == nil {
+		t.Error(err)
+		return
+	}
+	piper.Close()
+	piper.PipeConn(xio.NewEchoConn(), "xx")
+
+	service.addBackendPiper("xxxx", NewBackendPiper(service, "xxxx"))
+	service.stopBackend("xxxxx")
+
+	service.NewBackend = func(name string) (*exec.Cmd, error) { return nil, fmt.Errorf("test error") }
+	runner := newBackendRunner(service, "xxxx")
+	runner.Start()
 }

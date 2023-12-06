@@ -29,6 +29,27 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
+func assertNotUnix(c *Config) {
+	unixFile, _ := c.ConsoleUnix()
+	_, err := os.Stat(unixFile)
+	if err == nil {
+		panic(fmt.Sprintf("%v exists", unixFile))
+	}
+}
+
+func TestConsoleUnixFile(t *testing.T) {
+	c := &Config{}
+	c.Dir = "."
+
+	c.ConsoleUnix()
+
+	c.Console.Unix = "xx"
+	c.ConsoleUnix()
+
+	c.Console.Unix = "/xx"
+	c.ConsoleUnix()
+}
+
 var configTest1 = `
 {
     "name": "r0",
@@ -110,6 +131,10 @@ var configTestErr = `
 func TestService(t *testing.T) {
 	socks.SetLogLevel(socks.LogLevelDebug)
 	SetLogLevel(LogLevelDebug)
+	tester := xdebug.CaseTester{
+		0: 1,
+		1: 1,
+	}
 	os.WriteFile("/tmp/test.json", []byte(configTest1), os.ModePerm)
 	defer os.Remove("/tmp/test.json")
 	service := NewService()
@@ -126,10 +151,6 @@ func TestService(t *testing.T) {
 		return
 	}
 	time.Sleep(10 * time.Millisecond)
-	tester := xdebug.CaseTester{
-		0: 1,
-		2: 1,
-	}
 	if tester.Run("ReloadConfig") {
 		os.WriteFile("/tmp/test.json", []byte(configTest2), os.ModePerm)
 		err = service.ReloadConfig()
@@ -306,6 +327,7 @@ func TestService(t *testing.T) {
 		}
 	}
 	service.Stop()
+	assertNotUnix(service.Config)
 	if tester.Run("StartError") {
 		srv := NewService()
 		err := srv.Start()
@@ -322,6 +344,7 @@ func TestService(t *testing.T) {
 			return
 		}
 		srv.ConfigPath = ""
+
 		srv.ConfigPath = "log.go"
 		err = srv.Start()
 		if err == nil {
@@ -329,6 +352,7 @@ func TestService(t *testing.T) {
 			return
 		}
 		srv.ConfigPath = ""
+		assertNotUnix(srv.Config)
 
 		//Node Listen
 		srv.Config = &Config{
@@ -339,6 +363,7 @@ func TestService(t *testing.T) {
 			t.Error(err)
 			return
 		}
+		assertNotUnix(srv.Config)
 
 		//Forward
 		srv.Config = &Config{
@@ -351,6 +376,8 @@ func TestService(t *testing.T) {
 			t.Error(err)
 			return
 		}
+		srv.Stop()
+		assertNotUnix(srv.Config)
 
 		//Console
 		srv.Config = &Config{}
@@ -360,6 +387,7 @@ func TestService(t *testing.T) {
 			t.Error(err)
 			return
 		}
+		assertNotUnix(srv.Config)
 		srv.Config = &Config{}
 		srv.Config.Console.WS = "127.0.0.1:x"
 		err = srv.Start()
@@ -367,6 +395,19 @@ func TestService(t *testing.T) {
 			t.Error(err)
 			return
 		}
+		assertNotUnix(srv.Config)
+
+		os.RemoveAll("/tmp/xxx__")
+		os.MkdirAll("/tmp/xxx__", os.ModePerm)
+		os.Chmod("/tmp/xxx__", 0)
+		srv.Config = &Config{}
+		srv.Config.Console.Unix = "/tmp/xxx__/xx"
+		err = srv.Start()
+		if err == nil {
+			t.Error(err)
+			return
+		}
+		assertNotUnix(srv.Config)
 
 		//Web
 		srv.Config = &Config{}
@@ -376,6 +417,7 @@ func TestService(t *testing.T) {
 			t.Error(err)
 			return
 		}
+		assertNotUnix(srv.Config)
 
 		//Dialer
 		srv.Config = &Config{}
@@ -391,6 +433,7 @@ func TestService(t *testing.T) {
 			t.Error(err)
 			return
 		}
+		assertNotUnix(srv.Config)
 
 	}
 }
@@ -400,7 +443,7 @@ var configTestMaster = `
     "name": "master",
     "listen": ":15023",
     "web": {},
-    "console": {},
+    "console": {"unix":"none"},
     "forwards": {},
     "channels": {},
     "dialer": {
@@ -424,7 +467,7 @@ var configTestSlaver = `
     "name": "slaver",
     "listen": "",
     "web": {},
-    "console": {},
+    "console": {"unix":"none"},
     "forwards": {},
     "channels": {
         "master": {
@@ -559,7 +602,7 @@ func TestSSH(t *testing.T) {
 	slaver.Stop()
 	master.Stop()
 	time.Sleep(100 * time.Millisecond)
-
+	assertNotUnix(caller.Config)
 }
 
 func TestState(t *testing.T) {
@@ -606,6 +649,7 @@ func TestState(t *testing.T) {
 	slaver.Stop()
 	master.Stop()
 	time.Sleep(100 * time.Millisecond)
+	assertNotUnix(caller.Config)
 }
 
 type TestReverseDialer struct {
@@ -667,6 +711,7 @@ func TestReverseWeb(t *testing.T) {
 		},
 		Access: [][]string{{".*", ".*"}},
 	}
+	master.Config.Console.Unix = "none"
 	err := master.Start()
 	if err != nil {
 		t.Error(err)
@@ -686,6 +731,7 @@ func TestReverseWeb(t *testing.T) {
 		},
 		Access: [][]string{{".*", ".*"}},
 	}
+	slaver.Config.Console.Unix = "none"
 	err = slaver.Start()
 	if err != nil {
 		t.Error(err)
@@ -741,6 +787,7 @@ func TestReverseWeb(t *testing.T) {
 		t.Error(err)
 		return
 	}
+	assertNotUnix(slaver.Config)
 }
 
 func TestSlaverHandler(t *testing.T) {
@@ -753,6 +800,7 @@ func TestSlaverHandler(t *testing.T) {
 		},
 		Access: [][]string{{".*", ".*"}},
 	}
+	master.Config.Console.Unix = "none"
 	err := master.Start()
 	if err != nil {
 		t.Error(err)
@@ -772,6 +820,7 @@ func TestSlaverHandler(t *testing.T) {
 		},
 		Access: [][]string{{".*", ".*"}},
 	}
+	slaver.Config.Console.Unix = "none"
 	err = slaver.Start()
 	if err != nil {
 		t.Error(err)
@@ -826,4 +875,5 @@ func TestSlaverHandler(t *testing.T) {
 		t.Error(err)
 		return
 	}
+	assertNotUnix(slaver.Config)
 }
