@@ -1,4 +1,4 @@
-package ssh
+package syscall
 
 import (
 	"fmt"
@@ -10,6 +10,7 @@ import (
 
 	"github.com/creack/pty"
 	"github.com/gliderlabs/ssh"
+	"github.com/pkg/sftp"
 )
 
 func setWinsize(f *os.File, w, h int) {
@@ -17,7 +18,7 @@ func setWinsize(f *os.File, w, h int) {
 		uintptr(unsafe.Pointer(&struct{ h, w, x, y uint16 }{uint16(h), uint16(w), 0, 0})))
 }
 
-func sshHandler(s ssh.Session) {
+func HandlerSSH(s ssh.Session) {
 	defer func() {
 		if perr := recover(); perr != nil {
 			s.Exit(1)
@@ -57,7 +58,7 @@ func sshHandler(s ssh.Session) {
 		if err != nil {
 			fmt.Fprintf(s, "sh exit with %v", err)
 		}
-		s.Exit(1)
+		s.Exit(cmd.ProcessState.ExitCode())
 		return
 	}
 	cmd := exec.Command(shell)
@@ -78,5 +79,17 @@ func sshHandler(s ssh.Session) {
 		f.Close()
 	}()
 	io.Copy(s, f) // stdout
-	s.Exit(1)
+	s.Exit(cmd.ProcessState.ExitCode())
+}
+
+func SubsystemSSH() map[string]ssh.SubsystemHandler {
+	return map[string]ssh.SubsystemHandler{
+		"sftp": func(s ssh.Session) {
+			server, err := sftp.NewServer(s)
+			if err == nil {
+				server.Serve()
+				server.Close()
+			}
+		},
+	}
 }

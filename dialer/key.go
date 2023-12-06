@@ -1,4 +1,4 @@
-package ssh
+package dialer
 
 import (
 	"crypto/tls"

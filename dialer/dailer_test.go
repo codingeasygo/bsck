@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"net/http"
+	_ "net/http/pprof"
 	"testing"
 
 	"github.com/codingeasygo/util/xmap"
@@ -11,6 +12,7 @@ import (
 
 func init() {
 	SetLogLevel(LogLevelDebug)
+	go http.ListenAndServe(":6063", nil)
 }
 
 type errDialer struct {
@@ -20,6 +22,20 @@ type errDialer struct {
 func (e *errDialer) Bootstrap(o xmap.M) (err error) {
 	err = fmt.Errorf("test erro")
 	return
+}
+
+type testChannel struct {
+	id uint16
+}
+
+func (t *testChannel) ID() uint16 {
+	return t.id
+}
+func (t *testChannel) Name() string {
+	return "test"
+}
+func (t *testChannel) Context() xmap.M {
+	return xmap.M{}
 }
 
 func TestPool(t *testing.T) {

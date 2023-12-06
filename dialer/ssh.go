@@ -1,25 +1,18 @@
-package ssh
+package dialer
 
 import (
 	"crypto/rsa"
 	"fmt"
-	"io"
 	"net"
 	"net/url"
 
-	"github.com/codingeasygo/bsck/dialer"
+	"github.com/codingeasygo/bsck/dialer/syscall"
 	"github.com/codingeasygo/util/xhash"
-	"github.com/codingeasygo/util/xio"
 	"github.com/codingeasygo/util/xmap"
 	"github.com/gliderlabs/ssh"
-	"github.com/pkg/sftp"
 
 	gossh "golang.org/x/crypto/ssh"
 )
-
-func init() {
-	dialer.RegisterDialerCreator("ssh", func() dialer.Dialer { return NewSshDialer() })
-}
 
 type SshDialer struct {
 	conf    xmap.M
@@ -61,37 +54,18 @@ func (s *SshDialer) Bootstrap(options xmap.M) error {
 	if err != nil {
 		return err
 	}
-	privateKey, ok := cert.PrivateKey.(*rsa.PrivateKey)
-	if !ok {
-		err = fmt.Errorf("not rsa private key")
-		return err
-	}
-	signer, err := gossh.NewSignerFromKey(privateKey)
-	if err != nil {
-		return err
-	}
+	privateKey := cert.PrivateKey.(*rsa.PrivateKey)
+	signer, _ := gossh.NewSignerFromKey(privateKey)
 	s.server = &ssh.Server{
 		HostSigners: []ssh.Signer{signer},
 		ServerConfigCallback: func(ctx ssh.Context) *gossh.ServerConfig {
 			return &gossh.ServerConfig{
-				NoClientAuth: true,
+				NoClientAuth: len(s.conf.StrDef("", "auth")) < 1,
 			}
 		},
-		SubsystemHandlers: map[string]ssh.SubsystemHandler{
-			"sftp": func(s ssh.Session) {
-				server, err := sftp.NewServer(s)
-				if err != nil {
-					return
-				}
-				if err := server.Serve(); err == io.EOF {
-					server.Close()
-				}
-			},
-		},
-		Handler: sshHandler,
-	}
-	if len(s.conf.StrDef("", "auth")) > 0 {
-		s.server.PasswordHandler = s.checkPassword
+		PasswordHandler:   s.checkPassword,
+		SubsystemHandlers: syscall.SubsystemSSH(),
+		Handler:           syscall.HandlerSSH,
 	}
 	go s.server.Serve(s)
 	return nil
@@ -122,11 +96,9 @@ func (s *SshDialer) Accept() (conn net.Conn, err error) {
 }
 
 // Dial one ssh connection.
-func (s *SshDialer) Dial(channel dialer.Channel, sid uint16, uri string) (raw dialer.Conn, err error) {
-	conn, raw, err := xio.CreatePipedConn()
-	if err == nil {
-		s.accpter <- conn
-	}
+func (s *SshDialer) Dial(channel Channel, sid uint16, uri string) (raw Conn, err error) {
+	conn, raw := net.Pipe()
+	s.accpter <- conn
 	return
 }
 

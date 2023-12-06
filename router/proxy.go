@@ -16,7 +16,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/codingeasygo/bsck/dialer/ssh"
+	"github.com/codingeasygo/bsck/dialer"
 	"github.com/codingeasygo/util/proxy"
 	"github.com/codingeasygo/util/xdebug"
 	"github.com/codingeasygo/util/xmap"
@@ -617,6 +617,6 @@ func TlsConfigShow(from string) (info string) {
 	return
 }
 
-var LoadPEMBlock = ssh.LoadPEMBlock
+var LoadPEMBlock = dialer.LoadPEMBlock
 
-var LoadX509KeyPair = ssh.LoadX509KeyPair
+var LoadX509KeyPair = dialer.LoadX509KeyPair

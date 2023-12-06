@@ -15,20 +15,6 @@ import (
 	"github.com/codingeasygo/util/xmap"
 )
 
-type testChannel struct {
-	id uint16
-}
-
-func (t *testChannel) ID() uint16 {
-	return t.id
-}
-func (t *testChannel) Name() string {
-	return "test"
-}
-func (t *testChannel) Context() xmap.M {
-	return xmap.M{}
-}
-
 func testWebServer(addr string, dialer *WebDialer) (ln net.Listener, err error) {
 	ln, err = net.Listen("tcp", addr)
 	if err != nil {

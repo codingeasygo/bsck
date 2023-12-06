@@ -1,4 +1,4 @@
-package ssh
+package syscall
 
 import (
 	"fmt"
@@ -6,9 +6,10 @@ import (
 	"os/exec"
 
 	"github.com/gliderlabs/ssh"
+	"github.com/pkg/sftp"
 )
 
-func sshHandler(s ssh.Session) {
+func HandlerSSH(s ssh.Session) {
 	defer func() {
 		if perr := recover(); perr != nil {
 			s.Exit(1)
@@ -24,7 +25,7 @@ func sshHandler(s ssh.Session) {
 		if err != nil {
 			fmt.Fprintf(s, "powershell exit with %v", err)
 		}
-		s.Exit(1)
+		s.Exit(cmd.ProcessState.ExitCode())
 		return
 	}
 	f, err := conpty.Start("powershell")
@@ -43,5 +44,17 @@ func sshHandler(s ssh.Session) {
 		f.Close()
 	}()
 	io.Copy(s, f) // stdout
-	s.Exit(1)
+	s.Exit(cmd.ProcessState.ExitCode())
+}
+
+func SubsystemSSH() map[string]ssh.SubsystemHandler {
+	return map[string]ssh.SubsystemHandler{
+		"sftp": func(s ssh.Session) {
+			server, err := sftp.NewServer(s)
+			if err == nil {
+				server.Serve()
+				server.Close()
+			}
+		},
+	}
 }

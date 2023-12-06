@@ -106,7 +106,7 @@ func (p *Pool) Bootstrap(options xmap.M) error {
 	if options.Value("ssh") != nil {
 		conf := options.MapDef(xmap.M{}, "ssh")
 		conf["dir"] = options.StrDef(".", "dir")
-		ssh := NewDialer("ssh")
+		ssh := NewSshDialer()
 		ssh.Bootstrap(conf)
 		p.Dialers = append(p.Dialers, ssh)
 		InfoLog("Pool(%v) add ssh dialer to pool", p.Name)
