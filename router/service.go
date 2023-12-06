@@ -199,7 +199,7 @@ func (f ForwardFinderF) FindForward(uri string) (target string, err error) {
 // Service is bound socket service
 type Service struct {
 	Name    string
-	Node    *Proxy
+	Node    *Node
 	Console struct {
 		SOCKS *sproxy.Server
 		WS    *wproxy.Server
@@ -679,7 +679,7 @@ func (s *Service) Start() (err error) {
 		handler.ConnDialer = DialRawConnF(s.DialRawConn)
 		s.Handler = handler
 	}
-	s.Node = NewProxy(s.Config.Name, s.BufferSize, s.Handler)
+	s.Node = NewNode(s.Config.Name, s.BufferSize, s.Handler)
 	s.Node.Dir = s.Config.Dir
 	s.Webs["state"] = http.HandlerFunc(s.Node.Router.StateH)
 	s.Dialer = dialer.NewPool(s.Config.Name)

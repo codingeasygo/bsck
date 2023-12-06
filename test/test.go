@@ -97,7 +97,7 @@ func runDnsServer() {
 	}
 }
 
-func runProxyServer(addr, target string) {
+func runNodeServer(addr, target string) {
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		panic(err)
@@ -120,8 +120,8 @@ func runProxyServer(addr, target string) {
 
 func runServer() {
 	// runDumServer(":13100")
-	go runProxyServer(":1108", "127.0.0.1:1107")
-	go runProxyServer(":13103", "127.0.0.1:13100")
+	go runNodeServer(":1108", "127.0.0.1:1107")
+	go runNodeServer(":13103", "127.0.0.1:13100")
 	go runEchoServer(":13200")
 	// router.ShowLog = 3
 	// router.SetLogLevel(router.LogLevelDebug)
@@ -142,13 +142,13 @@ func runServer() {
 		raw, err = dialer0.Dial(channel, id, uri)
 		return
 	})
-	proxy0 := router.NewProxy("N0", 2*1024, access0)
+	proxy0 := router.NewNode("N0", 2*1024, access0)
 	proxy0.Heartbeat = time.Second
 
 	access1 := router.NewNormalAcessHandler("N1")
 	access1.LoginAccess["NX"] = "123"
 	access1.DialAccess = append(access1.DialAccess, []string{".*", ".*"})
-	proxy1 := router.NewProxy("N1", 2*1024, access1)
+	proxy1 := router.NewNode("N1", 2*1024, access1)
 	proxy1.Heartbeat = time.Second
 	err := proxy0.Listen("tcp://:13100", "certs/server.crt", "certs/server.key")
 	if err != nil {
@@ -174,7 +174,7 @@ func runServer() {
 	}
 	// proxy0.Start()
 	// proxy1.Start()
-	// runProxyServer(":13100")
+	// runNodeServer(":13100")
 	waiter := make(chan int, 1)
 	<-waiter
 }

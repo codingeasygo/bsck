@@ -26,8 +26,8 @@ import (
 	"golang.org/x/net/websocket"
 )
 
-// Proxy is an implementation of proxy router
-type Proxy struct {
+// Node is an implementation of proxy router
+type Node struct {
 	*Router        //the router
 	*proxy.Forward //the forward
 	Name           string
@@ -43,9 +43,9 @@ type Proxy struct {
 	waiter         sync.WaitGroup
 }
 
-// NewProxy will return new Proxy by name
-func NewProxy(name string, bufferSize int, handler Handler) (px *Proxy) {
-	px = &Proxy{
+// NewNode will return new Node by name
+func NewNode(name string, bufferSize int, handler Handler) (px *Node) {
+	px = &Node{
 		Router:      NewRouter(name, nil),
 		Forward:     proxy.NewForward(name),
 		Name:        name,
@@ -64,7 +64,7 @@ func NewProxy(name string, bufferSize int, handler Handler) (px *Proxy) {
 	return
 }
 
-func (p *Proxy) loadServerConfig(tlsCert, tlsKey string) (config *tls.Config, err error) {
+func (p *Node) loadServerConfig(tlsCert, tlsKey string) (config *tls.Config, err error) {
 	if len(tlsCert) < 1 || len(tlsKey) < 1 {
 		err = fmt.Errorf("tls_cert/tls_key is required")
 		return
@@ -72,7 +72,7 @@ func (p *Proxy) loadServerConfig(tlsCert, tlsKey string) (config *tls.Config, er
 	var cert tls.Certificate
 	cert, err = LoadX509KeyPair(p.Dir, tlsCert, tlsKey)
 	if err != nil {
-		ErrorLog("Proxy(%v) load cert fail with %v by cert:%v,key:%v", p.Name, err, TlsConfigShow(tlsCert), TlsConfigShow(tlsKey))
+		ErrorLog("Node(%v) load cert fail with %v by cert:%v,key:%v", p.Name, err, TlsConfigShow(tlsCert), TlsConfigShow(tlsKey))
 		return
 	}
 	config = &tls.Config{InsecureSkipVerify: p.Insecure}
@@ -81,7 +81,7 @@ func (p *Proxy) loadServerConfig(tlsCert, tlsKey string) (config *tls.Config, er
 	return
 }
 
-func (p *Proxy) listenAddr(network, addr, tlsCert, tlsKey string) (ln net.Listener, err error) {
+func (p *Node) listenAddr(network, addr, tlsCert, tlsKey string) (ln net.Listener, err error) {
 	var config *tls.Config
 	switch network {
 	case "wss", "tls":
@@ -104,7 +104,7 @@ func (p *Proxy) listenAddr(network, addr, tlsCert, tlsKey string) (ln net.Listen
 }
 
 // Listen will listen master router on address
-func (p *Proxy) Listen(addr, tlsCert, tlsKey string) (err error) {
+func (p *Node) Listen(addr, tlsCert, tlsKey string) (err error) {
 	addrParts := strings.SplitN(addr, "://", 2)
 	var addrNetwork, addrListen string
 	if len(addrParts) > 1 {
@@ -156,11 +156,11 @@ func (p *Proxy) Listen(addr, tlsCert, tlsKey string) (err error) {
 			p.listenerLck.Unlock()
 		}()
 	}
-	InfoLog("Proxy(%v) listen %v master on %v by addr:%v,cert:%v,key:%v", p.Name, addrNetwork, ln.Addr(), addr, TlsConfigShow(tlsCert), TlsConfigShow(tlsKey))
+	InfoLog("Node(%v) listen %v master on %v by addr:%v,cert:%v,key:%v", p.Name, addrNetwork, ln.Addr(), addr, TlsConfigShow(tlsCert), TlsConfigShow(tlsKey))
 	return
 }
 
-func (p *Proxy) loopMaster(addr string, l net.Listener) {
+func (p *Node) loopMaster(addr string, l net.Listener) {
 	var err error
 	var conn net.Conn
 	for {
@@ -168,34 +168,34 @@ func (p *Proxy) loopMaster(addr string, l net.Listener) {
 		if err != nil {
 			break
 		}
-		InfoLog("Proxy(%v) master %v accept connection from %v", p.Name, addr, conn.RemoteAddr())
+		InfoLog("Node(%v) master %v accept connection from %v", p.Name, addr, conn.RemoteAddr())
 		p.Router.Accept(NewInfoRWC(conn, conn.RemoteAddr().String()), false)
 	}
 	l.Close()
-	InfoLog("Proxy(%v) master accept on %v is stopped", p.Name, l.Addr())
+	InfoLog("Node(%v) master accept on %v is stopped", p.Name, l.Addr())
 }
 
-func (p *Proxy) AcceptWsConn(conn *websocket.Conn) {
-	InfoLog("Proxy(%v) master %v accept ws connection from %v", p.Name, conn.LocalAddr(), conn.RemoteAddr())
+func (p *Node) AcceptWsConn(conn *websocket.Conn) {
+	InfoLog("Node(%v) master %v accept ws connection from %v", p.Name, conn.LocalAddr(), conn.RemoteAddr())
 	p.Router.Accept(NewInfoRWC(conn, conn.RemoteAddr().String()), true)
 }
 
-func (p *Proxy) Start() {
+func (p *Node) Start() {
 	p.Router.Start()
 	p.waiter.Add(1)
 	go p.loopKeep()
 }
 
 // Stop will stop all
-func (p *Proxy) Stop() (err error) {
-	InfoLog("Proxy(%v) is closing", p.Name)
+func (p *Node) Stop() (err error) {
+	InfoLog("Node(%v) is closing", p.Name)
 	p.stopping = true
 	p.exiter <- 1
 	p.exiter <- 1
 	p.listenerLck.RLock()
 	for _, ln := range p.listenerAll {
 		ln.Close()
-		InfoLog("Proxy(%v) listener %v is closed", p.Name, ln.Addr())
+		InfoLog("Node(%v) listener %v is closed", p.Name, ln.Addr())
 	}
 	p.listenerLck.RUnlock()
 	if p.Forward != nil {
@@ -203,11 +203,11 @@ func (p *Proxy) Stop() (err error) {
 	}
 	p.Router.Stop()
 	p.waiter.Wait()
-	InfoLog("Proxy(%v) router is closed", p.Name)
+	InfoLog("Node(%v) router is closed", p.Name)
 	return
 }
 
-func (p *Proxy) loopKeep() {
+func (p *Node) loopKeep() {
 	defer p.waiter.Done()
 	p.procKeep()
 	ticker := time.NewTicker(p.KeepDelay)
@@ -222,17 +222,17 @@ func (p *Proxy) loopKeep() {
 	}
 }
 
-func (p *Proxy) procKeep() {
+func (p *Node) procKeep() {
 	defer func() {
 		if perr := recover(); perr != nil {
-			ErrorLog("Proxy(%v) proc keep is panic with %v, callstack is \n%v", p.Name, perr, xdebug.CallStack())
+			ErrorLog("Node(%v) proc keep is panic with %v, callstack is \n%v", p.Name, perr, xdebug.CallStack())
 		}
 	}()
 	p.Keep()
 }
 
 // DialRawConn will dial raw connection
-func (p *Proxy) DialRawConn(channel Conn, sid uint16, uri string) (conn Conn, err error) {
+func (p *Node) DialRawConn(channel Conn, sid uint16, uri string) (conn Conn, err error) {
 	if p.Handler == nil {
 		err = fmt.Errorf("not supported")
 		return
@@ -242,7 +242,7 @@ func (p *Proxy) DialRawConn(channel Conn, sid uint16, uri string) (conn Conn, er
 }
 
 // OnConnDialURI is on connection dial uri
-func (p *Proxy) OnConnDialURI(channel Conn, conn string, parts []string) (err error) {
+func (p *Node) OnConnDialURI(channel Conn, conn string, parts []string) (err error) {
 	if p.Handler == nil {
 		err = fmt.Errorf("not supported")
 		return
@@ -252,7 +252,7 @@ func (p *Proxy) OnConnDialURI(channel Conn, conn string, parts []string) (err er
 }
 
 // OnConnLogin is on connection login
-func (p *Proxy) OnConnLogin(channel Conn, args string) (name string, result xmap.M, err error) {
+func (p *Node) OnConnLogin(channel Conn, args string) (name string, result xmap.M, err error) {
 	if p.Handler == nil {
 		err = fmt.Errorf("not supported")
 		return
@@ -262,30 +262,30 @@ func (p *Proxy) OnConnLogin(channel Conn, args string) (name string, result xmap
 }
 
 // OnConnClose will be called when connection is closed
-func (p *Proxy) OnConnClose(conn Conn) (err error) {
+func (p *Node) OnConnClose(conn Conn) (err error) {
 	if p.stopping {
 		return
 	}
 	if p.Handler != nil {
 		err = p.Handler.OnConnClose(conn)
 	}
-	InfoLog("Proxy(%v) the channel(%v) is closed by %v, remove it", p.Name, conn, err)
+	InfoLog("Node(%v) the channel(%v) is closed by %v, remove it", p.Name, conn, err)
 	return nil
 }
 
-func (p *Proxy) OnConnJoin(channel Conn, option interface{}, result xmap.M) {
+func (p *Node) OnConnJoin(channel Conn, option interface{}, result xmap.M) {
 	if p.Handler != nil {
 		p.Handler.OnConnJoin(channel, option, result)
 	}
 }
 
-func (p *Proxy) OnConnNotify(channel Conn, message []byte) {
+func (p *Node) OnConnNotify(channel Conn, message []byte) {
 	if p.Handler != nil {
 		p.Handler.OnConnNotify(channel, message)
 	}
 }
 
-func (p *Proxy) loadClientConfig(tlsCert, tlsKey, tlsCA, tlsVerify string) (config *tls.Config, err error) {
+func (p *Node) loadClientConfig(tlsCert, tlsKey, tlsCA, tlsVerify string) (config *tls.Config, err error) {
 	if len(tlsCA) < 1 && len(tlsCert) < 1 && (len(tlsVerify) < 1 || tlsVerify == "1") {
 		err = fmt.Errorf("at least one of tls_ca/tls_cert is required")
 		return
@@ -297,7 +297,7 @@ func (p *Proxy) loadClientConfig(tlsCert, tlsKey, tlsCA, tlsVerify string) (conf
 		var cert tls.Certificate
 		cert, err = LoadX509KeyPair(p.Dir, tlsCert, tlsKey)
 		if err != nil {
-			ErrorLog("Proxy(%v) load cert fail with %v", p.Name, err)
+			ErrorLog("Node(%v) load cert fail with %v", p.Name, err)
 			return
 		}
 		config.Certificates = append(config.Certificates, cert)
@@ -307,13 +307,13 @@ func (p *Proxy) loadClientConfig(tlsCert, tlsKey, tlsCA, tlsVerify string) (conf
 		var certPEM []byte
 		certPEM, err = LoadPEMBlock(p.Dir, tlsCA)
 		if err != nil {
-			ErrorLog("Proxy(%v) load ca fail with %v", p.Name, err)
+			ErrorLog("Node(%v) load ca fail with %v", p.Name, err)
 			return
 		}
 		certPool := x509.NewCertPool()
 		ok := certPool.AppendCertsFromPEM([]byte(certPEM))
 		if !ok {
-			ErrorLog("Proxy(%v) append ca fail", p.Name)
+			ErrorLog("Node(%v) append ca fail", p.Name)
 			err = fmt.Errorf("load %v fail", tlsCA)
 			return
 		}
@@ -326,7 +326,7 @@ func (p *Proxy) loadClientConfig(tlsCert, tlsKey, tlsCA, tlsVerify string) (conf
 }
 
 // Keep will keep channel connection
-func (p *Proxy) Keep() (err error) {
+func (p *Node) Keep() (err error) {
 	for name, channel := range p.Channels {
 		for {
 			connected := p.CountChannel(name)
@@ -340,7 +340,7 @@ func (p *Proxy) Keep() (err error) {
 				break
 			}
 			if channel.Name() != name {
-				ErrorLog("Proxy(%v) keep login remote name %v must equal to local name %v", p.Name, channel.Name(), name)
+				ErrorLog("Node(%v) keep login remote name %v must equal to local name %v", p.Name, channel.Name(), name)
 				channel.Close()
 				err = fmt.Errorf("remote name %v must equal to local name %v", channel.Name(), name)
 				break
@@ -350,7 +350,7 @@ func (p *Proxy) Keep() (err error) {
 	return
 }
 
-func (p *Proxy) dialConn(remote, proxy, tlsCert, tlsKey, tlsCA, tlsHost, tlsVerify string) (conn net.Conn, err error) {
+func (p *Node) dialConn(remote, proxy, tlsCert, tlsKey, tlsCA, tlsHost, tlsVerify string) (conn net.Conn, err error) {
 	if !strings.Contains(remote, "://") {
 		remote = "tcp://" + remote
 	}
@@ -377,12 +377,12 @@ func (p *Proxy) dialConn(remote, proxy, tlsCert, tlsKey, tlsCA, tlsHost, tlsVeri
 	var config *tls.Config
 	switch remoteURI.Scheme {
 	case "ws", "wss":
-		InfoLog("Proxy(%v) start dial to %v by cert:%v,key:%v,ca:%v,verify:%v", p.Name, remote, TlsConfigShow(tlsCert), TlsConfigShow(tlsKey), TlsConfigShow(tlsCA), tlsVerify)
+		InfoLog("Node(%v) start dial to %v by cert:%v,key:%v,ca:%v,verify:%v", p.Name, remote, TlsConfigShow(tlsCert), TlsConfigShow(tlsKey), TlsConfigShow(tlsCA), tlsVerify)
 		dialer := xnet.NewWebsocketDialer()
 		if remoteURI.Scheme == "wss" {
 			dialer.TlsConfig, err = p.loadClientConfig(tlsCert, tlsKey, tlsCA, tlsVerify)
 			if err != nil {
-				ErrorLog("Proxy(%v) load tls config fail with %v", p.Name, err)
+				ErrorLog("Node(%v) load tls config fail with %v", p.Name, err)
 				return
 			}
 		}
@@ -395,10 +395,10 @@ func (p *Proxy) dialConn(remote, proxy, tlsCert, tlsKey, tlsCA, tlsHost, tlsVeri
 			conn = rawConn.(net.Conn)
 		}
 	case "tls":
-		InfoLog("Proxy(%v) start dial to %v by cert:%v,key:%v,ca:%v,verify:%v", p.Name, remote, TlsConfigShow(tlsCert), TlsConfigShow(tlsKey), TlsConfigShow(tlsCA), tlsVerify)
+		InfoLog("Node(%v) start dial to %v by cert:%v,key:%v,ca:%v,verify:%v", p.Name, remote, TlsConfigShow(tlsCert), TlsConfigShow(tlsKey), TlsConfigShow(tlsCA), tlsVerify)
 		config, err = p.loadClientConfig(tlsCert, tlsKey, tlsCA, tlsVerify)
 		if err != nil {
-			ErrorLog("Proxy(%v) load tls config fail with %v", p.Name, err)
+			ErrorLog("Node(%v) load tls config fail with %v", p.Name, err)
 			return
 		}
 		config.ServerName = remoteURI.Hostname()
@@ -426,10 +426,10 @@ func (p *Proxy) dialConn(remote, proxy, tlsCert, tlsKey, tlsCA, tlsHost, tlsVeri
 			conn, err = net.Dial("tcp", remoteURI.Host)
 		}
 	case "quic":
-		InfoLog("Proxy(%v) start dial to %v by cert:%v,key:%v,ca:%v,verify:%v", p.Name, remote, TlsConfigShow(tlsCert), TlsConfigShow(tlsKey), TlsConfigShow(tlsCA), tlsVerify)
+		InfoLog("Node(%v) start dial to %v by cert:%v,key:%v,ca:%v,verify:%v", p.Name, remote, TlsConfigShow(tlsCert), TlsConfigShow(tlsKey), TlsConfigShow(tlsCA), tlsVerify)
 		config, err = p.loadClientConfig(tlsCert, tlsKey, tlsCA, tlsVerify)
 		if err != nil {
-			ErrorLog("Proxy(%v) load tls config fail with %v", p.Name, err)
+			ErrorLog("Node(%v) load tls config fail with %v", p.Name, err)
 			return
 		}
 		config.NextProtos = []string{"bs"}
@@ -443,7 +443,7 @@ func (p *Proxy) dialConn(remote, proxy, tlsCert, tlsKey, tlsCA, tlsHost, tlsVeri
 }
 
 // Login will add channel by local address, master address, auth token, channel index.
-func (p *Proxy) Login(option xmap.M) (channel Conn, result xmap.M, err error) {
+func (p *Node) Login(option xmap.M) (channel Conn, result xmap.M, err error) {
 	var remoteAll, proxy, tlsCert, tlsKey, tlsCA, tlsHost, tlsVerify string
 	err = option.ValidFormat(`
 		remote,R|S,L:0;
@@ -461,7 +461,7 @@ func (p *Proxy) Login(option xmap.M) (channel Conn, result xmap.M, err error) {
 		conn, xerr := p.dialConn(remote, proxy, tlsCert, tlsKey, tlsCA, tlsHost, tlsVerify)
 		if xerr != nil {
 			err = xerr
-			WarnLog("Proxy(%v) dial to %v fail with %v", p.Name, remote, err)
+			WarnLog("Node(%v) dial to %v fail with %v", p.Name, remote, err)
 			return
 		}
 		auth := xmap.M{}
@@ -484,7 +484,7 @@ func (p *Proxy) Login(option xmap.M) (channel Conn, result xmap.M, err error) {
 }
 
 // Ping will ping channel
-func (p *Proxy) Ping(option xmap.M) (speed xmap.M, err error) {
+func (p *Node) Ping(option xmap.M) (speed xmap.M, err error) {
 	var remoteAll, proxy, tlsCert, tlsKey, tlsHost, tlsCA, tlsVerify string
 	err = option.ValidFormat(`
 		remote,R|S,L:0;
@@ -507,9 +507,9 @@ func (p *Proxy) Ping(option xmap.M) (speed xmap.M, err error) {
 		}
 		used := time.Since(begin)
 		if xerr == nil {
-			InfoLog("Proxy(%v) ping to %v success with %v", p.Name, remote, used)
+			InfoLog("Node(%v) ping to %v success with %v", p.Name, remote, used)
 		} else {
-			WarnLog("Proxy(%v) ping to %v fail with %v,%v", p.Name, remote, used, xerr)
+			WarnLog("Node(%v) ping to %v fail with %v,%v", p.Name, remote, used, xerr)
 		}
 		result := xmap.M{}
 		if xerr == nil {

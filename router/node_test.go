@@ -15,17 +15,17 @@ import (
 	"github.com/codingeasygo/util/xmap"
 )
 
-func newBaseProxy(proxy bool) (proxy0, proxy1 *Proxy, err error) {
+func newBaseNode(proxy bool) (proxy0, proxy1 *Node, err error) {
 	access0 := NewNormalAcessHandler("N0")
 	access0.LoginAccess["N1"] = xhash.SHA1([]byte("123"))
 	access0.LoginAccess["N2"] = xhash.SHA1([]byte("123"))
 	access0.DialAccess = append(access0.DialAccess, []string{".*", ".*"})
-	proxy0 = NewProxy("N0", DefaultBufferSize, access0)
+	proxy0 = NewNode("N0", DefaultBufferSize, access0)
 
 	access1 := NewNormalAcessHandler("N1")
 	access1.LoginAccess["N2"] = xhash.SHA1([]byte("123"))
 	access1.DialAccess = append(access1.DialAccess, []string{".*", ".*"})
-	proxy1 = NewProxy("N1", DefaultBufferSize, access1)
+	proxy1 = NewNode("N1", DefaultBufferSize, access1)
 	err = proxy0.Listen("127.0.0.1:15023", "", "")
 	if err != nil {
 		return
@@ -43,18 +43,18 @@ func newBaseProxy(proxy bool) (proxy0, proxy1 *Proxy, err error) {
 	return
 }
 
-func newKeepProxy() (proxy0, proxy1 *Proxy, err error) {
+func newKeepNode() (proxy0, proxy1 *Node, err error) {
 	access0 := NewNormalAcessHandler("N0")
 	access0.LoginAccess["N1"] = xhash.SHA1([]byte("123"))
 	access0.LoginAccess["N2"] = xhash.SHA1([]byte("123"))
 	access0.LoginAccess["N3"] = xhash.SHA1([]byte("123"))
 	access0.DialAccess = append(access0.DialAccess, []string{".*", ".*"})
-	proxy0 = NewProxy("N0", DefaultBufferSize, access0)
+	proxy0 = NewNode("N0", DefaultBufferSize, access0)
 
 	access1 := NewNormalAcessHandler("N1")
 	access1.LoginAccess["N2"] = "123"
 	access1.DialAccess = append(access1.DialAccess, []string{".*", ".*"})
-	proxy1 = NewProxy("N1", DefaultBufferSize, access1)
+	proxy1 = NewNode("N1", DefaultBufferSize, access1)
 	proxy1.KeepDelay = 30 * time.Millisecond
 	err = proxy0.Listen("127.0.0.1:15023", "", "")
 	if err != nil {
@@ -69,7 +69,7 @@ func newKeepProxy() (proxy0, proxy1 *Proxy, err error) {
 	return
 }
 
-func newTlsProxy(proxy bool) (proxy0, proxy1 *Proxy, err error) {
+func newTlsNode(proxy bool) (proxy0, proxy1 *Node, err error) {
 	if _, xerr := os.Stat("../certs/rootCA.crt"); os.IsNotExist(xerr) {
 		cmd := exec.Command("bash", "-c", "./gen.sh")
 		cmd.Dir = "../certs"
@@ -82,12 +82,12 @@ func newTlsProxy(proxy bool) (proxy0, proxy1 *Proxy, err error) {
 	access0.LoginAccess["N1"] = xhash.SHA1([]byte("123"))
 	access0.LoginAccess["N2"] = xhash.SHA1([]byte("123"))
 	access0.DialAccess = append(access0.DialAccess, []string{".*", ".*"})
-	proxy0 = NewProxy("N0", DefaultBufferSize, access0)
+	proxy0 = NewNode("N0", DefaultBufferSize, access0)
 
 	access1 := NewNormalAcessHandler("N1")
 	access1.LoginAccess["N2"] = xhash.SHA1([]byte("123"))
 	access1.DialAccess = append(access1.DialAccess, []string{".*", ".*"})
-	proxy1 = NewProxy("N1", DefaultBufferSize, access1)
+	proxy1 = NewNode("N1", DefaultBufferSize, access1)
 	err = proxy0.Listen("tls://127.0.0.1:15023", "../certs/server.crt", "../certs/server.key")
 	if err != nil {
 		fmt.Printf("listen error %v\n", err)
@@ -107,17 +107,17 @@ func newTlsProxy(proxy bool) (proxy0, proxy1 *Proxy, err error) {
 	return
 }
 
-func newTlsVerifyProxy(proxy bool) (proxy0, proxy1 *Proxy, err error) {
+func newTlsVerifyNode(proxy bool) (proxy0, proxy1 *Node, err error) {
 	access0 := NewNormalAcessHandler("N0")
 	access0.LoginAccess["N1"] = xhash.SHA1([]byte("123"))
 	access0.LoginAccess["N2"] = xhash.SHA1([]byte("123"))
 	access0.DialAccess = append(access0.DialAccess, []string{".*", ".*"})
-	proxy0 = NewProxy("N0", DefaultBufferSize, access0)
+	proxy0 = NewNode("N0", DefaultBufferSize, access0)
 
 	access1 := NewNormalAcessHandler("N1")
 	access1.LoginAccess["N2"] = xhash.SHA1([]byte("123"))
 	access1.DialAccess = append(access1.DialAccess, []string{".*", ".*"})
-	proxy1 = NewProxy("N1", DefaultBufferSize, access1)
+	proxy1 = NewNode("N1", DefaultBufferSize, access1)
 	err = proxy0.Listen("tls://127.0.0.1:15023", "../certs/server.crt", "../certs/server.key")
 	if err != nil {
 		return
@@ -138,17 +138,17 @@ func newTlsVerifyProxy(proxy bool) (proxy0, proxy1 *Proxy, err error) {
 	return
 }
 
-func newWsProxy(proxy bool) (proxy0, proxy1 *Proxy, err error) {
+func newWsNode(proxy bool) (proxy0, proxy1 *Node, err error) {
 	access0 := NewNormalAcessHandler("N0")
 	access0.LoginAccess["N1"] = xhash.SHA1([]byte("123"))
 	access0.LoginAccess["N2"] = xhash.SHA1([]byte("123"))
 	access0.DialAccess = append(access0.DialAccess, []string{".*", ".*"})
-	proxy0 = NewProxy("N0", DefaultBufferSize, access0)
+	proxy0 = NewNode("N0", DefaultBufferSize, access0)
 
 	access1 := NewNormalAcessHandler("N1")
 	access1.LoginAccess["N2"] = xhash.SHA1([]byte("123"))
 	access1.DialAccess = append(access1.DialAccess, []string{".*", ".*"})
-	proxy1 = NewProxy("N1", DefaultBufferSize, access1)
+	proxy1 = NewNode("N1", DefaultBufferSize, access1)
 	err = proxy0.Listen("ws://127.0.0.1:15023", "", "")
 	if err != nil {
 		return
@@ -165,17 +165,17 @@ func newWsProxy(proxy bool) (proxy0, proxy1 *Proxy, err error) {
 	return
 }
 
-func newWssProxy() (proxy0, proxy1 *Proxy, err error) {
+func newWssNode() (proxy0, proxy1 *Node, err error) {
 	access0 := NewNormalAcessHandler("N0")
 	access0.LoginAccess["N1"] = xhash.SHA1([]byte("123"))
 	access0.LoginAccess["N2"] = xhash.SHA1([]byte("123"))
 	access0.DialAccess = append(access0.DialAccess, []string{".*", ".*"})
-	proxy0 = NewProxy("N0", DefaultBufferSize, access0)
+	proxy0 = NewNode("N0", DefaultBufferSize, access0)
 
 	access1 := NewNormalAcessHandler("N1")
 	access1.LoginAccess["N2"] = xhash.SHA1([]byte("123"))
 	access1.DialAccess = append(access1.DialAccess, []string{".*", ".*"})
-	proxy1 = NewProxy("N1", DefaultBufferSize, access1)
+	proxy1 = NewNode("N1", DefaultBufferSize, access1)
 	err = proxy0.Listen("wss://127.0.0.1:15023", "../certs/server.crt", "../certs/server.key")
 	if err != nil {
 		return
@@ -188,17 +188,17 @@ func newWssProxy() (proxy0, proxy1 *Proxy, err error) {
 	return
 }
 
-func newWssVerifyProxy() (proxy0, proxy1 *Proxy, err error) {
+func newWssVerifyNode() (proxy0, proxy1 *Node, err error) {
 	access0 := NewNormalAcessHandler("N0")
 	access0.LoginAccess["N1"] = xhash.SHA1([]byte("123"))
 	access0.LoginAccess["N2"] = xhash.SHA1([]byte("123"))
 	access0.DialAccess = append(access0.DialAccess, []string{".*", ".*"})
-	proxy0 = NewProxy("N0", DefaultBufferSize, access0)
+	proxy0 = NewNode("N0", DefaultBufferSize, access0)
 
 	access1 := NewNormalAcessHandler("N1")
 	access1.LoginAccess["N2"] = xhash.SHA1([]byte("123"))
 	access1.DialAccess = append(access1.DialAccess, []string{".*", ".*"})
-	proxy1 = NewProxy("N1", DefaultBufferSize, access1)
+	proxy1 = NewNode("N1", DefaultBufferSize, access1)
 	err = proxy0.Listen("wss://127.0.0.1:15023", "../certs/server.crt", "../certs/server.key")
 	if err != nil {
 		return
@@ -211,17 +211,17 @@ func newWssVerifyProxy() (proxy0, proxy1 *Proxy, err error) {
 	return
 }
 
-func newQuicProxy() (proxy0, proxy1 *Proxy, err error) {
+func newQuicNode() (proxy0, proxy1 *Node, err error) {
 	access0 := NewNormalAcessHandler("N0")
 	access0.LoginAccess["N1"] = xhash.SHA1([]byte("123"))
 	access0.LoginAccess["N2"] = xhash.SHA1([]byte("123"))
 	access0.DialAccess = append(access0.DialAccess, []string{".*", ".*"})
-	proxy0 = NewProxy("N0", DefaultBufferSize, access0)
+	proxy0 = NewNode("N0", DefaultBufferSize, access0)
 
 	access1 := NewNormalAcessHandler("N1")
 	access1.LoginAccess["N2"] = xhash.SHA1([]byte("123"))
 	access1.DialAccess = append(access1.DialAccess, []string{".*", ".*"})
-	proxy1 = NewProxy("N1", DefaultBufferSize, access1)
+	proxy1 = NewNode("N1", DefaultBufferSize, access1)
 	err = proxy0.Listen("quic://127.0.0.1:15023", "../certs/server.crt", "../certs/server.key")
 	if err != nil {
 		return
@@ -234,8 +234,8 @@ func newQuicProxy() (proxy0, proxy1 *Proxy, err error) {
 	return
 }
 
-func TestProxy(t *testing.T) {
-	testProxy := func(proxy0, proxy1 *Proxy, err error) error {
+func TestNode(t *testing.T) {
+	testNode := func(proxy0, proxy1 *Node, err error) error {
 		if err != nil {
 			t.Errorf("%v\n%v", err, xdebug.CallStack())
 			return err
@@ -262,42 +262,42 @@ func TestProxy(t *testing.T) {
 		0:  1,
 		13: 1,
 	}
-	if tester.Run("newBaseProxy") && testProxy(newBaseProxy(false)) != nil {
+	if tester.Run("newBaseNode") && testNode(newBaseNode(false)) != nil {
 		return
 	}
-	if tester.Run("newBaseProxy-2") && testProxy(newBaseProxy(true)) != nil {
+	if tester.Run("newBaseNode-2") && testNode(newBaseNode(true)) != nil {
 		return
 	}
-	if tester.Run("newTlsProxy") && testProxy(newTlsProxy(false)) != nil {
+	if tester.Run("newTlsNode") && testNode(newTlsNode(false)) != nil {
 		return
 	}
-	if tester.Run("newTlsProxy-2") && testProxy(newTlsProxy(true)) != nil {
+	if tester.Run("newTlsNode-2") && testNode(newTlsNode(true)) != nil {
 		return
 	}
-	if tester.Run("newTlsVerifyProxy") && testProxy(newTlsVerifyProxy(false)) != nil {
+	if tester.Run("newTlsVerifyNode") && testNode(newTlsVerifyNode(false)) != nil {
 		return
 	}
-	if tester.Run("newTlsVerifyProxy") && testProxy(newTlsVerifyProxy(true)) != nil {
+	if tester.Run("newTlsVerifyNode") && testNode(newTlsVerifyNode(true)) != nil {
 		return
 	}
-	if tester.Run("newWsProxy") && testProxy(newWsProxy(false)) != nil {
+	if tester.Run("newWsNode") && testNode(newWsNode(false)) != nil {
 		return
 	}
-	if tester.Run("newWssProxy") && testProxy(newWssProxy()) != nil {
+	if tester.Run("newWssNode") && testNode(newWssNode()) != nil {
 		return
 	}
-	if tester.Run("newWssVerifyProxy") && testProxy(newWssVerifyProxy()) != nil {
+	if tester.Run("newWssVerifyNode") && testNode(newWssVerifyNode()) != nil {
 		return
 	}
-	if tester.Run("newWsProxy-P") && testProxy(newWsProxy(true)) != nil {
+	if tester.Run("newWsNode-P") && testNode(newWsNode(true)) != nil {
 		return
 	}
-	if tester.Run("newQuicProxy") && testProxy(newQuicProxy()) != nil {
+	if tester.Run("newQuicNode") && testNode(newQuicNode()) != nil {
 		return
 	}
 	if tester.Run("speed") {
-		proxy0, proxy1, _ := newBaseProxy(false)
-		proxy2 := NewProxy("NX", DefaultBufferSize, NewNormalAcessHandler("NX"))
+		proxy0, proxy1, _ := newBaseNode(false)
+		proxy2 := NewNode("NX", DefaultBufferSize, NewNormalAcessHandler("NX"))
 		speed, err := proxy2.Ping(xmap.M{
 			"remote": "127.0.0.1:15023",
 		})
@@ -322,20 +322,20 @@ func TestProxy(t *testing.T) {
 		proxy1.Stop()
 	}
 	if tester.Run("notify") {
-		proxy0, proxy1, _ := newBaseProxy(false)
+		proxy0, proxy1, _ := newBaseNode(false)
 		proxy1.Notify("N0", []byte("abc"))
 		proxy0.Stop()
 		proxy1.Stop()
 	}
 	if tester.Run("keep") { //keep
-		proxy0, proxy1, err := newKeepProxy()
+		proxy0, proxy1, err := newKeepNode()
 		if err != nil {
 			t.Error(err)
 			return
 		}
 		time.Sleep(10 * time.Millisecond)
 
-		proxy2 := NewProxy("N2", DefaultBufferSize, NewNormalAcessHandler("N2"))
+		proxy2 := NewNode("N2", DefaultBufferSize, NewNormalAcessHandler("N2"))
 		proxy2.KeepDelay = 30 * time.Millisecond
 		proxy2.Channels["NX"] = xmap.M{
 			"remote": "127.0.0.1:15023",
@@ -354,7 +354,7 @@ func TestProxy(t *testing.T) {
 		}
 		channel.Close()
 		time.Sleep(50 * time.Millisecond)
-		err = testProxy(proxy0, proxy1, nil)
+		err = testNode(proxy0, proxy1, nil)
 		if err != nil {
 			t.Error(err)
 			return
@@ -367,7 +367,7 @@ func TestProxy(t *testing.T) {
 		proxy1.procKeep()
 
 		//login error
-		proxy2 = NewProxy("N2", DefaultBufferSize, NewNormalAcessHandler("N2"))
+		proxy2 = NewNode("N2", DefaultBufferSize, NewNormalAcessHandler("N2"))
 		proxy2.KeepDelay = 30 * time.Millisecond
 		proxy2.Channels["N2"] = xmap.M{
 			"remote": "127.0.0.1:15020",
@@ -384,7 +384,7 @@ func TestProxy(t *testing.T) {
 		access0.LoginAccess["N1"] = "123"
 		access0.LoginAccess["N2"] = "123"
 		access0.DialAccess = append(access0.DialAccess, []string{".*", ".*"})
-		proxy0 := NewProxy("N0", DefaultBufferSize, access0)
+		proxy0 := NewNode("N0", DefaultBufferSize, access0)
 		err := proxy0.Listen("tls://:0", "../certs/server.crt", "xxx.key")
 		if err == nil {
 			t.Error(err)
@@ -404,7 +404,7 @@ func TestProxy(t *testing.T) {
 		access1 := NewNormalAcessHandler("N1")
 		access1.LoginAccess["N2"] = "123"
 		access1.DialAccess = append(access1.DialAccess, []string{".*", ".*"})
-		proxy1 := NewProxy("N1", DefaultBufferSize, access1)
+		proxy1 := NewNode("N1", DefaultBufferSize, access1)
 		_, _, err = proxy1.Login(xmap.M{
 			"local":    "127.0.0.1:0",
 			"remote":   "127.0.0.1:15023",
@@ -483,7 +483,7 @@ func TestProxy(t *testing.T) {
 		}
 	}
 	if tester.Run("DialError") {
-		proxy := NewProxy("N0", DefaultBufferSize, NewNormalAcessHandler("N0"))
+		proxy := NewNode("N0", DefaultBufferSize, NewNormalAcessHandler("N0"))
 
 		//proxy error
 		_, err := proxy.dialConn("tcp://127.0.0.1:100", string([]byte{1, 1}), "", "", "", "", "")
@@ -518,7 +518,7 @@ func TestProxy(t *testing.T) {
 		}
 	}
 	if tester.Run() {
-		proxy := NewProxy("N1", DefaultBufferSize, nil)
+		proxy := NewNode("N1", DefaultBufferSize, nil)
 		proxy.DialRawConn(nil, 0, "")
 		proxy.OnConnDialURI(nil, "", nil)
 		proxy.OnConnLogin(nil, "")

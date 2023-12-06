@@ -210,7 +210,7 @@ func (e *ErrReadWriteCloser) Ready(failed error, next func(err error)) {
 	// }
 }
 
-func newBaseNode() (node0, node1 *Router, err error) {
+func newBaseRouterNode() (node0, node1 *Router, err error) {
 	access0 := NewNormalAcessHandler("N0")
 	access0.LoginAccess["N1"] = xhash.SHA1([]byte("123"))
 	access0.LoginAccess["N2"] = xhash.SHA1([]byte("123"))
@@ -291,7 +291,7 @@ func TestRouter(t *testing.T) {
 		20: 1,
 	}
 	if tester.Run("base dial") { //base dial
-		node0, node1, err := newBaseNode()
+		node0, node1, err := newBaseRouterNode()
 		if err != nil {
 			t.Error(err)
 			return
@@ -336,7 +336,7 @@ func TestRouter(t *testing.T) {
 		node0.Stop()
 	}
 	if tester.Run("parallel dial") { //parallel dial
-		node0, node1, err := newBaseNode()
+		node0, node1, err := newBaseRouterNode()
 		if err != nil {
 			t.Error(err)
 			return
@@ -391,7 +391,7 @@ func TestRouter(t *testing.T) {
 		node0.Stop()
 	}
 	if tester.Run() { //parallel dial closed
-		node0, node1, err := newBaseNode()
+		node0, node1, err := newBaseRouterNode()
 		if err != nil {
 			t.Error(err)
 			return
@@ -453,7 +453,7 @@ func TestRouter(t *testing.T) {
 		node0.Stop()
 	}
 	if tester.Run() { //channel close
-		node0, node1, err := newBaseNode()
+		node0, node1, err := newBaseRouterNode()
 		if err != nil {
 			t.Error(err)
 			return
@@ -498,7 +498,7 @@ func TestRouter(t *testing.T) {
 		node1.Stop()
 	}
 	if tester.Run("DialAccess fail") { //DialAccess fail
-		node0, node1, err := newBaseNode()
+		node0, node1, err := newBaseRouterNode()
 		if err != nil {
 			t.Error(err)
 			return
@@ -515,7 +515,7 @@ func TestRouter(t *testing.T) {
 		node1.Stop()
 	}
 	if tester.Run("dial fail") { //dial fail
-		node0, node1, err := newBaseNode()
+		node0, node1, err := newBaseRouterNode()
 		if err != nil {
 			t.Error(err)
 			return
@@ -675,7 +675,7 @@ func TestRouter(t *testing.T) {
 		nodeList[0].Stop()
 	}
 	if tester.Run() { //loc dial
-		node0, node1, err := newBaseNode()
+		node0, node1, err := newBaseRouterNode()
 		if err != nil {
 			t.Error(err)
 			return
@@ -698,7 +698,7 @@ func TestRouter(t *testing.T) {
 		node0.Stop()
 	}
 	if tester.Run() { //piper
-		node0, node1, err := newBaseNode()
+		node0, node1, err := newBaseRouterNode()
 		if err != nil {
 			t.Error(err)
 			return
@@ -725,7 +725,7 @@ func TestRouter(t *testing.T) {
 		node1.Stop()
 	}
 	if tester.Run() { //ping
-		node0, node1, err := newBaseNode()
+		node0, node1, err := newBaseRouterNode()
 		if err != nil {
 			t.Error(err)
 			return
@@ -739,7 +739,7 @@ func TestRouter(t *testing.T) {
 		node1.Stop()
 	}
 	if tester.Run("notify") { //notify
-		node0, node1, err := newBaseNode()
+		node0, node1, err := newBaseRouterNode()
 		if err != nil {
 			t.Error(err)
 			return
@@ -760,7 +760,7 @@ func TestRouter(t *testing.T) {
 		node1.Stop()
 	}
 	if tester.Run() { //ping
-		node0, node1, err := newBaseNode()
+		node0, node1, err := newBaseRouterNode()
 		if err != nil {
 			t.Error(err)
 			return
@@ -778,7 +778,7 @@ func TestRouter(t *testing.T) {
 		node1.Stop()
 	}
 	if tester.Run() { //timeout
-		node0, node1, err := newBaseNode()
+		node0, node1, err := newBaseRouterNode()
 		if err != nil {
 			t.Error(err)
 			return
@@ -792,7 +792,7 @@ func TestRouter(t *testing.T) {
 		node1.Stop()
 	}
 	if tester.Run() { //state
-		node0, node1, err := newBaseNode()
+		node0, node1, err := newBaseRouterNode()
 		if err != nil {
 			t.Error(err)
 			return
@@ -820,7 +820,7 @@ func TestRouter(t *testing.T) {
 		node1.Stop()
 	}
 	if tester.Run() { //as
-		node0, node1, err := newBaseNode()
+		node0, node1, err := newBaseRouterNode()
 		if err != nil {
 			t.Error(err)
 			return
@@ -840,7 +840,7 @@ func TestRouter(t *testing.T) {
 		node1.Stop()
 	}
 	if tester.Run() { //error
-		node0, node1, err := newBaseNode()
+		node0, node1, err := newBaseRouterNode()
 		if err != nil {
 			t.Error(err)
 			return
