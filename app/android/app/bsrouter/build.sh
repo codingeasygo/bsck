@@ -1,1 +1,1 @@
-gomobile bind -target android -trimpath -v
+gomobile bind -target android -androidapi 21 -trimpath -v
