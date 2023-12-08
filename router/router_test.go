@@ -906,6 +906,8 @@ func TestRouter(t *testing.T) {
 		node0.Stop()
 		node1.Stop()
 		node1.Stop()
+
+		node0.SelectChannel(".*[")
 	}
 	if tester.Run("TestError") { //mock error
 		access0 := NewNormalAcessHandler("N0")

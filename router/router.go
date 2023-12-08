@@ -809,6 +809,18 @@ func (r *Router) findChannel(name string, new bool) (channel *BondConn) {
 	return
 }
 
+func (r *Router) matchChannel(name *regexp.Regexp) (channel *BondConn) {
+	r.channelLck.RLock()
+	defer r.channelLck.RUnlock()
+	for n, c := range r.channelAll {
+		if name.MatchString(n) {
+			channel = c
+			break
+		}
+	}
+	return
+}
+
 func (r *Router) addChannel(channel Conn) {
 	name := channel.Name()
 	if len(name) < 1 {
@@ -862,7 +874,11 @@ func (r *Router) NewConnID() (connID uint16) {
 
 // SelectChannel will pick one channel by name.
 func (r *Router) SelectChannel(name string) (target Conn, err error) {
-	channel := r.findChannel(name, false)
+	matcher, err := regexp.Compile(name)
+	if err != nil {
+		return
+	}
+	channel := r.matchChannel(matcher)
 	if channel != nil {
 		target = channel.SelectConn()
 	}
