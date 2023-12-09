@@ -14,6 +14,7 @@ import (
 	"math/rand"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"os"
 	"os/exec"
@@ -102,13 +103,14 @@ type Config struct {
 		Skip    []string `json:"skip"`
 		Channel string   `json:"channel"`
 	} `json:"proxy"`
-	Web      Web               `json:"web"`
-	Log      int               `json:"log"`
-	Forwards map[string]string `json:"forwards"`
-	Channels map[string]xmap.M `json:"channels"`
-	Dialer   xmap.M            `json:"dialer"`
-	RDPDir   string            `json:"rdp_dir"`
-	VNCDir   string            `json:"vnc_dir"`
+	Web       Web               `json:"web"`
+	Log       int               `json:"log"`
+	Forwards  map[string]string `json:"forwards"`
+	Channels  map[string]xmap.M `json:"channels"`
+	Whitelist []string          `json:"whitelist"`
+	Dialer    xmap.M            `json:"dialer"`
+	RDPDir    string            `json:"rdp_dir"`
+	VNCDir    string            `json:"vnc_dir"`
 }
 
 // ReadConfig will read configure from file
@@ -185,6 +187,54 @@ func (c *Config) ConsoleURI() (uri string) {
 		uri, _ = c.ConsoleUnix()
 		if !strings.HasPrefix(uri, "unix://") {
 			uri = "unix://" + uri
+		}
+	}
+	return
+}
+
+func (c *Config) ResolveWhitelist() (whitelist []net.IP) {
+	added := map[string]bool{}
+	for _, channel := range c.Channels {
+		remote := channel.StrDef("", "remote")
+		remoteURL, xerr := url.Parse(remote)
+		if xerr != nil {
+			WarnLog("Config parse channel remote %v fail wtih %v, skipped", remote, xerr)
+			continue
+		}
+		if ip, err := net.ResolveIPAddr("ip4", remoteURL.Hostname()); err == nil && !added[ip.IP.String()] {
+			whitelist = append(whitelist, ip.IP)
+			added[ip.IP.String()] = true
+		}
+		if ip, err := net.ResolveIPAddr("ip6", remoteURL.Hostname()); err == nil && !added[ip.IP.String()] {
+			whitelist = append(whitelist, ip.IP)
+			added[ip.IP.String()] = true
+		}
+	}
+	for _, w := range c.Whitelist {
+		if ip, err := netip.ParseAddr(w); err == nil {
+			if !added[ip.String()] {
+				whitelist = append(whitelist, ip.AsSlice())
+				added[ip.String()] = true
+			}
+			continue
+		}
+		data, xerr := os.ReadFile(w)
+		if xerr != nil {
+			WarnLog("Config read whitelist %v fail wtih %v, skipped", w, xerr)
+			continue
+		}
+		for _, line := range strings.Split(string(data), "\n") {
+			line = strings.TrimSpace(line)
+			if len(line) < 1 || strings.HasPrefix(line, "#") || strings.HasPrefix(line, "//") {
+				continue
+			}
+			ip, xerr := netip.ParseAddr(line)
+			if xerr != nil {
+				WarnLog("Config parse whitelist ip %v in %v fail wtih %v, skipped", line, w, xerr)
+			} else if !added[ip.String()] {
+				whitelist = append(whitelist, ip.AsSlice())
+				added[ip.String()] = true
+			}
 		}
 	}
 	return

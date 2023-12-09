@@ -1011,3 +1011,32 @@ func TestSlaverHandler(t *testing.T) {
 	}
 	assertNotUnix(slaver.Config)
 }
+
+func TestResolveWhitelist(t *testing.T) {
+	config := &Config{}
+	if wl := config.ResolveWhitelist(); len(wl) > 0 {
+		t.Error("error")
+		return
+	}
+	config.Channels = map[string]xmap.M{
+		"A": {
+			"remote": "tcp://192.168.1.1:100",
+		},
+		"B": {
+			"remote": "tcp://example.com:100",
+		},
+		"C": {
+			"remote": "tcp://none.loc:100",
+		},
+		"ERR": {
+			"remote": string([]byte{1, 2, 3}),
+		},
+	}
+	config.Whitelist = []string{"192.1.1.1", "whitelist.txt", "none.txt"}
+	wl := config.ResolveWhitelist()
+	if len(wl) < 1 {
+		t.Errorf("%v", wl)
+		return
+	}
+	fmt.Printf("whitelist is \n%v\n", wl)
+}
