@@ -75,22 +75,6 @@ packages:
     description: flutter
     source: sdk
     version: "0.0.0"
-  keep_screen_on:
-    dependency: "direct main"
-    description:
-      name: keep_screen_on
-      sha256: "374405358a3229b0e1041b6e390ff4c74e73fbd21075298042044e0c84b5574c"
-      url: "https://pub.dev"
-    source: hosted
-    version: "3.0.0"
-  keep_screen_on_platform_interface:
-    dependency: transitive
-    description:
-      name: keep_screen_on_platform_interface
-      sha256: "065a0811407a970027c7530f9b8f36d11c89f36aab85b4b5acdacfe2cf3a8568"
-      url: "https://pub.dev"
-    source: hosted
-    version: "3.0.0"
   lints:
     dependency: transitive
     description:
@@ -131,14 +115,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.8.3"
-  plugin_platform_interface:
-    dependency: transitive
-    description:
-      name: plugin_platform_interface
-      sha256: da3fdfeccc4d4ff2da8f8c556704c08f912542c5fb3cf2233ed75372384a034d
-      url: "https://pub.dev"
-    source: hosted
-    version: "2.1.6"
   sky_engine:
     dependency: transitive
     description: flutter
@@ -209,5 +185,4 @@ packages:
     source: hosted
     version: "0.3.0"
 sdks:
-  dart: ">=3.2.0-194.0.dev <4.0.0"
-  flutter: ">=3.10.0"
+  dart: ">=3.2.3 <4.0.0"
