@@ -14,7 +14,7 @@ require (
 	github.com/quic-go/quic-go v0.40.0
 	github.com/songgao/water v0.0.0-20200317203138-2b4b6d7c09d8
 	golang.org/x/crypto v0.16.0
-	golang.org/x/mobile v0.0.0-20231108233038-35478a0c49da
+	golang.org/x/mobile v0.0.0-20231127183840-76ac6878050a
 	golang.org/x/net v0.19.0
 )
 
@@ -31,7 +31,7 @@ require (
 	golang.org/x/mod v0.14.0 // indirect
 	golang.org/x/sys v0.15.0 // indirect
 	golang.org/x/time v0.3.0 // indirect
-	golang.org/x/tools v0.15.0 // indirect
+	golang.org/x/tools v0.16.0 // indirect
 	gvisor.dev/gvisor v0.0.0-20231202080848-1f7806d17489 // indirect
 )
 

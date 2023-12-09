@@ -8,6 +8,8 @@ import (
 	t2clog "github.com/codingeasygo/tun2conn/log"
 	"github.com/codingeasygo/util/converter"
 	"github.com/codingeasygo/util/xmap"
+
+	_ "golang.org/x/mobile/bind"
 )
 
 var logPrinter Logger
