@@ -25,8 +25,8 @@ import (
 	"sync"
 
 	"github.com/codingeasygo/bsck/dialer"
-	"github.com/codingeasygo/bsck/gfw"
 	"github.com/codingeasygo/bsck/router/native"
+	"github.com/codingeasygo/tun2conn/gfw"
 	"github.com/codingeasygo/util/proxy"
 	sproxy "github.com/codingeasygo/util/proxy/socks"
 	wproxy "github.com/codingeasygo/util/proxy/ws"

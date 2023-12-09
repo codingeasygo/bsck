@@ -12,7 +12,6 @@ echo "Installing Dependence"
 #########Running Test#########
 echo "Running Test"
 pkgs="\
-    github.com/codingeasygo/bsck/gfw\
     github.com/codingeasygo/bsck/dialer\
     github.com/codingeasygo/bsck/router\
 "

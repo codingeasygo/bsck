@@ -120,11 +120,17 @@ func (p *Pool) Bootstrap(options xmap.M) error {
 			InfoLog("Pool(%v) add web/%v dialer to pool", p.Name, n)
 		}
 	}
-	if options.Value("udpgw") != nil {
+	if options.Value("udpgw") != nil || options.IntDef(0, "standard") > 0 || options.IntDef(0, "std") > 0 {
 		udpgw := NewUdpGwDialer()
 		udpgw.Bootstrap(options.MapDef(xmap.M{}, "udpgw"))
 		p.Dialers = append(p.Dialers, udpgw)
-		InfoLog("Pool(%v) add tcp dialer to pool", p.Name)
+		InfoLog("Pool(%v) add udpgw dialer to pool", p.Name)
+	}
+	if options.Value("dnsgw") != nil || options.IntDef(0, "standard") > 0 || options.IntDef(0, "std") > 0 {
+		dnsgw := NewDnsGwDialer()
+		dnsgw.Bootstrap(options.MapDef(xmap.M{}, "dnsgw"))
+		p.Dialers = append(p.Dialers, dnsgw)
+		InfoLog("Pool(%v) add dnsgw dialer to pool", p.Name)
 	}
 	if options.Value("ssh") != nil {
 		conf := options.MapDef(xmap.M{}, "ssh")
@@ -138,7 +144,7 @@ func (p *Pool) Bootstrap(options xmap.M) error {
 		tcp := NewTCPDialer()
 		tcp.Bootstrap(options.MapDef(xmap.M{}, "tcp"))
 		p.Dialers = append(p.Dialers, tcp)
-		InfoLog("Pool(%v) add udpgw dialer to pool", p.Name)
+		InfoLog("Pool(%v) add tcp dialer to pool", p.Name)
 	}
 	return nil
 }

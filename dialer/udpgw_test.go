@@ -6,7 +6,7 @@ import (
 	"github.com/codingeasygo/util/xmap"
 )
 
-func TestUDPGW(t *testing.T) {
+func TestUdpGW(t *testing.T) {
 	dialer := NewUdpGwDialer()
 	err := dialer.Bootstrap(xmap.M{
 		"dns": "127.0.0.1:53",
