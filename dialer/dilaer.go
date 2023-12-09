@@ -10,6 +10,8 @@ import (
 	"github.com/codingeasygo/util/xmap"
 )
 
+var RawConnControl = func(fd uintptr) {}
+
 type Conn = io.ReadWriteCloser
 
 type Channel interface {

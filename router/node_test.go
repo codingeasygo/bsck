@@ -1,6 +1,7 @@
 package router
 
 import (
+	"context"
 	"encoding/hex"
 	"fmt"
 	"os"
@@ -516,6 +517,10 @@ func TestNode(t *testing.T) {
 			t.Error(err)
 			return
 		}
+
+		quicDial(context.Background(), "127.0.0.1:x", "127.0.0.1:10000", nil)
+		quicDial(context.Background(), "127.0.0.1:0", "127.0.0.1:x", nil)
+		quicDial(context.Background(), "127.0.0.1:1", "127.0.0.1:1000", nil)
 	}
 	if tester.Run() {
 		proxy := NewNode("N1", DefaultBufferSize, nil)

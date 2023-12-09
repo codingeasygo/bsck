@@ -372,13 +372,14 @@ func (p *Node) dialConn(remote, proxy, tlsCert, tlsKey, tlsCA, tlsHost, tlsVerif
 			proxyAuth.User = proxyURL.User.Username()
 			proxyAuth.Password, _ = proxyURL.User.Password()
 		}
-		proxyDailer, _ = nproxy.SOCKS5("tcp", proxyURL.Host, proxyAuth, nil)
+		proxyDailer, _ = nproxy.SOCKS5("tcp", proxyURL.Host, proxyAuth, Dialer)
 	}
 	var config *tls.Config
 	switch remoteURI.Scheme {
 	case "ws", "wss":
 		InfoLog("Node(%v) start dial to %v by cert:%v,key:%v,ca:%v,verify:%v", p.Name, remote, TlsConfigShow(tlsCert), TlsConfigShow(tlsKey), TlsConfigShow(tlsCA), tlsVerify)
 		dialer := xnet.NewWebsocketDialer()
+		dialer.Dialer = Dialer
 		if remoteURI.Scheme == "wss" {
 			dialer.TlsConfig, err = p.loadClientConfig(tlsCert, tlsKey, tlsCA, tlsVerify)
 			if err != nil {
@@ -402,7 +403,6 @@ func (p *Node) dialConn(remote, proxy, tlsCert, tlsKey, tlsCA, tlsHost, tlsVerif
 			return
 		}
 		config.ServerName = remoteURI.Hostname()
-		var dialer net.Dialer
 		if proxyDailer != nil {
 			rawConn, xerr := proxyDailer.Dial("tcp", remoteURI.Host)
 			if xerr != nil {
@@ -416,14 +416,14 @@ func (p *Node) dialConn(remote, proxy, tlsCert, tlsKey, tlsCA, tlsHost, tlsVerif
 			}
 			conn = tlsConn
 		} else {
-			conn, err = tls.DialWithDialer(&dialer, "tcp", remoteURI.Host, config)
+			conn, err = tls.DialWithDialer(Dialer, "tcp", remoteURI.Host, config)
 		}
 	case "tcp":
 		InfoLog("Router(%v) start dial to %v", p.Name, remote)
 		if len(proxy) > 0 {
 			conn, err = proxyDailer.Dial("tcp", remoteURI.Host)
 		} else {
-			conn, err = net.Dial("tcp", remoteURI.Host)
+			conn, err = Dialer.Dial("tcp", remoteURI.Host)
 		}
 	case "quic":
 		InfoLog("Node(%v) start dial to %v by cert:%v,key:%v,ca:%v,verify:%v", p.Name, remote, TlsConfigShow(tlsCert), TlsConfigShow(tlsKey), TlsConfigShow(tlsCA), tlsVerify)
@@ -437,7 +437,7 @@ func (p *Node) dialConn(remote, proxy, tlsCert, tlsKey, tlsCA, tlsHost, tlsVerif
 		if len(config.ServerName) < 1 {
 			config.ServerName = remoteURI.Hostname()
 		}
-		conn, err = quicDial(remoteURI.Host, config)
+		conn, err = quicDial(context.Background(), "0.0.0.0:0", remoteURI.Host, config)
 	}
 	return
 }
@@ -580,12 +580,28 @@ func quicListen(addr string, tls *tls.Config) (ln net.Listener, err error) {
 	return
 }
 
-func quicDial(addr string, tls *tls.Config) (conn net.Conn, err error) {
+func quicDial(ctx context.Context, laddr, raddr string, tls *tls.Config) (conn net.Conn, err error) {
 	c := &quicConn{}
 	conn = c
 	quicConf := &quic.Config{EnableDatagrams: true}
 	quicConf.KeepAlivePeriod = time.Second
-	c.Connection, err = quic.DialAddr(context.Background(), addr, tls, quicConf)
+	localAddr, err := net.ResolveUDPAddr("udp", laddr)
+	if err != nil {
+		return nil, err
+	}
+	udpAddr, err := net.ResolveUDPAddr("udp", raddr)
+	if err != nil {
+		return nil, err
+	}
+	udpConn, err := net.ListenUDP("udp", localAddr)
+	if err != nil {
+		return nil, err
+	}
+	if sc, _ := udpConn.SyscallConn(); sc != nil {
+		sc.Control(RawConnControl)
+	}
+	tr := &quic.Transport{Conn: udpConn}
+	c.Connection, err = tr.Dial(ctx, udpAddr, tls, quicConf)
 	if err == nil {
 		c.Stream, err = c.Connection.OpenStream()
 	}

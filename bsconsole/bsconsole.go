@@ -593,7 +593,7 @@ func runall(osArgs ...string) {
 		if len(args) > 1 {
 			addForward(args...)
 		}
-		gw.Policy = func(on string, ip net.IP, port uint16, domain, cname string) (uri string, newIP net.IP, newPort uint16) {
+		gw.Policy = func(on string, ip net.IP, port uint16, domain, cname string, questions []string) (uri string, newIP net.IP, newPort uint16) {
 			uri, remote := hostMap.Match(ip)
 			if on == "udp" {
 				newIP = remote

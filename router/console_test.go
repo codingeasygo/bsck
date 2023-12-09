@@ -64,7 +64,7 @@ var configTestConsole1 = `
     "listen": "",
     "web": {},
     "console": {
-        "socks": ":1701"
+        "socks": ":10701"
     },
     "forwards": {},
     "channels": {
@@ -87,7 +87,7 @@ var configTestConsole2 = `
     "listen": "",
     "web": {},
     "console": {
-        "ws": ":1701"
+        "ws": ":10701"
     },
     "forwards": {},
     "channels": {

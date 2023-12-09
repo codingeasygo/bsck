@@ -4,6 +4,7 @@ import (
 	"net"
 	"net/url"
 	"regexp"
+	"syscall"
 
 	"github.com/codingeasygo/util/xmap"
 )
@@ -49,6 +50,9 @@ func (t *TCPDialer) Dial(channel Channel, sid uint16, uri string) (raw Conn, err
 	remote, err := url.Parse(uri)
 	if err == nil {
 		var dialer net.Dialer
+		dialer.Control = func(network, address string, c syscall.RawConn) error {
+			return c.Control(RawConnControl)
+		}
 		bind := remote.Query().Get("bind")
 		if len(bind) < 1 && t.conf != nil {
 			bind = t.conf.Str("bind")

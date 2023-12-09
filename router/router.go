@@ -6,12 +6,14 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
+	"net"
 	"net/http"
 	"reflect"
 	"regexp"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/codingeasygo/util/converter"
@@ -28,6 +30,13 @@ import (
 func init() {
 	rand.Seed(xtime.Now())
 }
+
+var Dialer = &net.Dialer{
+	Control: func(network, address string, c syscall.RawConn) error {
+		return c.Control(RawConnControl)
+	},
+}
+var RawConnControl = func(fd uintptr) {}
 
 const (
 	ConnOK = "OK"
@@ -1691,7 +1700,7 @@ func NewNormalAcessHandler(name string) (handler *NormalAcessHandler) {
 	handler = &NormalAcessHandler{
 		Name:        name,
 		LoginAccess: map[string]string{},
-		NetDialer:   xnet.NewNetDailer(),
+		NetDialer:   xnet.NewRawDialerWrapper(Dialer),
 		lock:        sync.RWMutex{},
 	}
 	return
