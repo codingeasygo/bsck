@@ -1,28 +1,35 @@
 package bsrouter
 
 import (
+	"net"
+
 	"github.com/codingeasygo/bsck/router"
 	"github.com/codingeasygo/tun2conn"
 )
 
 var globalGateway *tun2conn.Gateway
 
-func SwitchProxyMode(mode string) (result string) {
+func SwitchProxyMode(mode string) (res Result) {
 	if globalGateway == nil {
-		result = "gateway is not running"
+		res = newCodeResult(-1, "gateway is not running")
 		return
 	}
 	globalGateway.Mode = tun2conn.ProxyMode(mode)
+	res = newCodeResult(0, "OK")
 	return
 }
 
-func StartGateway(netAddr, gwAddr, gwDNS string) (result string) {
+func StartGateway(netAddr, gwAddr, gwDNS, channel, mode string) (res Result) {
+	if globalGateway != nil {
+		res = newCodeResult(0, "running")
+		return
+	}
 	if len(globalWorkDir) < 1 {
-		result = "not boot"
+		res = newCodeResult(-1, "not bootstrap")
 		return
 	}
 	if globalDialer == nil {
-		result = "node is not setup"
+		res = newCodeResult(-1, "node is not setup")
 		return
 	}
 	if prepareDevice != nil {
@@ -30,11 +37,15 @@ func StartGateway(netAddr, gwAddr, gwDNS string) (result string) {
 		if err != nil {
 			router.ErrorLog("Gateway prepare device error %v", err)
 			lastError = err
-			result = err.Error()
+			res = newCodeResult(-1, err.Error())
 			return
 		}
 	}
 	gw := tun2conn.NewGateway(globalDevice, gwAddr+"/24", gwDNS)
+	gw.Channel = func(on string, ip net.IP, port uint16, domain, cname string, questions []string) string {
+		return channel
+	}
+	gw.Mode = tun2conn.ProxyMode(mode)
 	gw.Cache = globalWorkDir
 	gw.GFW = globalGFW
 	gw.Dialer = globalDialer
@@ -42,15 +53,15 @@ func StartGateway(netAddr, gwAddr, gwDNS string) (result string) {
 	if err != nil {
 		router.ErrorLog("Gateway start error %v", err)
 		lastError = err
-		result = err.Error()
+		res = newCodeResult(-1, err.Error())
 		return
 	}
 	globalGateway = gw
-	result = "OK"
+	res = newCodeResult(0, "OK")
 	return
 }
 
-func StopGateway() (message string) {
+func StopGateway() (res Result) {
 	if globalGateway != nil {
 		globalGateway.Stop()
 	}
@@ -58,6 +69,6 @@ func StopGateway() (message string) {
 		resetDevice()
 	}
 	globalGateway = nil
-	message = "OK"
+	res = newCodeResult(0, "OK")
 	return
 }

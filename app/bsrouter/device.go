@@ -11,6 +11,8 @@ import (
 	"github.com/codingeasygo/tun2conn"
 	"github.com/codingeasygo/tun2conn/util"
 	"github.com/songgao/water"
+	"gvisor.dev/gvisor/pkg/buffer"
+	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
 var globalDevice io.ReadWriteCloser
@@ -25,51 +27,40 @@ func SetupPipeDevice(out Sender) (in Sender) {
 	return
 }
 
-func SetupFileDevice(fd uintptr) {
-	globalDevice = tun2conn.NewFileDevice(fd, "Gateway")
+func SetupFileDevice(fd int) {
+	globalDevice = tun2conn.NewFileDevice(uintptr(fd), "Gateway")
 	router.InfoLog("setup file device %v success", fd)
 }
 
-func SetupUdpDeivce(addr string) (
-	res struct {
-		Result string
-		Port   int
-	},
-) {
+func SetupUdpDeivce(addr string) (res Result) {
 	conn, err := net.ListenPacket("udp", addr)
 	if err != nil {
 		lastError = err
-		res.Result = err.Error()
+		res = newCodeResult(-1, err.Error())
 		router.ErrorLog("setup udp device %v fail with %v", addr, err)
 		return
 	}
-	res.Port = conn.LocalAddr().(*net.UDPAddr).Port
+	port := conn.LocalAddr().(*net.UDPAddr).Port
 	globalDevice = tun2conn.NewPacketConnDevice(conn)
-	res.Result = "OK"
+	res = newIntResult(port)
 	router.InfoLog("create udp device %v success", conn.LocalAddr())
 	return
 }
 
-func SetupTunDevice() (
-	res struct {
-		Name   string
-		Result string
-	},
-) {
+func SetupTunDevice() (res Result) {
 	device, err := water.New(water.Config{
 		DeviceType: water.TUN,
 	})
 	if err != nil {
 		lastError = err
-		res.Result = err.Error()
+		res = newCodeResult(-1, err.Error())
 		router.ErrorLog("setup tun device fail with %v", err)
 		return
 	}
-	res.Name = device.Name()
-	res.Result = "OK"
 	globalDevice = device
 	prepareDevice = prepareTunDevice
 	resetDevice = resetTunDevice
+	res = newStringResult(device.Name())
 	router.InfoLog("setup device %v success", device.Name())
 	return
 }
@@ -132,16 +123,16 @@ func resetTunDevice() {
 	tunWhitelist = nil
 }
 
-func ReleaseDevice() (result string) {
+func ReleaseDevice() (res Result) {
 	if globalDevice == nil {
-		result = "not setup"
+		res = newCodeResult(-1, "not setup")
 		return
 	}
 	err := globalDevice.Close()
 	if err == nil {
-		result = "OK"
+		res = newCodeResult(0, "OK")
 	} else {
-		result = err.Error()
+		res = newCodeResult(-1, err.Error())
 	}
 	return
 }
@@ -152,21 +143,24 @@ type Sender interface {
 }
 
 type tunConn struct {
-	out        Sender
-	readBuffer chan []byte
+	out    Sender
+	buffer chan *stack.PacketBuffer
 }
 
 func newTunConn(out Sender) (conn *tunConn) {
 	conn = &tunConn{
-		out:        out,
-		readBuffer: make(chan []byte, 64),
+		out:    out,
+		buffer: make(chan *stack.PacketBuffer, 64),
 	}
 	return
 }
 
 func (w *tunConn) Send(p []byte) {
+	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+		Payload: buffer.MakeWithData(p),
+	})
 	select {
-	case w.readBuffer <- p:
+	case w.buffer <- pkt:
 	default:
 	}
 }
@@ -175,14 +169,16 @@ func (w *tunConn) Done() {
 	w.Close()
 }
 
-func (w *tunConn) Read(p []byte) (n int, err error) {
-	data := <-w.readBuffer
-	if len(data) < 1 {
+func (w *tunConn) ReadPacket() (pkt *stack.PacketBuffer, err error) {
+	pkt = <-w.buffer
+	if pkt == nil {
 		err = fmt.Errorf("closed")
-		return
 	}
-	n = copy(p, data)
 	return
+}
+
+func (w *tunConn) Read(p []byte) (n int, err error) {
+	panic("not supported")
 }
 
 func (w *tunConn) Write(p []byte) (n int, err error) {
@@ -193,7 +189,7 @@ func (w *tunConn) Write(p []byte) (n int, err error) {
 
 func (w *tunConn) Close() (err error) {
 	select {
-	case w.readBuffer <- nil:
+	case w.buffer <- nil:
 	default:
 	}
 	w.out.Done()

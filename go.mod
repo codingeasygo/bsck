@@ -5,7 +5,7 @@ go 1.21.1
 toolchain go1.21.4
 
 require (
-	github.com/codingeasygo/tun2conn v0.0.0-20231209045203-9b05c92b697a
+	github.com/codingeasygo/tun2conn v0.0.0-20231210075540-76f42c6dc7ee
 	github.com/codingeasygo/util v0.0.0-20231206062002-1ce2f004b7d9
 	github.com/codingeasygo/web v0.0.0-20230907002627-38429b961da0
 	github.com/creack/pty v1.1.20
@@ -16,6 +16,7 @@ require (
 	golang.org/x/crypto v0.16.0
 	golang.org/x/mobile v0.0.0-20231127183840-76ac6878050a
 	golang.org/x/net v0.19.0
+	gvisor.dev/gvisor v0.0.0-20231202080848-1f7806d17489
 )
 
 require (
@@ -32,11 +33,10 @@ require (
 	golang.org/x/sys v0.15.0 // indirect
 	golang.org/x/time v0.3.0 // indirect
 	golang.org/x/tools v0.16.0 // indirect
-	gvisor.dev/gvisor v0.0.0-20231202080848-1f7806d17489 // indirect
 )
 
 replace gvisor.dev/gvisor v0.0.0-20231202080848-1f7806d17489 => github.com/codingeasygo/gvisor v0.0.0-20231203111534-4a1d1d9214fa
 
-// replace github.com/codingeasygo/tun2conn => ../tun2conn
+replace github.com/codingeasygo/tun2conn => ../tun2conn
 
 // replace github.com/codingeasygo/util => ../util

@@ -2,6 +2,8 @@ package bsrouter
 
 import (
 	"log"
+	"net/http"
+	_ "net/http/pprof"
 
 	"github.com/codingeasygo/bsck/dialer"
 	"github.com/codingeasygo/bsck/router"
@@ -11,6 +13,10 @@ import (
 
 	_ "golang.org/x/mobile/bind"
 )
+
+func init() {
+	go http.ListenAndServe(":6063", nil)
+}
 
 var logPrinter Logger
 var logger = log.New(&logWriter{}, "", log.Ldate|log.Lmicroseconds|log.Lshortfile)
@@ -23,13 +29,19 @@ func init() {
 	t2clog.Log = logger
 }
 
-func Bootstrap(dir string, log Logger) (result string) {
+func Bootstrap(dir string, log Logger) (res Result) {
 	if len(dir) < 1 {
-		result = "work dir is empty"
+		res = newCodeResult(-1, "work dir is empty")
 		return
 	}
 	globalWorkDir = dir
 	logPrinter = log
+	res = newCodeResult(0, "OK")
+	return
+}
+
+func HandleMessage(message []byte) (response []byte) {
+	response = message
 	return
 }
 
@@ -46,6 +58,58 @@ func (l *logWriter) Write(p []byte) (n int, err error) {
 	}
 	n = len(p)
 	return
+}
+
+type Result interface {
+	Code() int
+	Message() string
+	IntValue() int
+	StringValue() string
+}
+
+type valueResult struct {
+	code        int
+	message     string
+	intValue    int
+	stringValue string
+}
+
+func newCodeResult(code int, message string) (result *valueResult) {
+	result = &valueResult{
+		code:    code,
+		message: message,
+	}
+	return
+}
+
+func newIntResult(v int) (result *valueResult) {
+	result = &valueResult{
+		intValue: v,
+	}
+	return
+}
+
+func newStringResult(v string) (result *valueResult) {
+	result = &valueResult{
+		stringValue: v,
+	}
+	return
+}
+
+func (v *valueResult) Code() int {
+	return v.code
+}
+
+func (v *valueResult) Message() string {
+	return v.message
+}
+
+func (v *valueResult) IntValue() int {
+	return v.intValue
+}
+
+func (v *valueResult) StringValue() string {
+	return v.stringValue
 }
 
 func State() (state string) {

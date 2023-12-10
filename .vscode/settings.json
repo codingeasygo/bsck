@@ -4,4 +4,6 @@
         "comments": true,
         "strings": false
     },
+    "lldb.library": "/Applications/Xcode.app/Contents/SharedFrameworks/LLDB.framework/Versions/A/LLDB",
+    "lldb.launch.expressions": "native",
 }

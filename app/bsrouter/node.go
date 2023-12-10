@@ -17,9 +17,13 @@ var globalConsole *router.Console
 var globalService *router.Service
 var globalWhiltelist []string
 
-func StartConsole(config string) (whiltelist []string, result string) {
+func StartConsole(config string) (res Result) {
+	if globalConsole != nil {
+		res = newCodeResult(0, "running")
+		return
+	}
 	if len(globalWorkDir) < 1 {
-		result = "not boot"
+		res = newCodeResult(-1, "not bootstrap")
 		return
 	}
 	var err error
@@ -35,11 +39,12 @@ func StartConsole(config string) (whiltelist []string, result string) {
 	}
 	if err != nil {
 		router.ErrorLog("Gateway prase config error %v by \n %v", err, conf)
-		result = err.Error()
 		lastError = err
+		res = newCodeResult(-1, err.Error())
 		return
 	}
 	conf.Dir = globalWorkDir
+	whiltelist := []string{}
 	for _, ip := range conf.ResolveWhitelist() {
 		whiltelist = append(whiltelist, ip.String())
 	}
@@ -47,14 +52,14 @@ func StartConsole(config string) (whiltelist []string, result string) {
 	err = cli.Ping("tcp://echo", time.Second, 1)
 	if err != nil {
 		router.ErrorLog("Gateway ping to router error %v", err)
-		result = err.Error()
 		lastError = err
+		res = newCodeResult(-1, err.Error())
 		return
 	}
 	globalDialer = cli
 	globalConsole = cli
 	globalWhiltelist = whiltelist
-	result = "OK"
+	res = newStringResult(strings.Join(whiltelist, ","))
 	return
 }
 
@@ -66,9 +71,13 @@ func StopConsole() {
 	}
 }
 
-func StartNode(config string) (whiltelist []string, result string) {
+func StartNode(config string) (res Result) {
+	if globalService != nil {
+		res = newCodeResult(0, "running")
+		return
+	}
 	if len(globalWorkDir) < 1 {
-		result = "not boot"
+		res = newCodeResult(-1, "not bootstrap")
 		return
 	}
 	var err error
@@ -85,10 +94,15 @@ func StartNode(config string) (whiltelist []string, result string) {
 	if err != nil {
 		router.ErrorLog("Gateway prase config error %v by \n %v", err, conf)
 		lastError = err
-		result = err.Error()
+		res = newCodeResult(-1, err.Error())
 		return
 	}
 	conf.Dir = globalWorkDir
+	unixFile, _ := conf.ConsoleUnix()
+	if len(unixFile) > 0 {
+		os.RemoveAll(unixFile)
+	}
+	whiltelist := []string{}
 	for _, ip := range conf.ResolveWhitelist() {
 		whiltelist = append(whiltelist, ip.String())
 	}
@@ -96,37 +110,37 @@ func StartNode(config string) (whiltelist []string, result string) {
 		rootCert, rootKey, rootCertPEM, rootKeyPEM, xerr := xcrypto.GenerateRootCA([]string{"bsrouter"}, "bsrouter", 2048)
 		if xerr != nil {
 			lastError = xerr
-			result = xerr.Error()
+			res = newCodeResult(-1, err.Error())
 			return
 		}
 		_, _, certPEM, keyPEM, xerr := xcrypto.GenerateCert(rootCert, rootKey, nil, []string{"bsrouter"}, "bsrouter", []string{"bsrouter"}, nil, 2048)
 		if xerr != nil {
 			lastError = xerr
-			result = xerr.Error()
+			res = newCodeResult(-1, err.Error())
 			return
 		}
 		xerr = os.WriteFile(filepath.Join(conf.Dir, "rootCA.key"), rootKeyPEM, os.ModePerm)
 		if xerr != nil {
 			lastError = xerr
-			result = xerr.Error()
+			res = newCodeResult(-1, err.Error())
 			return
 		}
 		xerr = os.WriteFile(filepath.Join(conf.Dir, "rootCA.pem"), rootCertPEM, os.ModePerm)
 		if xerr != nil {
 			lastError = xerr
-			result = xerr.Error()
+			res = newCodeResult(-1, err.Error())
 			return
 		}
 		xerr = os.WriteFile(filepath.Join(conf.Dir, "bsrouter.key"), keyPEM, os.ModePerm)
 		if xerr != nil {
 			lastError = xerr
-			result = xerr.Error()
+			res = newCodeResult(-1, err.Error())
 			return
 		}
 		xerr = os.WriteFile(filepath.Join(conf.Dir, "bsrouter.pem"), certPEM, os.ModePerm)
 		if xerr != nil {
 			lastError = xerr
-			result = xerr.Error()
+			res = newCodeResult(-1, err.Error())
 			return
 		}
 		router.InfoLog("Node create cert on %v by bsrouter.key/bsrouter.pem", conf.Dir)
@@ -136,13 +150,13 @@ func StartNode(config string) (whiltelist []string, result string) {
 	xerr := service.Start()
 	if xerr != nil {
 		lastError = xerr
-		result = xerr.Error()
+		res = newCodeResult(-1, err.Error())
 		return
 	}
 	globalDialer = service
 	globalService = service
 	globalWhiltelist = whiltelist
-	result = "OK"
+	res = newCodeResult(0, "OK")
 	return
 }
 

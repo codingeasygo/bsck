@@ -5,8 +5,10 @@ github.com/chzyer/readline v0.0.0-20180603132655-2972be24d48e/go.mod h1:nSuG5e5P
 github.com/chzyer/test v0.0.0-20180213035817-a1ea475d72b1/go.mod h1:Q3SI9o4m/ZMnBNeIyt5eFwwo7qiLfzFZmjNmxjkiQlU=
 github.com/codingeasygo/gvisor v0.0.0-20231203111534-4a1d1d9214fa h1:IcMNl2HmkIWx2DYqLtI8/EYtRH7LKnywOKu3AEPDoWs=
 github.com/codingeasygo/gvisor v0.0.0-20231203111534-4a1d1d9214fa/go.mod h1:10sU+Uh5KKNv1+2x2A0Gvzt8FjD3ASIhorV3YsauXhk=
-github.com/codingeasygo/tun2conn v0.0.0-20231209045203-9b05c92b697a h1:pnnvgj4um2KGrFrqbuZAw6G6PRkWviSnG5CjtPbO3yU=
-github.com/codingeasygo/tun2conn v0.0.0-20231209045203-9b05c92b697a/go.mod h1:KQT0uHJVQxjtFC/hFSC0nfKu4zZWmUoo9Dgh80uTLAU=
+github.com/codingeasygo/tun2conn v0.0.0-20231209190755-f3d16640a382 h1:243Jhsz7Lt79cJPY8jktZ4hkdUm8qwpRX8kmHtITaY0=
+github.com/codingeasygo/tun2conn v0.0.0-20231209190755-f3d16640a382/go.mod h1:KQT0uHJVQxjtFC/hFSC0nfKu4zZWmUoo9Dgh80uTLAU=
+github.com/codingeasygo/tun2conn v0.0.0-20231209195415-cf6222369fe4 h1:mnF2mb1+4hEumktu0kCv7aluBz5ukWIxaokm3LQjnOg=
+github.com/codingeasygo/tun2conn v0.0.0-20231209195415-cf6222369fe4/go.mod h1:KQT0uHJVQxjtFC/hFSC0nfKu4zZWmUoo9Dgh80uTLAU=
 github.com/codingeasygo/util v0.0.0-20231206062002-1ce2f004b7d9 h1:lgZYRVFBxBu2ELumEtJHFINCz+Cs1eBVbv8XlhNP1FI=
 github.com/codingeasygo/util v0.0.0-20231206062002-1ce2f004b7d9/go.mod h1:CE705pc3Xn2F3nqMKhvfaigeXeDudpdteTzbf+2jwig=
 github.com/codingeasygo/web v0.0.0-20230907002627-38429b961da0 h1:EB2qTZ3dth9C7XAiQhmJbHY5faGfkVUr6p95oAdgm8k=

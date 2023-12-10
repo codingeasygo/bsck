@@ -46,3 +46,6 @@ bsconsole/bsrouter
 bsconsole/bsrouter.json
 bsconsole/bsrouter.key
 bsconsole/bsrouter.pem
+app/macos/Bsrouter.xcframework
+app/bsrouter.key
+app/bsrouter.pem
