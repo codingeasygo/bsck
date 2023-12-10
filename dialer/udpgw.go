@@ -42,18 +42,22 @@ func (u *UdpGwDialer) Bootstrap(options xmap.M) (err error) {
 	if err != nil {
 		return
 	}
-	u.MaxAlive = maxaLive * time.Millisecond
-	if len(dns) > 0 {
+	u.MTU = options.IntDef(1500, "mtu")
+	u.MaxConn = options.IntDef(0, "max_conn")
+	u.MaxAlive, err = time.ParseDuration(options.StrDef("30s", "max_alive"))
+	if dns := options.StrDef("", "dns"); len(dns) > 0 {
 		u.DNS, err = net.ResolveUDPAddr("", dns)
 		if err != nil {
 			return
 		}
 	}
+	udpgw.StartTimeout(5*time.Second, u.MaxAlive)
 	return
 }
 
 // shutdown
 func (u *UdpGwDialer) Shutdown() (err error) {
+	udpgw.StopTimeout()
 	return
 }
 
