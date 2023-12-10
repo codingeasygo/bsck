@@ -444,7 +444,8 @@ func (p *Node) dialConn(remote, proxy, tlsCert, tlsKey, tlsCA, tlsHost, tlsVerif
 
 // Login will add channel by local address, master address, auth token, channel index.
 func (p *Node) Login(option xmap.M) (channel Conn, result xmap.M, err error) {
-	var remoteAll, proxy, tlsCert, tlsKey, tlsCA, tlsHost, tlsVerify string
+	var remoteAll, proxy, tlsCert, tlsKey, tlsHost, tlsVerify string
+	var tlsCA = "rootCA.pem"
 	err = option.ValidFormat(`
 		remote,R|S,L:0;
 		proxy,O|S,L:0;
