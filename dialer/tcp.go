@@ -1,10 +1,12 @@
 package dialer
 
 import (
+	"context"
 	"net"
 	"net/url"
 	"regexp"
 	"syscall"
+	"time"
 
 	"github.com/codingeasygo/util/xmap"
 )
@@ -75,7 +77,9 @@ func (t *TCPDialer) Dial(channel Channel, sid uint16, uri string) (raw Conn, err
 				host += ":443"
 			}
 		}
-		raw, err = dialer.Dial("tcp", host)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		raw, err = dialer.DialContext(ctx, "tcp", host)
+		cancel()
 	}
 	return
 }
