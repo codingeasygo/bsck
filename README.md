@@ -353,4 +353,4 @@ supported protocol
 * `alias~vnc://:password@host:port` listen tcp  by host:port, and generate rdp file on `vnc_dir` by alias.vnc, user is not needed, password is encrypted
 * `alias~web://` forward web by `http://localhost:port/dav/alias` to uri when `web` configure is enabled.
 * `alias~ws://` forward websocket by `ws://localhost:port/ws/alias` to uri when `web` configure is enabled.
-
+* `alias~host://` forward host.
