@@ -1141,6 +1141,7 @@ func (r *Router) procLoginChannel(channel Conn, frame *RouterFrame) (err error) 
 	message := converter.JSON(result)
 	writeMessage(channel, nil, frame.SID, CmdLoginBack, []byte(message))
 	InfoLog("Router(%v) the channel %v is login success on %v", r.Name, name, channel)
+	r.Handler.OnConnJoin(channel, string(frame.Data), result)
 	return
 }
 
