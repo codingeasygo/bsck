@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"regexp"
 	"strings"
 	"sync"
@@ -306,18 +307,21 @@ func (p *Node) loadClientConfig(tlsCert, tlsKey, tlsCA, tlsVerify string) (confi
 	if len(tlsCA) > 0 {
 		var certPEM []byte
 		certPEM, err = LoadPEMBlock(p.Dir, tlsCA)
-		if err != nil {
+		if err != nil && !os.IsNotExist(err) {
 			ErrorLog("Node(%v) load ca fail with %v", p.Name, err)
 			return
 		}
-		certPool := x509.NewCertPool()
-		ok := certPool.AppendCertsFromPEM([]byte(certPEM))
-		if !ok {
-			ErrorLog("Node(%v) append ca fail", p.Name)
-			err = fmt.Errorf("load %v fail", tlsCA)
-			return
+		if err == nil {
+			certPool := x509.NewCertPool()
+			ok := certPool.AppendCertsFromPEM([]byte(certPEM))
+			if !ok {
+				ErrorLog("Node(%v) append ca fail", p.Name)
+				err = fmt.Errorf("load %v fail", tlsCA)
+				return
+			}
+			config.RootCAs = certPool
 		}
-		config.RootCAs = certPool
+		err = nil
 	}
 	if len(tlsVerify) > 0 {
 		config.InsecureSkipVerify = tlsVerify == "0"
@@ -445,7 +449,7 @@ func (p *Node) dialConn(remote, proxy, tlsCert, tlsKey, tlsCA, tlsHost, tlsVerif
 // Login will add channel by local address, master address, auth token, channel index.
 func (p *Node) Login(option xmap.M) (channel Conn, result xmap.M, err error) {
 	var remoteAll, proxy, tlsCert, tlsKey, tlsHost, tlsVerify string
-	var tlsCA = "rootCA.pem"
+	var tlsCA = "bsrouterCA.pem"
 	err = option.ValidFormat(`
 		remote,R|S,L:0;
 		proxy,O|S,L:0;

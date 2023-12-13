@@ -447,7 +447,7 @@ func TestNode(t *testing.T) {
 			"token":    "123",
 			"tls_cert": "../certs/server.crt",
 			"tls_key":  "../certs/server.key",
-			"tls_ca":   "xxx.crt",
+			"tls_ca":   "0xXXXX",
 		})
 		if err == nil {
 			t.Error(err)
@@ -478,6 +478,11 @@ func TestNode(t *testing.T) {
 			return
 		}
 		_, err = proxy1.loadClientConfig("../certs/server.crt", "../certs/server.key", "log.go", "")
+		if err == nil {
+			t.Error(err)
+			return
+		}
+		_, err = proxy1.loadClientConfig("", "", "0xXXXXX", "")
 		if err == nil {
 			t.Error(err)
 			return
