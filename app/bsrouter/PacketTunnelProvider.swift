@@ -24,48 +24,6 @@ extension Data {
     }
 }
 
-open class Resolver {
-
-    fileprivate var state = __res_9_state()
-
-    public init() {
-        res_9_ninit(&state)
-    }
-
-    deinit {
-        res_9_ndestroy(&state)
-    }
-
-    public final func getservers() -> [res_9_sockaddr_union] {
-
-        let maxServers = 10
-        var servers = [res_9_sockaddr_union](repeating: res_9_sockaddr_union(), count: maxServers)
-        let found = Int(res_9_getservers(&state, &servers, Int32(maxServers)))
-
-        // filter is to remove the erroneous empty entry when there's no real servers
-       return Array(servers[0 ..< found]).filter() { $0.sin.sin_len > 0 }
-    }
-}
-
-extension Resolver {
-    public static func getnameinfo(_ s: res_9_sockaddr_union) -> String {
-        var s = s
-        var hostBuffer = [CChar](repeating: 0, count: Int(NI_MAXHOST))
-
-        var sinlen = socklen_t(s.sin.sin_len)
-        let _ = withUnsafePointer(to: &s) {
-            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-                Darwin.getnameinfo($0, sinlen,
-                                   &hostBuffer, socklen_t(hostBuffer.count),
-                                   nil, 0,
-                                   NI_NUMERICHOST)
-            }
-        }
-
-        return String(cString: hostBuffer)
-    }
-}
-
 class PacketTunnelProvider: NEPacketTunnelProvider, BsrouterLoggerProtocol, BsrouterSenderProtocol {
     var netAddr = "10.7.3.7"
     var netPrefix = "24"
@@ -138,7 +96,6 @@ class PacketTunnelProvider: NEPacketTunnelProvider, BsrouterLoggerProtocol, Bsro
         userRules = pconf!["userRules"] as! String
         channel = pconf!["channel"] as! String
         mode = pconf!["mode"] as! String
-//        let servers = Resolver().getservers().map(Resolver.getnameinfo)
 
         var res: BsrouterResultProtocol?
 
@@ -173,7 +130,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider, BsrouterLoggerProtocol, Bsro
     }
 
     override func handleAppMessage(_ messageData: Data, completionHandler: ((Data?) -> Void)?) {
-        var res = BsrouterHandleMessage(messageData)
+        let res = BsrouterHandleMessage(messageData)
         if let handler = completionHandler {
             handler(res)
         }

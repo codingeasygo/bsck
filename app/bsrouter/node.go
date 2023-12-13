@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/codingeasygo/bsck/router"
+	"github.com/codingeasygo/tun2conn/gfw"
 	"github.com/codingeasygo/util/xcrypto"
 	"github.com/codingeasygo/util/xio"
 )
@@ -147,6 +148,7 @@ func StartNode(config string) (res Result) {
 	}
 	service := router.NewService()
 	service.Config = conf
+	service.GFW = gfw.Shared
 	xerr := service.Start()
 	if xerr != nil {
 		lastError = xerr

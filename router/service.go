@@ -24,10 +24,12 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/codingeasygo/bsck/dialer"
 	"github.com/codingeasygo/bsck/router/native"
 	"github.com/codingeasygo/tun2conn/gfw"
+	"github.com/codingeasygo/util/converter"
 	"github.com/codingeasygo/util/proxy"
 	sproxy "github.com/codingeasygo/util/proxy/socks"
 	wproxy "github.com/codingeasygo/util/proxy/ws"
@@ -103,6 +105,10 @@ type Config struct {
 		Skip    []string `json:"skip"`
 		Channel string   `json:"channel"`
 	} `json:"proxy"`
+	Gfwlist struct {
+		Source  string `json:"source"`
+		Channel string `json:"channel"`
+	} `json:"gfwlist"`
 	Web       Web               `json:"web"`
 	Log       int               `json:"log"`
 	Forwards  map[string]string `json:"forwards"`
@@ -257,6 +263,50 @@ func (f ForwardFinderF) FindForward(uri string) (target string, err error) {
 	return
 }
 
+type HandlerMonitor struct {
+	Handler         Handler
+	AfterConnClose  func(raw Conn)
+	AfterConnJoin   func(channel Conn, option interface{}, result xmap.M)
+	AfterConnNotify func(channel Conn, message []byte)
+}
+
+func (h *HandlerMonitor) DialRawConn(channel Conn, id uint16, uri string) (conn Conn, err error) {
+	conn, err = h.Handler.DialRawConn(channel, id, uri)
+	return
+}
+
+func (h *HandlerMonitor) OnConnDialURI(channel Conn, conn string, parts []string) (err error) {
+	err = h.Handler.OnConnDialURI(channel, conn, parts)
+	return
+}
+
+func (h *HandlerMonitor) OnConnLogin(channel Conn, args string) (name string, result xmap.M, err error) {
+	name, result, err = h.Handler.OnConnLogin(channel, args)
+	return
+}
+
+func (h *HandlerMonitor) OnConnClose(raw Conn) (err error) {
+	err = h.Handler.OnConnClose(raw)
+	if h.AfterConnClose != nil {
+		h.AfterConnClose(raw)
+	}
+	return
+}
+
+func (h *HandlerMonitor) OnConnJoin(channel Conn, option interface{}, result xmap.M) {
+	h.Handler.OnConnJoin(channel, option, result)
+	if h.AfterConnJoin != nil {
+		h.AfterConnJoin(channel, option, result)
+	}
+}
+
+func (h *HandlerMonitor) OnConnNotify(channel Conn, message []byte) {
+	h.Handler.OnConnNotify(channel, message)
+	if h.AfterConnNotify != nil {
+		h.AfterConnNotify(channel, message)
+	}
+}
+
 // Service is bound socket service
 type Service struct {
 	Name    string
@@ -272,6 +322,7 @@ type Service struct {
 		Listen net.Listener
 		Server *proxy.Server
 	}
+	GFW         *gfw.Cache
 	Web         net.Listener
 	WebForward  *WebForward
 	Dialer      *dialer.Pool
@@ -712,7 +763,7 @@ func (s *Service) stopServiceBackendAll() {
 // PACH is http handler to get pac js
 func (s *Service) proxyPACH(w *web.Session) web.Result {
 	w.W.Header().Set("Content-Type", "application/x-javascript")
-	rules, _ := gfw.ReadAllRules(filepath.Join(s.Node.Dir, "gfwlist.txt"), filepath.Join(s.Node.Dir, "user_rules.txt"))
+	rules, _ := s.GFW.LoadAllRules()
 	abp := gfw.CreateAbpJS(rules, fmt.Sprintf("127.0.1:%v", s.Proxy.Web.Addr().(*net.TCPAddr).Port))
 	return w.Printf("%v", abp)
 }
@@ -729,6 +780,30 @@ func (s *Service) proxyModeH(w *web.Session) web.Result {
 		InfoLog("Server(%v) change proxy mode to %v success", s.Name, mode)
 		return w.Printf("%v", "OK")
 	}
+}
+
+func (s *Service) SelectChannel(match string) (channel string, err error) {
+	channelAll := s.Node.ListChannelName()
+	channelSelected := channelAll
+	if len(match) > 0 {
+		matcher, xerr := regexp.Compile(match)
+		if xerr != nil {
+			err = xerr
+			return
+		}
+		channelSelected = []string{}
+		for _, c := range channelAll {
+			if matcher.MatchString(c) {
+				channelSelected = append(channelSelected, c)
+			}
+		}
+	}
+	if len(channelSelected) < 1 {
+		err = fmt.Errorf("not channel be matched by %v", match)
+		return
+	}
+	channel = channelSelected[rand.Intn(len(channelSelected))]
+	return
 }
 
 func (s *Service) dialDirectPiper(uri string, bufferSize int) (raw xio.Piper, err error) {
@@ -748,29 +823,52 @@ func (s *Service) dialProxyPiper(uri string, bufferSize int) (raw xio.Piper, err
 			return
 		}
 	}
-	channelAll := s.Node.ListChannelName()
-	channelSelected := channelAll
-	if len(s.Config.Proxy.Channel) > 0 {
-		matcher, xerr := regexp.Compile(s.Config.Proxy.Channel)
-		if xerr != nil {
-			err = xerr
-			return
-		}
-		channelSelected = []string{}
-		for _, c := range channelAll {
-			if matcher.MatchString(c) {
-				channelSelected = append(channelSelected, c)
-			}
-		}
-	}
-	if len(channelSelected) < 1 {
-		err = fmt.Errorf("not channel be used on proxy")
+	channel, err := s.SelectChannel(s.Config.Proxy.Channel)
+	if err != nil {
 		return
 	}
-	channel := channelSelected[rand.Intn(len(channelSelected))]
 	targetURI := fmt.Sprintf("%v->%v", channel, uri)
 	raw, err = s.DialPiper(targetURI, bufferSize)
 	return
+}
+
+func (s *Service) UpdateGfwlist() {
+	updatedFile := filepath.Join(s.Node.Dir, "gfwlist.txt.update")
+	updated, err := os.ReadFile(updatedFile)
+	if err != nil && !os.IsNotExist(err) {
+		WarnLog("Server(%v) read gfwlist updated fail %v", s.Name, err)
+		return
+	}
+	updatedTime := converter.Int64(strings.TrimSpace(string(updated)))
+	if time.Since(xtime.TimeUnix(updatedTime)) < 24*time.Hour {
+		return
+	}
+	channel, _ := s.SelectChannel(s.Config.Gfwlist.Channel)
+	if len(channel) < 1 {
+		return
+	}
+	os.WriteFile(updatedFile, []byte(fmt.Sprintf("%d", xtime.Now())), os.ModePerm)
+	InfoLog("Server(%v) start update gfwlist from %v", s.Name, gfw.GfwlistSource)
+	client := xhttp.NewClient(&http.Client{
+		Transport: &http.Transport{
+			Dial: func(network, addr string) (conn net.Conn, err error) {
+				conn, err = s.DialNet(network, channel+"->tcp://"+addr)
+				return
+			},
+		},
+	})
+	err = s.GFW.Update(client, s.Config.Gfwlist.Source)
+	if err == nil {
+		InfoLog("Server(%v) update gfwlist success to %v", s.Name, s.Node.Dir)
+	} else {
+		WarnLog("Server(%v) update gfwlist fail %v to %v", s.Name, err, s.Node.Dir)
+	}
+}
+
+func (s *Service) afterConnJoin(channel Conn, option interface{}, result xmap.M) {
+	if len(s.Config.Gfwlist.Channel) > 0 {
+		s.UpdateGfwlist()
+	}
 }
 
 // Start will start service
@@ -789,6 +887,9 @@ func (s *Service) Start() (err error) {
 	proxy.SetLogLevel(s.Config.Log)
 	SetLogLevel(s.Config.Log)
 	InfoLog("Server(%v) will start by config %v", s.Name, s.ConfigPath)
+	if s.GFW == nil {
+		s.GFW = gfw.NewCache(s.Config.Dir)
+	}
 	s.Console.SOCKS = sproxy.NewServer()
 	s.Console.SOCKS.Dialer = xio.PiperDialerF(s.dialConsolePiper)
 	s.Console.SOCKS.BufferSize = s.BufferSize
@@ -810,7 +911,7 @@ func (s *Service) Start() (err error) {
 		handler.ConnDialer = DialRawConnF(s.DialRawConn)
 		s.Handler = handler
 	}
-	s.Node = NewNode(s.Config.Name, s.BufferSize, s.Handler)
+	s.Node = NewNode(s.Config.Name, s.BufferSize, &HandlerMonitor{Handler: s.Handler, AfterConnJoin: s.afterConnJoin})
 	s.Node.Dir = s.Config.Dir
 	s.Webs["state"] = http.HandlerFunc(s.Node.Router.StateH)
 	s.Dialer = dialer.NewPool(s.Config.Name)

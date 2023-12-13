@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/codingeasygo/bsck/router/native"
+	"github.com/codingeasygo/tun2conn/gfw"
 	"github.com/codingeasygo/util/converter"
 	"github.com/codingeasygo/util/proxy/socks"
 	"github.com/codingeasygo/util/xdebug"
@@ -60,6 +61,10 @@ func init() {
 	if err != nil {
 		panic(err)
 	}
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintf(w, "%v", gfw.GfwlistDefault)
+	}))
+	gfw.GfwlistSource = ts.URL
 	go http.ListenAndServe(":6063", nil)
 }
 

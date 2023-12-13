@@ -525,9 +525,35 @@ var configTestCaller = `
     "console": {
         "socks": ":1701"
     },
+    "forwards": {},
+    "channels": {
+        "master": {
+            "enable": 1,
+            "remote": "localhost:15023",
+            "token": "abc",
+            "index": 0
+        }
+    },
+    "dialer": {
+        "standard": 1
+    }
+}
+`
+
+var configTestProxy = `
+{
+    "name": "caller",
+    "listen": "",
+    "web": {},
+    "console": {
+        "socks": ":1701"
+    },
     "proxy": {
         "web": "127.0.0.1:0",
         "addr": "127.0.0.1:0",
+        "channel": ".*"
+    },
+    "gfwlist": {
         "channel": ".*"
     },
     "forwards": {},
@@ -549,7 +575,7 @@ func TestProxy(t *testing.T) {
 	// LogLevel
 	os.WriteFile("/tmp/test_master.json", []byte(configTestMaster), os.ModePerm)
 	os.WriteFile("/tmp/test_slaver.json", []byte(configTestSlaver), os.ModePerm)
-	os.WriteFile("/tmp/test_caller.json", []byte(configTestCaller), os.ModePerm)
+	os.WriteFile("/tmp/test_caller.json", []byte(configTestProxy), os.ModePerm)
 	defer func() {
 		os.Remove("/tmp/test_master.json")
 		os.Remove("/tmp/test_slaver.json")
@@ -578,7 +604,7 @@ func TestProxy(t *testing.T) {
 		t.Error(err)
 		return
 	}
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(1000 * time.Millisecond)
 
 	ts := httptest.NewServer(caller.Proxy.Mux)
 
@@ -623,6 +649,25 @@ func TestProxy(t *testing.T) {
 		t.Error(err)
 		return
 	}
+	//gfwlist
+	os.Remove("/tmp/gfwlist.txt.update")
+	caller.UpdateGfwlist()
+	caller.UpdateGfwlist()
+
+	os.Remove("/tmp/gfwlist.txt.update")
+	caller.Config.Gfwlist.Channel = "none"
+	caller.UpdateGfwlist()
+
+	caller.Node.Dir = "none"
+	caller.Config.Gfwlist.Channel = ".*"
+	caller.UpdateGfwlist()
+
+	caller.Node.Dir = caller.Config.Dir
+	os.Remove("/tmp/gfwlist.txt.update")
+	os.WriteFile("/tmp/gfwlist.txt.update", []byte(""), 01000)
+	caller.UpdateGfwlist()
+	os.Remove("/tmp/gfwlist.txt.update")
+
 	//not channel
 	caller.Config.Proxy.Channel = "none"
 	caller.Config.Proxy.Skip = []string{}
@@ -1039,4 +1084,16 @@ func TestResolveWhitelist(t *testing.T) {
 		return
 	}
 	fmt.Printf("whitelist is \n%v\n", wl)
+}
+
+func TestHandlerMonitor(t *testing.T) {
+	handler := &HandlerMonitor{
+		Handler:         NewNormalAcessHandler("test"),
+		AfterConnClose:  func(raw Conn) {},
+		AfterConnJoin:   func(channel Conn, option interface{}, result xmap.M) {},
+		AfterConnNotify: func(channel Conn, message []byte) {},
+	}
+	handler.OnConnClose(nil)
+	handler.OnConnJoin(nil, nil, nil)
+	handler.OnConnNotify(nil, nil)
 }

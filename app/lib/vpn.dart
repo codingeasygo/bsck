@@ -91,7 +91,7 @@ class VpnConfig {
     var vc = VpnConfig();
     vc.name = "app";
     vc.channel = ".*";
-    vc.mode = "all";
+    vc.mode = "none";
     vc.config = jsonEncode({
       "name": "app",
       "channels": {
@@ -100,6 +100,36 @@ class VpnConfig {
           "token": "123",
           "tls_verify": 0
         },
+      },
+      "console": {
+        "unix": "none",
+      },
+      "dialer": {
+        "std": 1,
+      },
+    });
+    return vc;
+  }
+
+  static VpnConfig testHK() {
+    var vc = VpnConfig();
+    vc.name = "app";
+    vc.channel = ".*";
+    vc.mode = "auto";
+    vc.config = jsonEncode({
+      "name": "app",
+      "channels": {
+        "N0": {
+          "remote": "tls://hk.sxbastudio.com:10023",
+          "token": "123",
+          "tls_verify": 0
+        },
+      },
+      "console": {
+        "unix": "none",
+      },
+      "dialer": {
+        "std": 1,
       },
     });
     return vc;
