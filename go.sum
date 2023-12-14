@@ -9,6 +9,8 @@ github.com/codingeasygo/tun2conn v0.0.0-20231213091254-2140cd9f2c51 h1:IWi7pLyAO
 github.com/codingeasygo/tun2conn v0.0.0-20231213091254-2140cd9f2c51/go.mod h1:KQT0uHJVQxjtFC/hFSC0nfKu4zZWmUoo9Dgh80uTLAU=
 github.com/codingeasygo/tun2conn v0.0.0-20231214010121-21cc268cbc72 h1:cyEu+IdXMWPMAp+bnVv5ImE4LRKmkei2DqvLDntOT3s=
 github.com/codingeasygo/tun2conn v0.0.0-20231214010121-21cc268cbc72/go.mod h1:KQT0uHJVQxjtFC/hFSC0nfKu4zZWmUoo9Dgh80uTLAU=
+github.com/codingeasygo/tun2conn v0.0.0-20231214053921-44d16b8d9b29 h1:dBXmKSFYodQvmoZaxDZkd7SdiTYSF772g5mroDXWEHY=
+github.com/codingeasygo/tun2conn v0.0.0-20231214053921-44d16b8d9b29/go.mod h1:bQSg615U7YIlthRy/DOtiYJEoggTXwINzvwhxIt/10A=
 github.com/codingeasygo/util v0.0.0-20231206062002-1ce2f004b7d9 h1:lgZYRVFBxBu2ELumEtJHFINCz+Cs1eBVbv8XlhNP1FI=
 github.com/codingeasygo/util v0.0.0-20231206062002-1ce2f004b7d9/go.mod h1:CE705pc3Xn2F3nqMKhvfaigeXeDudpdteTzbf+2jwig=
 github.com/codingeasygo/web v0.0.0-20230907002627-38429b961da0 h1:EB2qTZ3dth9C7XAiQhmJbHY5faGfkVUr6p95oAdgm8k=

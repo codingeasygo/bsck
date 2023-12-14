@@ -5,7 +5,7 @@ go 1.21.1
 toolchain go1.21.4
 
 require (
-	github.com/codingeasygo/tun2conn v0.0.0-20231214010121-21cc268cbc72
+	github.com/codingeasygo/tun2conn v0.0.0-20231214053921-44d16b8d9b29
 	github.com/codingeasygo/util v0.0.0-20231206062002-1ce2f004b7d9
 	github.com/codingeasygo/web v0.0.0-20230907002627-38429b961da0
 	github.com/creack/pty v1.1.20
