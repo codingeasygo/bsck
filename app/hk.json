@@ -1,0 +1,16 @@
+{
+    "name": "app",
+    "channels": {
+        "N0": {
+            "remote": "tls://hk.sxbastudio.com:10023",
+            "token": "123",
+            "tls_verify": 0
+        }
+    },
+    "console": {
+        "unix": "/tmp/app.sock"
+    },
+    "dialer": {
+        "std": 1
+    }
+}

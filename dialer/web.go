@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"sync"
 
+	"github.com/codingeasygo/util/xio"
 	"github.com/codingeasygo/util/xmap"
 	"golang.org/x/net/webdav"
 )
@@ -82,6 +83,15 @@ func (web *WebDialer) Dial(channel Channel, sid uint16, uri string) (raw Conn, e
 	web.cons[fmt.Sprintf("%v", sid)] = conn
 	web.accept <- conn
 	raw = basic
+	return
+}
+
+// Dial to web server as Piper
+func (web *WebDialer) DialPiper(uri string, bufferSize int) (raw xio.Piper, err error) {
+	conn, err := web.Dial(NewChannelInfo(0, ""), 0, uri)
+	if err == nil {
+		raw = xio.NewCopyPiper(conn, bufferSize)
+	}
 	return
 }
 

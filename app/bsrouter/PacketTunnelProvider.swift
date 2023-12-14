@@ -36,6 +36,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider, BsrouterLoggerProtocol, Bsro
     var userRules = ""
     var channel = ""
     var mode = ""
+    var excluded:[NEIPv4Route] = []
 
     var gatewayIn: BsrouterSenderProtocol?
 
@@ -78,6 +79,15 @@ class PacketTunnelProvider: NEPacketTunnelProvider, BsrouterLoggerProtocol, Bsro
     func startNode() -> BsrouterResultProtocol? {
         var res = BsrouterStartNode(nodeConfig)
         if res?.code() == 0 {
+            excluded = []
+            res?.stringValue().split(separator: ",").forEach { ip in
+                if ip.isEmpty {
+                    return
+                }
+                if ip.contains(".") {
+                    excluded.append(NEIPv4Route(destinationAddress: String(ip), subnetMask: "255.255.255.255"))
+                }
+            }
             res = BsrouterStartGateway(netAddr, gwAddr, gwDNS, channel, mode)
         }
         return res
@@ -117,6 +127,9 @@ class PacketTunnelProvider: NEPacketTunnelProvider, BsrouterLoggerProtocol, Bsro
         newSettings.mtu = mtu as NSNumber
         newSettings.ipv4Settings = NEIPv4Settings(addresses: [netAddr], subnetMasks: [netMask])
         newSettings.ipv4Settings?.includedRoutes = [NEIPv4Route.default()]
+        if !excluded.isEmpty {
+            newSettings.ipv4Settings?.excludedRoutes = excluded
+        }
         newSettings.dnsSettings = NEDNSSettings(servers: [gwDNS])
         setTunnelNetworkSettings(newSettings) { e in
             completionHandler(e)

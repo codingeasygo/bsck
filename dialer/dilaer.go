@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/codingeasygo/util/converter"
+	"github.com/codingeasygo/util/xio"
 	"github.com/codingeasygo/util/xmap"
 )
 
@@ -151,7 +152,7 @@ func (p *Pool) Bootstrap(options xmap.M) error {
 	return nil
 }
 
-// Dial the uri by dialer poo
+// Dial the uri by dialer on pool
 func (p *Pool) Dial(channel Channel, sid uint16, uri string) (r Conn, err error) {
 	DebugLog("Pool(%v) try dial to %v", p.Name, uri)
 	for _, dialer := range p.Dialers {
@@ -161,6 +162,20 @@ func (p *Pool) Dial(channel Channel, sid uint16, uri string) (r Conn, err error)
 		}
 	}
 	err = fmt.Errorf("uri(%v) is not supported(not matched dialer)", uri)
+	return
+}
+
+// Dial the uri by dialer pool
+func (p *Pool) DialPiper(uri string, bufferSize int) (raw xio.Piper, err error) {
+	conn, err := p.Dial(NewChannelInfo(0, ""), 0, uri)
+	if err == nil {
+		piper, ok := conn.(xio.Piper)
+		if ok {
+			raw = piper
+		} else {
+			raw = xio.NewCopyPiper(conn, bufferSize)
+		}
+	}
 	return
 }
 

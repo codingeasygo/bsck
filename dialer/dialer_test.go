@@ -82,6 +82,21 @@ func TestPool(t *testing.T) {
 		t.Error(err)
 		return
 	}
+
+	//test dialer piper
+	pool = NewPool("test")
+	pool.AddDialer(NewUdpGwDialer(), NewEchoDialer())
+	_, err = pool.DialPiper("tcp://udpgw", 1024)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	_, err = pool.DialPiper("tcp://echo", 1024)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
 	//
 	//test error
 	//dialer type error

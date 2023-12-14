@@ -2,10 +2,14 @@ package bsrouter
 
 import (
 	"net"
+	"strings"
 
+	"github.com/codingeasygo/bsck/dialer"
 	"github.com/codingeasygo/bsck/router"
 	"github.com/codingeasygo/tun2conn"
 	"github.com/codingeasygo/tun2conn/gfw"
+	"github.com/codingeasygo/util/xio"
+	"github.com/codingeasygo/util/xmap"
 )
 
 var globalGateway *tun2conn.Gateway
@@ -47,6 +51,10 @@ func StartGateway(netAddr, gwAddr, gwDNS, channel, mode string) (res Result) {
 			return
 		}
 	}
+	localDialer := dialer.NewPool("local")
+	localDialer.Bootstrap(xmap.M{
+		"std": 1,
+	})
 	gw := tun2conn.NewGateway(globalDevice, gwAddr+"/24", gwDNS)
 	gw.Channel = func(on string, ip net.IP, port uint16, domain, cname string, questions []string) string {
 		return channel
@@ -56,10 +64,17 @@ func StartGateway(netAddr, gwAddr, gwDNS, channel, mode string) (res Result) {
 		router.InfoLog("%v,%v:%v,%v,%v,%v ===> %v", on, ip, port, domain, cname, questions, uri)
 		return
 	}
+	gw.Dialer = xio.PiperDialerF(func(uri string, bufferSize int) (raw xio.Piper, err error) {
+		if strings.Contains(uri, "->") {
+			raw, err = globalDialer.DialPiper(uri, bufferSize)
+		} else {
+			raw, err = localDialer.DialPiper(uri, bufferSize)
+		}
+		return
+	})
 	gw.Mode = tun2conn.ProxyMode(mode)
 	gw.Cache = globalWorkDir
 	gw.GFW = gfw
-	gw.Dialer = globalDialer
 	err = gw.Start()
 	if err != nil {
 		router.ErrorLog("Gateway start error %v", err)

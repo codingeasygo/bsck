@@ -94,6 +94,7 @@ func TestWebDialer(t *testing.T) {
 		}
 		dialer.Bootstrap(nil)
 		fmt.Println(xhttp.GetText("http://localhost:2423/"))
+		dialer.DialPiper("test", 1024)
 		dialer.Shutdown()
 		time.Sleep(100 * time.Millisecond)
 		ln.Close()
