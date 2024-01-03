@@ -114,13 +114,6 @@ func runall(osArgs ...string) {
 	fn = strings.TrimSuffix(fn, ".exe")
 	args = osArgs[1:]
 
-	if len(args) > 0 && (strings.HasPrefix(args[0], "-slaver=") || strings.HasPrefix(args[0], "--slaver=")) {
-		slaverURI = args[0]
-		slaverURI = strings.TrimPrefix(slaverURI, "-slaver=")
-		slaverURI = strings.TrimPrefix(slaverURI, "--slaver=")
-		args = args[1:]
-	}
-
 	if strings.HasPrefix(fn, "bs-") {
 		command = strings.TrimPrefix(fn, "bs-")
 		args = args[:]
@@ -133,6 +126,14 @@ func runall(osArgs ...string) {
 		command = args[0]
 		args = args[1:]
 	}
+
+	if len(args) > 0 && (strings.HasPrefix(args[0], "-slaver=") || strings.HasPrefix(args[0], "--slaver=")) {
+		slaverURI = args[0]
+		slaverURI = strings.TrimPrefix(slaverURI, "-slaver=")
+		slaverURI = strings.TrimPrefix(slaverURI, "--slaver=")
+		args = args[1:]
+	}
+
 	switch command {
 	case "install":
 		fmt.Printf("start install command\n")
@@ -250,6 +251,7 @@ func runall(osArgs ...string) {
 			fmt.Fprintf(stderr, "parse config fail with %v\n", err)
 			exit(1)
 		}
+		slaverURI = config.ConsoleURI()
 		console = router.NewConsoleByConfig(&config)
 	} else {
 		if !strings.Contains(slaverURI, "://") {
