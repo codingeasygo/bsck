@@ -1765,7 +1765,7 @@ func (n *NormalAcessHandler) OnConnDialURI(channel Conn, conn string, parts []st
 			WarnLog("NormalAcessHandler(%v) compile dial access fail with %v by entry target %v", n.Name, targetError, entry[1])
 			continue
 		}
-		if target.MatchString(name) {
+		if target.MatchString(conn) {
 			return nil
 		}
 	}
