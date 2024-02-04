@@ -135,6 +135,15 @@ class VpnConfig {
     return vc;
   }
 
+  static VpnConfig testConfig() {
+    var vc = VpnConfig();
+    vc.name = "app";
+    vc.channel = ".*";
+    vc.mode = "auto";
+    vc.config = "socks5://127.0.0.1:10701";
+    return vc;
+  }
+
   @override
   String toString() {
     return 'VpnConfig(name: $name, channel: $channel, state: $state)';

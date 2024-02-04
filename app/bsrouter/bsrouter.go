@@ -15,7 +15,7 @@ import (
 )
 
 func init() {
-	go http.ListenAndServe(":6063", nil)
+	go http.ListenAndServe(":6065", nil)
 }
 
 var logPrinter Logger
@@ -24,9 +24,12 @@ var globalWorkDir string
 var lastError error
 
 func init() {
+	log.SetOutput(&logWriter{})
+	log.SetFlags(log.Ldate | log.Lmicroseconds | log.Lshortfile)
 	dialer.Logger = logger
 	router.Logger = logger
 	t2clog.Log = logger
+	t2clog.LogLevel = 3
 }
 
 func Bootstrap(dir string, log Logger) (res Result) {

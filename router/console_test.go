@@ -447,6 +447,14 @@ func TestConsole(t *testing.T) {
 				return
 			}
 		}
+		{ //api
+			ws, err := console.ListWhitelist()
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			fmt.Println("-->", ws)
+		}
 	}
 	testCaller(configTestConsole1)
 	testCaller(configTestConsole2)

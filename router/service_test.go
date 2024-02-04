@@ -335,6 +335,23 @@ func TestService(t *testing.T) {
 	}
 	service.Stop()
 	assertNotUnix(service.Config)
+	if tester.Run("PrepareSocksConsole") {
+		srv := NewService()
+		srv.Config = &Config{}
+		srv.Start()
+		port, err := srv.PrepareSocksConsole("127.0.0.1:0")
+		if err != nil || port < 1 {
+			t.Error(err)
+			return
+		}
+		port2, err := srv.PrepareSocksConsole("127.0.0.1:0")
+		if err != nil || port != port2 {
+			t.Error(err)
+			return
+		}
+		srv.Console.SOCKS.Start("127.0.0.1:0")
+		srv.Stop()
+	}
 	if tester.Run("StartError") {
 		srv := NewService()
 		err := srv.Start()
@@ -660,6 +677,10 @@ func TestProxy(t *testing.T) {
 
 	caller.Node.Dir = "none"
 	caller.Config.Gfwlist.Channel = ".*"
+	caller.UpdateGfwlist()
+
+	caller.Config.Gfwlist.Channel = ".*"
+	caller.Config.Gfwlist.Source = "none"
 	caller.UpdateGfwlist()
 
 	caller.Node.Dir = caller.Config.Dir

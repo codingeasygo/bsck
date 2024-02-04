@@ -8,7 +8,8 @@
         }
     },
     "console": {
-        "unix": "/tmp/app.sock"
+        "socks": "127.0.0.1:10701",
+        "unix": "none"
     },
     "dialer": {
         "std": 1

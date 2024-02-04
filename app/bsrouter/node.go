@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -18,6 +19,8 @@ var globalConsole *router.Console
 var globalService *router.Service
 var globalWhiltelist []string
 
+var schemeMatcher = regexp.MustCompile(`^[a-zA-z0-9]+://`)
+
 func StartConsole(config string) (res Result) {
 	if globalConsole != nil {
 		res = newCodeResult(0, "running")
@@ -28,37 +31,49 @@ func StartConsole(config string) (res Result) {
 		return
 	}
 	var err error
-	conf := &router.Config{}
-	if strings.HasPrefix(config, "{") {
-		err = json.Unmarshal([]byte(config), conf)
-	} else {
-		var data []byte
-		data, err = os.ReadFile(config)
-		if err == nil {
-			err = json.Unmarshal(data, conf)
+	var console *router.Console
+	var whiltelist []string
+	if schemeMatcher.MatchString(config) {
+		console = router.NewConsole(config)
+		whiltelist, err = console.ListWhitelist()
+		if err != nil {
+			router.ErrorLog("Gateway list whitelist error %v by %v", err, config)
+			lastError = err
+			res = newCodeResult(-1, err.Error())
+			return
 		}
+	} else {
+		conf := &router.Config{}
+		if strings.HasPrefix(config, "{") {
+			err = json.Unmarshal([]byte(config), conf)
+		} else {
+			var data []byte
+			data, err = os.ReadFile(config)
+			if err == nil {
+				err = json.Unmarshal(data, conf)
+			}
+		}
+		if err != nil {
+			router.ErrorLog("Gateway prase config error %v by \n %v", err, conf)
+			lastError = err
+			res = newCodeResult(-1, err.Error())
+			return
+		}
+		conf.Dir = globalWorkDir
+		for _, ip := range conf.ResolveWhitelist() {
+			whiltelist = append(whiltelist, ip.String())
+		}
+		console = router.NewConsoleByConfig(conf)
 	}
-	if err != nil {
-		router.ErrorLog("Gateway prase config error %v by \n %v", err, conf)
-		lastError = err
-		res = newCodeResult(-1, err.Error())
-		return
-	}
-	conf.Dir = globalWorkDir
-	whiltelist := []string{}
-	for _, ip := range conf.ResolveWhitelist() {
-		whiltelist = append(whiltelist, ip.String())
-	}
-	cli := router.NewConsoleByConfig(conf)
-	err = cli.Ping("tcp://echo", time.Second, 1)
+	err = console.Ping("tcp://echo", time.Second, 1)
 	if err != nil {
 		router.ErrorLog("Gateway ping to router error %v", err)
 		lastError = err
 		res = newCodeResult(-1, err.Error())
 		return
 	}
-	globalDialer = cli
-	globalConsole = cli
+	globalDialer = console
+	globalConsole = console
 	globalWhiltelist = whiltelist
 	res = newStringResult(strings.Join(whiltelist, ","))
 	return
@@ -158,7 +173,7 @@ func StartNode(config string) (res Result) {
 	globalDialer = service
 	globalService = service
 	globalWhiltelist = whiltelist
-	res = newCodeResult(0, "OK")
+	res = newStringResult(strings.Join(whiltelist, ","))
 	return
 }
 

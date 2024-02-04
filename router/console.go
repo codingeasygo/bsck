@@ -87,6 +87,7 @@ func (r *Rewrite) Match(host string) (rewrited string, ok bool) {
 // Console is node console to dial connection
 type Console struct {
 	Client     *xhttp.Client
+	Api        *xhttp.Client
 	SlaverURI  string
 	BufferSize int
 	Env        []string
@@ -112,6 +113,14 @@ func NewConsole(slaverURI string) (console *Console) {
 		},
 	}
 	console.Client = xhttp.NewClient(client)
+	api := &http.Client{
+		Transport: &http.Transport{
+			Dial: func(network, addr string) (net.Conn, error) {
+				return console.dialNet(network, "http://console.api")
+			},
+		},
+	}
+	console.Api = xhttp.NewClient(api)
 	return
 }
 
@@ -316,6 +325,14 @@ func (c *Console) DialPiper(uri string, bufferSize int) (raw xio.Piper, err erro
 	piper := NewRouterPiper()
 	_, err = c.DialConn(piper, uri)
 	raw = piper
+	return
+}
+
+func (c *Console) ListWhitelist() (whitelist []string, err error) {
+	res, err := c.Api.GetMap("http://console.api/whitelist")
+	if err == nil {
+		whitelist = res.ArrayStrDef([]string{}, "whitelist")
+	}
 	return
 }
 

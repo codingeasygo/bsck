@@ -36,20 +36,17 @@ class PacketTunnelProvider: NEPacketTunnelProvider, BsrouterLoggerProtocol, Bsro
     var userRules = ""
     var channel = ""
     var mode = ""
-    var excluded:[NEIPv4Route] = []
+    var excluded: [NEIPv4Route] = []
 
     var gatewayIn: BsrouterSenderProtocol?
 
     override init() {
         super.init()
         #if os(iOS) || os(watchOS) || os(tvOS)
-            var dir = getDocumentsDirectory()
-            BsrouterBootstrap(dir, self)
-        #elseif os(macOS)
-            var dir = FileManager.default.homeDirectoryForCurrentUser.path()
+            let dir = getDocumentsDirectory()
             BsrouterBootstrap(dir, self)
         #else
-            var dir = FileManager.default.homeDirectoryForCurrentUser.path()
+            let dir = FileManager.default.homeDirectoryForCurrentUser.path()
             BsrouterBootstrap(dir, self)
         #endif
     }
@@ -77,7 +74,11 @@ class PacketTunnelProvider: NEPacketTunnelProvider, BsrouterLoggerProtocol, Bsro
     }
 
     func startNode() -> BsrouterResultProtocol? {
-        var res = BsrouterStartNode(nodeConfig)
+//        #if os(iOS) || os(watchOS) || os(tvOS)
+            var res = BsrouterStartNode(nodeConfig)
+//        #else
+//            var res = BsrouterStartConsole(nodeConfig)
+//        #endif
         if res?.code() == 0 {
             excluded = []
             res?.stringValue().split(separator: ",").forEach { ip in

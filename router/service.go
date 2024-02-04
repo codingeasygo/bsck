@@ -307,14 +307,43 @@ func (h *HandlerMonitor) OnConnNotify(channel Conn, message []byte) {
 	}
 }
 
+type SocksConsole struct {
+	*sproxy.Server
+	listen net.Listener
+}
+
+func NewSocksConsole() (console *SocksConsole) {
+	console = &SocksConsole{
+		Server: sproxy.NewServer(),
+	}
+	return
+}
+
+func (c *SocksConsole) Start(addr string) (err error) {
+	if c.listen != nil {
+		c.listen.Close()
+	}
+	c.listen, err = c.Server.Start("tcp", addr)
+	return
+}
+
+func (c *SocksConsole) Port() (port int) {
+	if c.listen != nil {
+		port = c.listen.Addr().(*net.TCPAddr).Port
+	}
+	return
+}
+
 // Service is bound socket service
 type Service struct {
 	Name    string
 	Node    *Node
 	Console struct {
-		SOCKS *sproxy.Server
+		SOCKS *SocksConsole
 		WS    *wproxy.Server
 		Unix  *sproxy.Server
+		Mux   *web.SessionMux
+		Api   *dialer.WebDialer
 	}
 	Proxy struct {
 		Web    net.Listener
@@ -672,7 +701,7 @@ func (s *Service) DialPiper(uri string, bufferSize int) (raw xio.Piper, err erro
 }
 
 func (s *Service) dialConsolePiper(uri string, bufferSize int) (raw xio.Piper, err error) {
-	if strings.HasPrefix(uri, "tcp://") {
+	if strings.HasPrefix(uri, "tcp://") || strings.HasPrefix(uri, "http://") {
 		targetURI, xerr := url.Parse(uri)
 		if xerr != nil {
 			err = xerr
@@ -689,6 +718,9 @@ func (s *Service) dialConsolePiper(uri string, bufferSize int) (raw xio.Piper, e
 			}
 			s.addBackendPiper(name, conn)
 			raw = conn
+			return
+		} else if strings.HasSuffix(hostname, "console.api") {
+			raw, err = s.Console.Api.DialPiper(uri, bufferSize)
 			return
 		}
 	}
@@ -865,10 +897,41 @@ func (s *Service) UpdateGfwlist() {
 	}
 }
 
+func (s *Service) consoleWhitelistH(w *web.Session) web.Result {
+	whitelist := []string{}
+	for _, w := range s.Config.ResolveWhitelist() {
+		whitelist = append(whitelist, w.String())
+	}
+	return w.SendJSON(xmap.M{"code": 0, "whitelist": whitelist})
+}
+
 func (s *Service) afterConnJoin(channel Conn, option interface{}, result xmap.M) {
 	if len(s.Config.Gfwlist.Channel) > 0 {
 		s.UpdateGfwlist()
 	}
+}
+
+func (s *Service) startSocksConsole(addr string) (err error) {
+	err = s.Console.SOCKS.Start(addr)
+	if err != nil {
+		ErrorLog("Server(%v) start socks console on %v fail with %v\n", s.Name, addr, err)
+		s.Stop()
+		return
+	}
+	InfoLog("Server(%v) socks console listen on %v success", s.Name, addr)
+	return
+}
+
+func (s *Service) PrepareSocksConsole(addr string) (port int, err error) {
+	port = s.Console.SOCKS.Port()
+	if port > 0 {
+		return
+	}
+	err = s.startSocksConsole(addr)
+	if err == nil {
+		port = s.Console.SOCKS.Port()
+	}
+	return
 }
 
 // Start will start service
@@ -890,7 +953,7 @@ func (s *Service) Start() (err error) {
 	if s.GFW == nil {
 		s.GFW = gfw.NewCache(s.Config.Dir)
 	}
-	s.Console.SOCKS = sproxy.NewServer()
+	s.Console.SOCKS = NewSocksConsole()
 	s.Console.SOCKS.Dialer = xio.PiperDialerF(s.dialConsolePiper)
 	s.Console.SOCKS.BufferSize = s.BufferSize
 	s.Console.WS = wproxy.NewServer()
@@ -899,6 +962,10 @@ func (s *Service) Start() (err error) {
 	s.Console.Unix = sproxy.NewServer()
 	s.Console.Unix.Dialer = xio.PiperDialerF(s.dialConsolePiper)
 	s.Console.Unix.BufferSize = s.BufferSize
+	s.Console.Mux = web.NewSessionMux("")
+	s.Console.Api = dialer.NewWebDialer("console.api", s.Console.Mux)
+	s.Console.Mux.HandleFunc("^/whitelist(\\?.*)?$", s.consoleWhitelistH)
+	s.Console.Api.Bootstrap(xmap.M{})
 	s.WebForward = NewWebForward()
 	if s.Handler == nil {
 		handler := NewNormalAcessHandler(s.Config.Name)
@@ -936,13 +1003,11 @@ func (s *Service) Start() (err error) {
 		InfoLog("Server(%v) node listen on %v success", s.Name, s.Config.Listen)
 	}
 	if len(s.Config.Console.SOCKS) > 0 {
-		_, err = s.Console.SOCKS.Start("tcp", s.Config.Console.SOCKS)
+		err = s.startSocksConsole(s.Config.Console.SOCKS)
 		if err != nil {
-			ErrorLog("Server(%v) start socks console on %v fail with %v\n", s.Name, s.Config.Console.SOCKS, err)
 			s.Stop()
 			return
 		}
-		InfoLog("Server(%v) socks console listen on %v success", s.Name, s.Config.Console.SOCKS)
 	}
 	if len(s.Config.Console.WS) > 0 {
 		_, err = s.Console.WS.Start("tcp", s.Config.Console.WS)

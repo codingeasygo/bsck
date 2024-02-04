@@ -61,7 +61,7 @@ func StartGateway(netAddr, gwAddr, gwDNS, channel, mode string) (res Result) {
 	}
 	gw.Policy = func(on string, ip net.IP, port uint16, domain, cname string, questions []string) (uri string, newIP net.IP, newPort uint16) {
 		uri, newIP, newPort = gw.PolicyGFW(on, ip, port, domain, cname, questions)
-		router.InfoLog("%v,%v:%v,%v,%v,%v ===> %v", on, ip, port, domain, cname, questions, uri)
+		// router.InfoLog("%v,%v:%v,%v,%v,%v ===> %v", on, ip, port, domain, cname, questions, uri)
 		return
 	}
 	gw.Dialer = xio.PiperDialerF(func(uri string, bufferSize int) (raw xio.Piper, err error) {
